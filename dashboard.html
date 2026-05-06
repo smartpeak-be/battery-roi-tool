@@ -116,6 +116,15 @@
         <p class="sp-empty-state">⏳ Laden…</p>
       </div>
     </div>
+
+    <!-- Leads -->
+    <div class="card mt-3" id="leadsCard" style="display:none;">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i> Leads</span>
+        <span class="badge bg-primary" id="leadsCount">0</span>
+      </div>
+      <div class="card-body p-0 p-md-3" id="leadsList"></div>
+    </div>
   </main>
 </div>
 
@@ -169,6 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('userDisplayName').textContent = user.displayName || user.email;
     showState('stateAuthorized');
     refreshProjectList(true);
+    refreshLeads();
   });
 
   document.getElementById('toggleShowDeleted').addEventListener('change', refreshProjectList);
@@ -797,6 +807,81 @@ function renderComments(project, comments) {
 
 // Status-dropdown delegation via shared component (assets/js/status-chip.js)
 wireStatusChipClicks(document, () => refreshProjectList());
+
+// ─── LEADS SECTION ──────────────────────────────────────────────────────
+
+async function refreshLeads() {
+  const card = document.getElementById('leadsCard');
+  const el   = document.getElementById('leadsList');
+  const badge = document.getElementById('leadsCount');
+  try {
+    const leads = await listLeads();
+    if (!leads.length) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    badge.textContent = leads.length;
+    el.innerHTML = `
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Naam</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th class="d-none d-sm-table-cell">Datum</th>
+            <th class="text-end">Acties</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${leads.map(l => leadRowHTML(l)).join('')}
+        </tbody>
+      </table>`;
+    wireLeadActions(el);
+  } catch (e) {
+    console.error('refreshLeads failed:', e);
+    card.style.display = 'none';
+  }
+}
+
+function leadRowHTML(l) {
+  const date = l.createdAt ? fmtDate(l.createdAt) : '—';
+  const statusLabel = l.status === 'hot_lead' ? 'Hot lead' : 'Cold lead';
+  const statusColor = l.status === 'hot_lead' ? '#dc2626' : '#6b7a8d';
+  const resultLink = l.result
+    ? `<a href="lead-result.html?r=${l.id}" class="btn btn-sm btn-outline-secondary" title="Bekijk resultaat" aria-label="Bekijk resultaat" target="_blank"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></a>`
+    : '';
+  return `
+    <tr>
+      <td>${escapeHtml(l.customerName || '')}</td>
+      <td><a href="mailto:${escapeHtml(l.email || '')}">${escapeHtml(l.email || '')}</a></td>
+      <td><span class="badge" style="background:${statusColor};">${statusLabel}</span></td>
+      <td class="d-none d-sm-table-cell text-muted small">${date}</td>
+      <td class="text-end">
+        <div class="d-flex gap-1 justify-content-end">
+          ${resultLink}
+          <button type="button" class="btn btn-sm btn-outline-primary convertLeadBtn" data-id="${l.id}" title="Maak project aan" aria-label="Maak project aan"><i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i></button>
+        </div>
+      </td>
+    </tr>`;
+}
+
+function wireLeadActions(el) {
+  el.querySelectorAll('.convertLeadBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Lead omzetten naar een project?')) return;
+      await withSpinner(async () => {
+        try {
+          const lead = await getLead(btn.dataset.id);
+          if (!lead) { showToast('Lead niet gevonden.', 'danger'); return; }
+          const projectId = await convertLeadToProject(lead);
+          showToast('Project aangemaakt!', 'success');
+          window.open(`project-edit.html?project=${projectId}`, '_blank');
+          await refreshLeads();
+        } catch (e) {
+          showToast('Fout: ' + (e.message || e), 'danger');
+        }
+      });
+    });
+  });
+}
 
 // Responsive view: re-render on breakpoint cross (992px)
 let _wasDesktop = window.innerWidth >= 992;

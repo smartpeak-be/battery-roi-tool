@@ -179,8 +179,11 @@ function initFirebase() {
     throw new Error('Firebase SDK niet geladen. Controleer of de <script src="https://www.gstatic.com/firebasejs/...firebase-app-compat.js"> tags aanwezig zijn.');
   }
   _firebaseApp  = firebase.initializeApp(FIREBASE_CONFIG);
-  _firebaseDb   = firebase.firestore();
-  _firebaseAuth = firebase.auth();
+  _firebaseDb   = _firebaseApp.firestore('smartpeak-battery-roi-be');
+  // Auth SDK is optional — not loaded on public pages (lead.html, lead-result.html)
+  if (typeof firebase.auth === 'function') {
+    _firebaseAuth = firebase.auth();
+  }
   return _firebaseApp;
 }
 
@@ -400,7 +403,7 @@ async function saveLastCalcRun(projectId, saved) {
 
   // Best-effort Storage blob cleanup for cascaded PDFs.
   for (const t of removedWithPdf) {
-    try { await firebase.storage().ref(offertes[t].storagePath).delete(); }
+    try { await getStorage().ref(offertes[t].storagePath).delete(); }
     catch (e) { console.warn(`Offerte blob (${t}) verwijderen mislukt`, e); }
   }
 }
@@ -728,13 +731,13 @@ async function uploadProjectOfferte(projectId, configType, file) {
   const storagePath = `projects/${projectId}/offertes/${safeType}_${ts}.pdf`;
 
   // Haal eventueel bestaande blob op om te deleten na succesvolle upload.
-  const projRef = firebase.firestore().collection('projects').doc(projectId);
+  const projRef = getDb().collection('projects').doc(projectId);
   const projSnap = await projRef.get();
   const existing = (projSnap.data() || {}).offertes || {};
   const oldEntry = existing[configType];
 
   // Upload nieuwe blob.
-  const ref = firebase.storage().ref(storagePath);
+  const ref = getStorage().ref(storagePath);
   await ref.put(file, { contentType: 'application/pdf' });
 
   const metadata = {
@@ -755,7 +758,7 @@ async function uploadProjectOfferte(projectId, configType, file) {
   // Oude blob verwijderen (na succesvolle Firestore-swap zodat crash midden-in de nieuwe PDF niet weggooit).
   if (oldEntry && oldEntry.storagePath && oldEntry.storagePath !== storagePath) {
     try {
-      await firebase.storage().ref(oldEntry.storagePath).delete();
+      await getStorage().ref(oldEntry.storagePath).delete();
     } catch (err) {
       console.warn('Vorige offerte blob niet gevonden of delete-fout:', err);
     }
@@ -765,14 +768,14 @@ async function uploadProjectOfferte(projectId, configType, file) {
 }
 
 async function deleteProjectOfferte(projectId, configType) {
-  const projRef = firebase.firestore().collection('projects').doc(projectId);
+  const projRef = getDb().collection('projects').doc(projectId);
   const projSnap = await projRef.get();
   const existing = (projSnap.data() || {}).offertes || {};
   const entry = existing[configType];
   if (!entry) return;
 
   try {
-    if (entry.storagePath) await firebase.storage().ref(entry.storagePath).delete();
+    if (entry.storagePath) await getStorage().ref(entry.storagePath).delete();
   } catch (err) {
     console.warn('Storage delete faalde (blob mogelijk al weg):', err);
   }
@@ -825,7 +828,7 @@ async function deleteProjectConfig(projectId, type) {
   await ref.update(updates);
 
   if (pdfPath) {
-    try { await firebase.storage().ref(pdfPath).delete(); }
+    try { await getStorage().ref(pdfPath).delete(); }
     catch (e) { console.warn('Offerte blob verwijderen mislukt', e); }
   }
 }
@@ -936,4 +939,86 @@ function needsOfferteWarning(project) {
   if (types.length === 0) return false;
   const offertes = project.offertes || {};
   return types.some(t => !offertes[t]);
+}
+
+// ─── LEADS ──────────────────────────────────────────────────────────────
+
+/** Create a new lead document. Returns the auto-generated doc ID. */
+async function createLead(leadData) {
+  const db = getDb();
+  const doc = {
+    ...leadData,
+    status: 'cold_lead',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    hotLeadAt: null
+  };
+  const ref = await db.collection('leads').add(doc);
+  return ref.id;
+}
+
+/** List all leads, ordered by createdAt desc. */
+async function listLeads() {
+  const db = getDb();
+  const snap = await db.collection('leads').orderBy('createdAt', 'desc').get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/** Get a single lead by ID. Returns null if not found. */
+async function getLead(leadId) {
+  const db = getDb();
+  const snap = await db.collection('leads').doc(leadId).get();
+  return snap.exists ? { id: snap.id, ...snap.data() } : null;
+}
+
+/** Update a lead from cold_lead to hot_lead. */
+async function updateLeadToHot(leadId) {
+  const db = getDb();
+  await db.collection('leads').doc(leadId).update({
+    status: 'hot_lead',
+    hotLeadAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+/** Write a document to the mail collection (triggers Firebase email extension). */
+async function createMailDoc(mailData) {
+  const db = getDb();
+  await db.collection('mail').add(mailData);
+}
+
+/**
+ * Convert a lead into a project. Creates a new project doc with data from the lead.
+ * Returns the new project ID.
+ */
+async function convertLeadToProject(lead) {
+  const projectData = {
+    customerName: lead.customerName || '',
+    projectName: '',
+    status: 'nieuw_contact',
+    email: lead.email || '',
+    notes: lead.notes || '',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  // Copy CSV data if available
+  if (lead.csvDailyCompact) {
+    projectData.csvDailyCompact = lead.csvDailyCompact;
+  }
+  // Copy calc-relevant fields
+  if (lead.pvInverterKw) {
+    projectData.solar = { inverters: [{ powerKw: lead.pvInverterKw }] };
+  }
+  if (lead.pricePerKwh) {
+    projectData.supplier = {
+      isSingleTariff: true,
+      priceDay: lead.pricePerKwh,
+      priceNight: lead.pricePerKwh
+    };
+  }
+  if (lead.effectiveBtw) {
+    projectData.site = { houseAgeOver10Years: lead.effectiveBtw === 6 };
+  }
+
+  const db = getDb();
+  const ref = await db.collection('projects').add(projectData);
+  return ref.id;
 }

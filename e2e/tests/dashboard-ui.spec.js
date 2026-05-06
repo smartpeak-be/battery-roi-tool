@@ -49,8 +49,8 @@ test.describe('Dashboard UI', () => {
     await page.goto('/dashboard.html');
     await page.waitForSelector('.projectNameBtn', { state: 'visible', timeout: 15_000 });
 
-    // Default is list view — verify table exists
-    const table = page.locator('table');
+    // Default is list view — verify project table exists
+    const table = page.locator('#projectList table');
     await expect(table).toBeVisible();
 
     // Switch to board view (only works on >= lg viewport)
