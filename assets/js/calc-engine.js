@@ -212,7 +212,8 @@ export function calcScenario(windowDays, opts) {
 
   let qualifyingDays = 0, partialDays = 0, chargedFull = 0, chargedPartial = 0;
   for (const d of windowDays) {
-    let dayCharged = 0, isFull = false;
+    // eslint-disable-next-line no-useless-assignment -- dayCharged=0 is the default for clarity
+    let isFull = false, dayCharged = 0;
     if (d.injectie >= threshold) {
       isFull = true;
       dayCharged = batCap * eff;
@@ -286,7 +287,8 @@ export function computePerYearStats(allDays, pvInv, selectedConfigs, lastDate, p
       function calc(threshold, useCap) {
         let qualifyingDays = 0, partialDays = 0, chargedFull = 0, chargedPartial = 0;
         for (const d of days) {
-          let dayCharged = 0, isFull = false;
+          // eslint-disable-next-line no-useless-assignment
+          let isFull = false, dayCharged = 0;
           if (d.injectie >= threshold) { isFull = true; dayCharged = cfg.batCap * cfg.eff; }
           else if (d.injectie > 0)     { dayCharged = (d.injectie / threshold) * cfg.batCap * cfg.eff; }
           else { continue; }
@@ -621,9 +623,9 @@ export function buildYearBucketsFromMonthMap(monthMap) {
   }
   // Only return years with all 12 months represented (matches spec's "complete year" semantics).
   return Object.entries(byYear)
-    .filter(([y, v]) => v.monthCount === 12)
+    .filter(([_y, v]) => v.monthCount === 12)
     .sort((a, b) => parseInt(a[0], 10) - parseInt(b[0], 10))
-    .map(([y, v]) => ({ label: y, afname: v.afname, injectie: v.injectie, afnamedag: v.afnamedag, afnamenacht: v.afnamenacht, injectiedag: v.injectiedag, injectienacht: v.injectienacht }));
+    .map(([label, v]) => ({ label, afname: v.afname, injectie: v.injectie, afnamedag: v.afnamedag, afnamenacht: v.afnamenacht, injectiedag: v.injectiedag, injectienacht: v.injectienacht }));
 }
 
 export function buildMonthBucketsFromMonthMap(monthMap) {

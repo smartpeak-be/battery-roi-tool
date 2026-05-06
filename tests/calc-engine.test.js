@@ -527,7 +527,7 @@ describe('VALIDATION_BOUNDS', () => {
   });
 
   it('each bound has min, max, and label', () => {
-    for (const [key, bound] of Object.entries(VALIDATION_BOUNDS)) {
+    for (const [_key, bound] of Object.entries(VALIDATION_BOUNDS)) {
       expect(bound).toHaveProperty('min');
       expect(bound).toHaveProperty('max');
       expect(bound).toHaveProperty('label');
