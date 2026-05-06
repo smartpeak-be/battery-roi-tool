@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jouw batterij-analyse — SmartPeak</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css"
+        integrity="sha512-jnSuA4Ss2PkkikSOLtYs8BlYIeeIK1h99ty4YfvRPAlzr377vr3CXDb7sb7eEEBYjDtcYj+AjBH3FLv5uSJuXg=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="assets/css/smartpeak.css" />
+</head>
+<body style="background:#f4f6fb;">
+
+<div class="sp-lead-result" id="resultContainer">
+  <p class="text-center py-5 text-muted">Laden...</p>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index:1090"></div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="assets/js/firebase-init.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"
+        integrity="sha512-7Pi/otdlbbCR+LnW+F7PwFcSDJOuUJB3OxtEHbg4vSMvzvJjde4Po1v4BR9Gdc9aXNUNFVUY+SK51wWT8WF0Gg=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script type="module">
+import { escapeHtml, showToast } from './assets/js/shared-helpers.js';
+
+const container = document.getElementById('resultContainer');
+
+(async function loadResult() {
+  const params = new URLSearchParams(window.location.search);
+  const leadId = params.get('r');
+  if (!leadId) {
+    container.innerHTML = '<p class="text-center text-danger py-5">Ongeldige link — geen resultaat-ID gevonden.</p>';
+    return;
+  }
+
+  try {
+    initFirebase();
+    const lead = await getLead(leadId);
+    if (!lead) {
+      container.innerHTML = '<p class="text-center text-danger py-5">Resultaat niet gevonden. Mogelijk is de link verlopen.</p>';
+      return;
+    }
+
+    if (!lead.result) {
+      // Not profitable
+      container.innerHTML = `
+        <div class="sp-result-card text-center">
+          <h5 class="mb-3">Jouw batterij-analyse</h5>
+          <p>Op basis van je verbruiksdata is een thuisbatterij momenteel niet rendabel. Dit kan veranderen bij hogere energieprijzen of een ander verbruikspatroon.</p>
+        </div>
+        ${renderDisclaimer(lead)}
+        ${renderCTA(lead)}
+      `;
+      wireCTA(leadId, lead);
+      return;
+    }
+
+    const r = lead.result;
+    container.innerHTML = `
+      <div class="sp-result-card">
+        <h5 class="text-center mb-4">Jouw batterij-analyse</h5>
+        <div class="sp-result-metrics">
+          <div>
+            <div class="sp-result-metric-value">${fmtNl(r.batteryCapKwh, 1)} kWh</div>
+            <div class="sp-result-metric-label">Opslagcapaciteit</div>
+          </div>
+          <div>
+            <div class="sp-result-metric-value">${fmtNl(r.batteryInverterKw, 1)} kW</div>
+            <div class="sp-result-metric-label">Omvormvermogen</div>
+          </div>
+          <div>
+            <div class="sp-result-metric-value">${fmtNl(r.roiYears, 1)} jaar</div>
+            <div class="sp-result-metric-label">Terugverdientijd</div>
+          </div>
+        </div>
+        <div class="sp-result-bars">
+          <div class="sp-result-bar-label">
+            <span>Volledige lading</span>
+            <span>${fmtNl(r.recoveryPctFull, 1)}%</span>
+          </div>
+          <div class="sp-result-bar">
+            <div class="sp-result-bar-fill full" style="width:${Math.min(r.recoveryPctFull, 100)}%"></div>
+          </div>
+          <div class="sp-result-bar-label">
+            <span>Gedeeltelijke lading</span>
+            <span>${fmtNl(r.recoveryPctPartial, 1)}%</span>
+          </div>
+          <div class="sp-result-bar">
+            <div class="sp-result-bar-fill partial" style="width:${Math.min(r.recoveryPctPartial, 100)}%"></div>
+          </div>
+        </div>
+      </div>
+      ${renderDisclaimer(lead)}
+      ${renderCTA(lead)}
+    `;
+    wireCTA(leadId, lead);
+  } catch (e) {
+    container.innerHTML = `<p class="text-center text-danger py-5">Kon resultaat niet laden: ${escapeHtml(e.message || String(e))}</p>`;
+  }
+})();
+
+function fmtNl(n, decimals = 1) {
+  return Number(n).toFixed(decimals).replace('.', ',');
+}
+
+function renderDisclaimer(lead) {
+  const defaults = [];
+  if (lead.defaultsUsed) {
+    if (lead.defaultsUsed.pvInverterKw) defaults.push('<li>Omvormervermogen: standaardwaarde 3,5 kW gebruikt</li>');
+    if (lead.defaultsUsed.pricePerKwh) defaults.push('<li>Energiekost: standaardwaarde 0,34 EUR/kWh gebruikt</li>');
+    if (lead.defaultsUsed.houseAgeOver10Years) defaults.push('<li>BTW: 21% (woningtype niet opgegeven)</li>');
+  }
+  const defaultsHtml = defaults.length ? `<ul>${defaults.join('')}</ul>` : '';
+  return `
+    <div class="sp-lead-disclaimer">
+      <p class="mb-1">Deze berekening is gebaseerd op jouw eigen verbruiksdata en omvat het volledige SmartPeak-pakket: plaatsing, aansluiting in de kast, Bebat-bijdragen, elektriciteitsschema&rsquo;s en keuring. Andere opties zijn mogelijk.</p>
+      ${defaultsHtml}
+      <p class="mb-0 mt-2"><small>Dit resultaat is een indicatie op basis van de beschikbare gegevens. Voor een nauwkeurige berekening op maat nemen we graag contact met je op.</small></p>
+    </div>
+  `;
+}
+
+function renderCTA(lead) {
+  if (lead.status === 'hot_lead') {
+    return `<div class="sp-lead-cta">
+      <p class="sp-lead-cta-done"><i class="fa-solid fa-circle-check"></i> Aanvraag ontvangen — we nemen snel contact op!</p>
+    </div>`;
+  }
+  return `<div class="sp-lead-cta">
+    <button type="button" class="btn btn-primary btn-lg" id="btnContact">
+      <i class="fa-solid fa-phone" aria-hidden="true"></i> Contacteer mij voor een vrijblijvend gesprek
+    </button>
+  </div>`;
+}
+
+function wireCTA(leadId, lead) {
+  const btn = document.getElementById('btnContact');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Even geduld...';
+    try {
+      await updateLeadToHot(leadId);
+
+      // Send notification email to Kevin/Ruben
+      await createMailDoc({
+        to: ['kevin@bloxit.be', 'ledsrepair@gmail.com'],
+        message: {
+          subject: `Nieuwe contactaanvraag: ${lead.customerName || 'Onbekend'}`,
+          html: `<p>Er is een nieuwe contactaanvraag via de batterij-analyse tool:</p>
+                 <ul>
+                   <li><strong>Naam:</strong> ${escapeHtml(lead.customerName || '')}</li>
+                   <li><strong>Email:</strong> ${escapeHtml(lead.email || '')}</li>
+                 </ul>
+                 <p><a href="https://smartpeak-be.github.io/battery-roi-tool/dashboard.html">Open dashboard</a></p>`
+        }
+      });
+
+      // Replace button with confirmation
+      const ctaDiv = btn.parentElement;
+      ctaDiv.innerHTML = '<p class="sp-lead-cta-done"><i class="fa-solid fa-circle-check"></i> Aanvraag ontvangen — we nemen snel contact op!</p>';
+    } catch (e) {
+      showToast('Er ging iets mis. Probeer opnieuw.', 'danger');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-phone" aria-hidden="true"></i> Contacteer mij voor een vrijblijvend gesprek';
+    }
+  });
+}
+</script>
+
+</body>
+</html>
