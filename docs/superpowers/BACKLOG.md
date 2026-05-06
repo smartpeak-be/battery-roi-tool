@@ -54,9 +54,13 @@ Status: `[ ]` open · `[~]` bezig · `[x]` klaar
       i.p.v. NaN Date bij ongeldige input. `extractCsvForStorage()` en
       `csvToAllDaysAndMeta()` skippen rijen met ongeldige datums en
       geven duidelijke Nederlandse foutmeldingen. 17 nieuwe unit tests.
-- [ ] **C2. Input-validatie bounds**
-      Inverter-kW (0.1–100), tariefprijzen (0–2 €/kWh),
-      capaciteit, etc. Vóór Firestore-writes.
+- [x] **C2. Input-validatie bounds**
+      `VALIDATION_BOUNDS` en `validateCalcInputs()` in `calc-engine.js`.
+      Bounds: inverter kW (0.1–100), tariefprijzen (0.01–2.00 €/kWh),
+      capaciteit (0.5–200 kWh), rendement (0.5–1.0). Defensieve guard
+      in `processDataPure` voor division-by-zero (batInv === 0).
+      Geïntegreerd in `index.html` calculate() en `project-edit.html`
+      collectFromForm(). 22 nieuwe unit tests (86 totaal).
 - [x] **C3. Dashboard drawer race condition**
       Stale-guard patroon in `openDrawer()`, `_refreshCurrentDrawer()`,
       en null-guard in `refreshDrawerAfterChange()`. Na elke `await`
@@ -64,9 +68,10 @@ Status: `[ ]` open · `[~]` bezig · `[x]` klaar
       mismatch wordt de stale response weggegooid.
 - [x] **C4. Magic numbers → constanten**
       `100`, `2.5`, `200` → `CALC_CONSTANTS` in `calc-engine.js`.
-- [ ] **C5. `renderResults()` opsplitsen**
-      304 regels → `renderSummaryCards`, `renderScenarioCard`,
-      `renderCapacityAnalysis`, `renderEnergyChart`.
+- [x] **C5. `renderResults()` opsplitsen**
+      305 regels → 6 helpers: `renderPeriodAlert`, `renderScenarioAlert`,
+      `renderSummaryCard`, `makeScenCard` (module-level), `renderScenarioGrid`,
+      `renderMonthlyTable`. `renderResults()` nu ~20-regel orchestrator.
 
 ## D. Opruiming
 
