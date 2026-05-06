@@ -79,7 +79,8 @@
           </div>
           <div class="col-12 col-md">
             <div class="input-group">
-              <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+              <span class="input-group-text"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
+              <label for="projectSearch" class="visually-hidden">Zoek projectnaam of klant</label>
               <input type="search" id="projectSearch" class="form-control" placeholder="Zoek projectnaam of klant…" />
             </div>
           </div>
@@ -181,14 +182,22 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => {
       const v = btn.dataset.view;
       try { localStorage.setItem('smartpeak.dashboardView', v); } catch {}
-      document.querySelectorAll('#viewToggle button').forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('#viewToggle button').forEach(b => {
+        const isActive = b === btn;
+        b.classList.toggle('active', isActive);
+        if (isActive) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+      });
       renderCurrent();
     });
   });
   // Restore view choice on load (default = list).
   try {
     const saved = localStorage.getItem('smartpeak.dashboardView') || 'list';
-    document.querySelectorAll('#viewToggle button').forEach(b => b.classList.toggle('active', b.dataset.view === saved));
+    document.querySelectorAll('#viewToggle button').forEach(b => {
+      const isActive = b.dataset.view === saved;
+      b.classList.toggle('active', isActive);
+      if (isActive) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    });
   } catch {}
 
   // Reset drawer state when Bootstrap hides it (hidden.bs.offcanvas also handled above)
@@ -201,26 +210,26 @@ function rowHTML(p, isDeleted) {
   const updated = fmtDate(p.updatedAt);
   const editBtn = isDeleted
     ? ''
-    : `<a class="btn btn-sm btn-outline-secondary editBtn" data-id="${p.id}" href="project-edit.html?project=${p.id}" title="Bewerk"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></a>`;
+    : `<a class="btn btn-sm btn-outline-secondary editBtn" data-id="${p.id}" href="project-edit.html?project=${p.id}" title="Bewerk" aria-label="Bewerk project"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></a>`;
   const calcBtn = (!isDeleted && p.lastCalcRun && p.lastCalcRun.calculatedAt)
-    ? `<a class="btn btn-sm btn-outline-secondary calcBtn" data-id="${p.id}" href="index.html?project=${p.id}#results" title="Open berekening"><i class="fa-solid fa-calculator" aria-hidden="true"></i></a>`
+    ? `<a class="btn btn-sm btn-outline-secondary calcBtn" data-id="${p.id}" href="index.html?project=${p.id}#results" title="Open berekening" aria-label="Open berekening"><i class="fa-solid fa-calculator" aria-hidden="true"></i></a>`
     : '';
   const action  = isDeleted
-    ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreBtn" data-id="${p.id}" title="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
-       <button type="button" class="btn btn-sm btn-outline-danger permdelBtn"   data-id="${p.id}" data-name="${escapeHtml(getProjectLabel(p))}" title="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
-    : `<button type="button" class="btn btn-sm btn-outline-danger deleteBtn"    data-id="${p.id}" title="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
+    ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreBtn" data-id="${p.id}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
+       <button type="button" class="btn btn-sm btn-outline-danger permdelBtn"   data-id="${p.id}" data-name="${escapeHtml(getProjectLabel(p))}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
+    : `<button type="button" class="btn btn-sm btn-outline-danger deleteBtn"    data-id="${p.id}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
   const email  = currentUserEmail();
   const chat   = hasAnyComments(p)
-    ? `<span class="chat-indicator ${hasUnreadComments(p, email) ? 'unread' : ''}" title="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en) van collega' : 'Opmerkingen aanwezig'}"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i></span>`
+    ? `<span class="chat-indicator ${hasUnreadComments(p, email) ? 'unread' : ''}" role="img" aria-label="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en) van collega' : 'Opmerkingen aanwezig'}" title="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en) van collega' : 'Opmerkingen aanwezig'}"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i></span>`
     : '';
   const gfStatus = groundFaultStatus(p);
   const warn   = gfStatus === 'unsupported'
-    ? `<span class="row-warning" title="Niet-ondersteund producttype in configuratie — enkel Zendure en Marstek worden herkend."><i class="fa-solid fa-triangle-exclamation icon-danger" aria-hidden="true"></i></span>`
+    ? `<span class="row-warning" role="img" aria-label="Niet-ondersteund producttype in configuratie" title="Niet-ondersteund producttype in configuratie — enkel Zendure en Marstek worden herkend."><i class="fa-solid fa-triangle-exclamation icon-danger" aria-hidden="true"></i></span>`
     : gfStatus === 'no-measurement'
-    ? `<span class="row-warning" title="Meting fase↔aarde nog niet uitgevoerd. Voer de meting uit en registreer het resultaat in het project."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
+    ? `<span class="row-warning" role="img" aria-label="Meting fase-aarde nog niet uitgevoerd" title="Meting fase↔aarde nog niet uitgevoerd. Voer de meting uit en registreer het resultaat in het project."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
     : '';
   const warnOfferte = needsOfferteWarning(p)
-    ? `<span class="row-warning row-warning-offerte" title="Offertes ontbreken — klant zit in offerte-fase maar er zijn configs zonder PDF."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
+    ? `<span class="row-warning row-warning-offerte" role="img" aria-label="Offertes ontbreken" title="Offertes ontbreken — klant zit in offerte-fase maar er zijn configs zonder PDF."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
     : '';
   return `
     <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${p.id}">
@@ -356,16 +365,16 @@ function renderBoard(active, el) {
 function kanbanCardHTML(p) {
   const email = currentUserEmail();
   const chat  = hasAnyComments(p)
-    ? `<span class="chat-indicator ${hasUnreadComments(p, email) ? 'unread' : ''}" title="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en)' : 'Opmerkingen aanwezig'}"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i></span>`
+    ? `<span class="chat-indicator ${hasUnreadComments(p, email) ? 'unread' : ''}" role="img" aria-label="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en)' : 'Opmerkingen aanwezig'}" title="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en)' : 'Opmerkingen aanwezig'}"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i></span>`
     : '';
   const gfSt  = groundFaultStatus(p);
   const warn  = gfSt === 'unsupported'
-    ? `<span class="row-warning" title="Niet-ondersteund producttype."><i class="fa-solid fa-triangle-exclamation icon-danger" aria-hidden="true"></i></span>`
+    ? `<span class="row-warning" role="img" aria-label="Niet-ondersteund producttype" title="Niet-ondersteund producttype."><i class="fa-solid fa-triangle-exclamation icon-danger" aria-hidden="true"></i></span>`
     : gfSt === 'no-measurement'
-    ? `<span class="row-warning" title="Meting fase↔aarde nog niet uitgevoerd."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
+    ? `<span class="row-warning" role="img" aria-label="Meting fase-aarde nog niet uitgevoerd" title="Meting fase↔aarde nog niet uitgevoerd."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
     : '';
   const warnOfferte = needsOfferteWarning(p)
-    ? `<span class="row-warning row-warning-offerte" title="Offertes ontbreken — klant zit in offerte-fase maar er zijn configs zonder PDF."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
+    ? `<span class="row-warning row-warning-offerte" role="img" aria-label="Offertes ontbreken" title="Offertes ontbreken — klant zit in offerte-fase maar er zijn configs zonder PDF."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
     : '';
   return `
     <div class="kanban-card" draggable="true" data-id="${p.id}">
@@ -612,7 +621,7 @@ function renderDrawer(project) {
   const drawerGfStatus = groundFaultStatus(project);
   if (drawerGfStatus === 'unsupported') {
     sections.push(`
-      <div class="alert alert-danger d-flex gap-2 mb-3">
+      <div class="alert alert-danger d-flex gap-2 mb-3" role="alert">
         <i class="fa-solid fa-triangle-exclamation icon-danger flex-shrink-0 mt-1" aria-hidden="true"></i>
         <div><strong>Niet-ondersteund producttype.</strong>
           Dit project bevat configuraties die geen Zendure of Marstek zijn. Controleer de geselecteerde configuraties.</div>
@@ -620,7 +629,7 @@ function renderDrawer(project) {
     `);
   } else if (drawerGfStatus === 'no-measurement') {
     sections.push(`
-      <div class="alert alert-warning d-flex gap-2 mb-3">
+      <div class="alert alert-warning d-flex gap-2 mb-3" role="alert">
         <i class="fa-solid fa-triangle-exclamation icon-warn flex-shrink-0 mt-1" aria-hidden="true"></i>
         <div><strong>Meting fase↔aarde nog niet uitgevoerd.</strong>
           Voer de meting uit en registreer het resultaat (onder of boven 30 V) in <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Bewerk project.</div>
@@ -632,7 +641,7 @@ function renderDrawer(project) {
       ? project.lastCalcRun.inputs.selectedConfigTypes.filter(t => !(project.offertes || {})[t]).length
       : 0;
     sections.push(`
-      <div class="alert alert-warning d-flex gap-2 mb-3">
+      <div class="alert alert-warning d-flex gap-2 mb-3" role="alert">
         <i class="fa-solid fa-triangle-exclamation icon-warn flex-shrink-0 mt-1" aria-hidden="true"></i>
         <div>
           <strong>Offertes ontbreken.</strong>

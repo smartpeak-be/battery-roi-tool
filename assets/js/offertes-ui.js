@@ -82,18 +82,18 @@ function renderOffertesCards(project) {
     const cfg = _findConfigByType(project, t);
     const pdf = offertes[t];
     const iconState = pdf
-      ? '<i class="fa-solid fa-circle-check icon-ok" aria-hidden="true"></i>'
-      : '<i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i>';
+      ? '<span role="img" aria-label="Offerte aanwezig"><i class="fa-solid fa-circle-check icon-ok" aria-hidden="true"></i></span>'
+      : '<span role="img" aria-label="Offerte ontbreekt"><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>';
     const fileRow = pdf
       ? `<div class="offerte-row-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> ${escapeHtml(pdf.filename || '')}</div>`
       : `<div class="offerte-row-pdf" style="color:var(--sp-muted);">Nog geen offerte</div>`;
     const actions = pdf
-      ? `<button class="btn btn-sm btn-outline-secondary offerte-download-btn" data-offerte-action data-type="${escapeHtml(t)}" title="Download PDF"><i class="fa-solid fa-download" aria-hidden="true"></i></button>
-         <button class="btn btn-sm btn-outline-secondary offerte-replace-btn"  data-offerte-action data-type="${escapeHtml(t)}" title="Vervang PDF"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></button>
-         <button class="btn btn-sm btn-outline-warning   offerte-deletepdf-btn" data-offerte-action data-type="${escapeHtml(t)}" title="Alleen PDF verwijderen (config blijft)"><i class="fa-solid fa-file-circle-xmark" aria-hidden="true"></i></button>
-         <button class="btn btn-sm btn-outline-danger    offerte-trash-btn"     data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen (incl. offerte-PDF)"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`
-      : `<button class="btn btn-sm btn-outline-primary offerte-upload-btn"     data-offerte-action data-type="${escapeHtml(t)}" title="Upload offerte"><i class="fa-solid fa-upload" aria-hidden="true"></i></button>
-         <button class="btn btn-sm btn-outline-danger  offerte-trash-btn"      data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
+      ? `<button class="btn btn-sm btn-outline-secondary offerte-download-btn" data-offerte-action data-type="${escapeHtml(t)}" title="Download PDF" aria-label="Download PDF"><i class="fa-solid fa-download" aria-hidden="true"></i></button>
+         <button class="btn btn-sm btn-outline-secondary offerte-replace-btn"  data-offerte-action data-type="${escapeHtml(t)}" title="Vervang PDF" aria-label="Vervang PDF"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></button>
+         <button class="btn btn-sm btn-outline-warning   offerte-deletepdf-btn" data-offerte-action data-type="${escapeHtml(t)}" title="Alleen PDF verwijderen" aria-label="Alleen PDF verwijderen"><i class="fa-solid fa-file-circle-xmark" aria-hidden="true"></i></button>
+         <button class="btn btn-sm btn-outline-danger    offerte-trash-btn"     data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen" aria-label="Config verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`
+      : `<button class="btn btn-sm btn-outline-primary offerte-upload-btn"     data-offerte-action data-type="${escapeHtml(t)}" title="Upload offerte" aria-label="Upload offerte"><i class="fa-solid fa-upload" aria-hidden="true"></i></button>
+         <button class="btn btn-sm btn-outline-danger  offerte-trash-btn"      data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen" aria-label="Config verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
 
     return `
       <div class="col">
@@ -208,6 +208,7 @@ function openOfferteModal(project, configType, onUploaded) {
     ` : ''}
 
     <div class="sp-drop-zone" id="offerteDropZone">
+      <label for="offerteFileInput" class="visually-hidden">Kies offerte PDF</label>
       <input type="file" accept="application/pdf" id="offerteFileInput" />
       <div>
         ${existing ? 'Sleep nieuwe PDF om te vervangen' : 'Sleep offerte PDF hier'}<br/>
