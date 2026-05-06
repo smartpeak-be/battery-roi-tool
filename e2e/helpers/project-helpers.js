@@ -116,7 +116,7 @@ function _getAdminApp() {
     const sa = require(join(__dirname, '..', 'service-account-key.json'));
     return admin.initializeApp({
       credential: admin.credential.cert(sa),
-      storageBucket: 'smartpeak-roi.firebasestorage.app',
+      storageBucket: 'smartpeak-roi-storage-eu',
     }, APP_NAME);
   }
 }

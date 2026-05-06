@@ -9,7 +9,7 @@ const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBogV2vRpxD-Pw2XK5vJMOl-nEUywTgToE",
   authDomain: "smartpeak-roi.firebaseapp.com",
   projectId: "smartpeak-roi",
-  storageBucket: "smartpeak-roi.firebasestorage.app",
+  storageBucket: "smartpeak-roi-storage-eu",
   messagingSenderId: "1097741372897",
   appId: "1:1097741372897:web:b666db1329de5e03a296a0",
   measurementId: "G-CXYBY5503V"
@@ -179,7 +179,7 @@ function initFirebase() {
     throw new Error('Firebase SDK niet geladen. Controleer of de <script src="https://www.gstatic.com/firebasejs/...firebase-app-compat.js"> tags aanwezig zijn.');
   }
   _firebaseApp  = firebase.initializeApp(FIREBASE_CONFIG);
-  _firebaseDb   = firebase.firestore();
+  _firebaseDb   = _firebaseApp.firestore('smartpeak-battery-roi-be');
   _firebaseAuth = firebase.auth();
   return _firebaseApp;
 }
@@ -400,7 +400,7 @@ async function saveLastCalcRun(projectId, saved) {
 
   // Best-effort Storage blob cleanup for cascaded PDFs.
   for (const t of removedWithPdf) {
-    try { await firebase.storage().ref(offertes[t].storagePath).delete(); }
+    try { await getStorage().ref(offertes[t].storagePath).delete(); }
     catch (e) { console.warn(`Offerte blob (${t}) verwijderen mislukt`, e); }
   }
 }
@@ -728,13 +728,13 @@ async function uploadProjectOfferte(projectId, configType, file) {
   const storagePath = `projects/${projectId}/offertes/${safeType}_${ts}.pdf`;
 
   // Haal eventueel bestaande blob op om te deleten na succesvolle upload.
-  const projRef = firebase.firestore().collection('projects').doc(projectId);
+  const projRef = getDb().collection('projects').doc(projectId);
   const projSnap = await projRef.get();
   const existing = (projSnap.data() || {}).offertes || {};
   const oldEntry = existing[configType];
 
   // Upload nieuwe blob.
-  const ref = firebase.storage().ref(storagePath);
+  const ref = getStorage().ref(storagePath);
   await ref.put(file, { contentType: 'application/pdf' });
 
   const metadata = {
@@ -755,7 +755,7 @@ async function uploadProjectOfferte(projectId, configType, file) {
   // Oude blob verwijderen (na succesvolle Firestore-swap zodat crash midden-in de nieuwe PDF niet weggooit).
   if (oldEntry && oldEntry.storagePath && oldEntry.storagePath !== storagePath) {
     try {
-      await firebase.storage().ref(oldEntry.storagePath).delete();
+      await getStorage().ref(oldEntry.storagePath).delete();
     } catch (err) {
       console.warn('Vorige offerte blob niet gevonden of delete-fout:', err);
     }
@@ -765,14 +765,14 @@ async function uploadProjectOfferte(projectId, configType, file) {
 }
 
 async function deleteProjectOfferte(projectId, configType) {
-  const projRef = firebase.firestore().collection('projects').doc(projectId);
+  const projRef = getDb().collection('projects').doc(projectId);
   const projSnap = await projRef.get();
   const existing = (projSnap.data() || {}).offertes || {};
   const entry = existing[configType];
   if (!entry) return;
 
   try {
-    if (entry.storagePath) await firebase.storage().ref(entry.storagePath).delete();
+    if (entry.storagePath) await getStorage().ref(entry.storagePath).delete();
   } catch (err) {
     console.warn('Storage delete faalde (blob mogelijk al weg):', err);
   }
@@ -825,7 +825,7 @@ async function deleteProjectConfig(projectId, type) {
   await ref.update(updates);
 
   if (pdfPath) {
-    try { await firebase.storage().ref(pdfPath).delete(); }
+    try { await getStorage().ref(pdfPath).delete(); }
     catch (e) { console.warn('Offerte blob verwijderen mislukt', e); }
   }
 }

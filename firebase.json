@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "smartpeak-battery-roi-be",
+      "rules": "firestore.rules"
+    }
+  ]
+}
