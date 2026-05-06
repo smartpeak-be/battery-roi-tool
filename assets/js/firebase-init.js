@@ -937,3 +937,85 @@ function needsOfferteWarning(project) {
   const offertes = project.offertes || {};
   return types.some(t => !offertes[t]);
 }
+
+// ─── LEADS ──────────────────────────────────────────────────────────────
+
+/** Create a new lead document. Returns the auto-generated doc ID. */
+async function createLead(leadData) {
+  const db = getDb();
+  const doc = {
+    ...leadData,
+    status: 'cold_lead',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    hotLeadAt: null
+  };
+  const ref = await db.collection('leads').add(doc);
+  return ref.id;
+}
+
+/** List all leads, ordered by createdAt desc. */
+async function listLeads() {
+  const db = getDb();
+  const snap = await db.collection('leads').orderBy('createdAt', 'desc').get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/** Get a single lead by ID. Returns null if not found. */
+async function getLead(leadId) {
+  const db = getDb();
+  const snap = await db.collection('leads').doc(leadId).get();
+  return snap.exists ? { id: snap.id, ...snap.data() } : null;
+}
+
+/** Update a lead from cold_lead to hot_lead. */
+async function updateLeadToHot(leadId) {
+  const db = getDb();
+  await db.collection('leads').doc(leadId).update({
+    status: 'hot_lead',
+    hotLeadAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+/** Write a document to the mail collection (triggers Firebase email extension). */
+async function createMailDoc(mailData) {
+  const db = getDb();
+  await db.collection('mail').add(mailData);
+}
+
+/**
+ * Convert a lead into a project. Creates a new project doc with data from the lead.
+ * Returns the new project ID.
+ */
+async function convertLeadToProject(lead) {
+  const projectData = {
+    customerName: lead.customerName || '',
+    projectName: '',
+    status: 'nieuw_contact',
+    email: lead.email || '',
+    notes: lead.notes || '',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  // Copy CSV data if available
+  if (lead.csvDailyCompact) {
+    projectData.csvDailyCompact = lead.csvDailyCompact;
+  }
+  // Copy calc-relevant fields
+  if (lead.pvInverterKw) {
+    projectData.solar = { inverters: [{ powerKw: lead.pvInverterKw }] };
+  }
+  if (lead.pricePerKwh) {
+    projectData.supplier = {
+      isSingleTariff: true,
+      priceDay: lead.pricePerKwh,
+      priceNight: lead.pricePerKwh
+    };
+  }
+  if (lead.effectiveBtw) {
+    projectData.site = { houseAgeOver10Years: lead.effectiveBtw === 6 };
+  }
+
+  const db = getDb();
+  const ref = await db.collection('projects').add(projectData);
+  return ref.id;
+}
