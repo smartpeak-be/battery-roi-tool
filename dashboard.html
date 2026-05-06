@@ -20,10 +20,44 @@
   <style>
     /*
      * Page-specific overrides live here. Global app styles are in
-     * assets/css/smartpeak.css (loaded above). Keep this block empty
-     * unless a rule is truly only relevant for dashboard.html.
+     * assets/css/smartpeak.css (loaded above). Keep this block minimal
+     * — only rules truly relevant for dashboard.html.
      */
 
+    /* Desktop: fill viewport, projects scroll, leads pinned at bottom */
+    @media (min-width: 992px) {
+      #stateAuthorized {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #stateAuthorized > nav { flex-shrink: 0; }
+      #stateAuthorized > main {
+        flex: 1;
+        min-height: 0;          /* allow flex child to shrink below content */
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding-bottom: 0 !important;
+      }
+      /* Toolbar stays fixed size */
+      #stateAuthorized > main > .card.mb-3 { flex-shrink: 0; }
+      /* Project list fills remaining space and scrolls */
+      #stateAuthorized > main > .card:not(.mb-3):not(#leadsCard) {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
+      /* Leads card pinned at bottom, max 1/3 screen */
+      #leadsCard {
+        flex-shrink: 0;
+        max-height: 33vh;
+        overflow-y: auto;
+        margin-top: 0.75rem !important;
+        margin-bottom: 0 !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -872,9 +906,8 @@ function wireLeadActions(el) {
           const lead = await getLead(btn.dataset.id);
           if (!lead) { showToast('Lead niet gevonden.', 'danger'); return; }
           const projectId = await convertLeadToProject(lead);
-          showToast('Project aangemaakt!', 'success');
-          window.open(`project-edit.html?project=${projectId}`, '_blank');
-          await refreshLeads();
+          // Navigate directly (window.open gets blocked by popup blockers after async)
+          window.location.href = `project-edit.html?project=${projectId}`;
         } catch (e) {
           showToast('Fout: ' + (e.message || e), 'danger');
         }
