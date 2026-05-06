@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  LEAD_DEFAULTS,
   resolveLeadInputs,
   selectBestConfig,
   buildLeadResult,
@@ -90,19 +89,17 @@ describe('selectBestConfig', () => {
     expect(result.cfg.type).toBe('Small-5');
   });
 
-  it('tiebreaks on lower capacity', () => {
+  it('tiebreaks on lower capacity when payback is equal', () => {
     const days = makeDays();
-    // Two configs with same price/capacity ratio
+    // Two configs with same price/capacity ratio — payback should be similar
     const configs = [
       makeConfig('A-10', 10, 5, 0.95, 6000),
       makeConfig('B-5', 5, 2.5, 0.95, 3000),
     ];
     const result = selectBestConfig(days, configs, 3.5, 0.34, 21);
     expect(result).not.toBeNull();
-    // If payback is equal, lower capacity wins
-    if (result.payback === result.payback) {
-      expect(result.cfg.batCap).toBeLessThanOrEqual(10);
-    }
+    // Smaller config wins (either via shorter payback or tiebreak)
+    expect(result.cfg.type).toBe('B-5');
   });
 
   it('returns null when all configs give Infinity payback', () => {
