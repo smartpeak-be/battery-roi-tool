@@ -835,7 +835,8 @@ async function refreshLeads() {
         </tbody>
       </table>`;
     wireLeadActions(el);
-  } catch (_e) {
+  } catch (e) {
+    console.error('refreshLeads failed:', e);
     card.style.display = 'none';
   }
 }
