@@ -98,7 +98,10 @@ Status: `[ ]` open · `[~]` bezig · `[x]` klaar
       `role="alert"` op drawer warning banners. `aria-current` op view toggle.
       Visually-hidden labels voor search input en offerte file input.
       `:focus-visible` styles voor custom buttons in `smartpeak.css`.
-- [ ] **E3. Lazy-load Chart.js** (alleen op calc-pagina)
+- [x] **E3. Lazy-load Chart.js** (alleen op calc-pagina)
+      Eager `<script>` tag verwijderd (~206 KB). `_loadChartJs()` laadt
+      Chart.js dynamisch bij eerste aanroep van `renderEnergyChart()`.
+      Deduplicatie via `_chartJsPromise`. Graceful fallback bij CDN-fout.
 - [ ] **E4. Pagination in projectlijst** (bij groei > 50 projecten)
 
 ---
