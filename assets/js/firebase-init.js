@@ -9,7 +9,7 @@ const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBogV2vRpxD-Pw2XK5vJMOl-nEUywTgToE",
   authDomain: "smartpeak-roi.firebaseapp.com",
   projectId: "smartpeak-roi",
-  storageBucket: "smartpeak-roi-storage-eu",
+  storageBucket: "smartpeak-roi.firebasestorage.app",
   messagingSenderId: "1097741372897",
   appId: "1:1097741372897:web:b666db1329de5e03a296a0",
   measurementId: "G-CXYBY5503V"
@@ -180,7 +180,10 @@ function initFirebase() {
   }
   _firebaseApp  = firebase.initializeApp(FIREBASE_CONFIG);
   _firebaseDb   = _firebaseApp.firestore('smartpeak-battery-roi-be');
-  _firebaseAuth = firebase.auth();
+  // Auth SDK is optional — not loaded on public pages (lead.html, lead-result.html)
+  if (typeof firebase.auth === 'function') {
+    _firebaseAuth = firebase.auth();
+  }
   return _firebaseApp;
 }
 
