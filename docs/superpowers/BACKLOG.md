@@ -17,8 +17,10 @@ Status: `[ ]` open · `[~]` bezig · `[x]` klaar
 - [x] **A3. Shared helpers extraheren**
       `escapeHtml`, `showToast`, datumformattering, `shortEmail`
       → `assets/js/shared-helpers.js`. Geïmporteerd door alle 3 HTML-bestanden.
-- [ ] **A4. Dashboard inline JS verkleinen**
-      ~664 regels → pagina-specifieke orchestratie, acceptabel voor nu.
+- [x] **A4. Dashboard inline JS verkleinen**
+      ~670 regels geanalyseerd: nul duplicatie met bestaande modules, alle
+      shared helpers correct geïmporteerd. Code is pagina-specifiek en goed
+      gestructureerd — geen extractie nodig.
 - [x] **A5. Project-edit inline JS verkleinen**
       ~504 regels dead accordion-code verwijderd.
       File van 1.592 → 1.088 regels.
@@ -84,8 +86,18 @@ Status: `[ ]` open · `[~]` bezig · `[x]` klaar
 
 ## E. Toekomstig (nice-to-have)
 
-- [ ] **E1. Lint-configuratie toevoegen** (ESLint basis)
-- [ ] **E2. Accessibility verbeteren** (ARIA labels, keyboard-nav)
+- [x] **E1. Lint-configuratie toevoegen** (ESLint basis)
+      ESLint 9 flat config met secties voor ES modules, non-module browser
+      scripts, photo-uploader, Vitest tests, en Playwright E2E. `npm run lint`
+      en `npm run lint:fix` scripts. 0 errors, 0 warnings na code fixes
+      (error cause chaining, unused vars, regex escapes, empty catches).
+- [x] **E2. Accessibility verbeteren** (ARIA labels, keyboard-nav)
+      `aria-label` op alle icon-only buttons (dashboard, offertes-ui,
+      photo-uploader lightbox). `role="img"` + `aria-label` op warning/chat
+      indicatoren. `role="dialog"` + focus management op lightbox.
+      `role="alert"` op drawer warning banners. `aria-current` op view toggle.
+      Visually-hidden labels voor search input en offerte file input.
+      `:focus-visible` styles voor custom buttons in `smartpeak.css`.
 - [ ] **E3. Lazy-load Chart.js** (alleen op calc-pagina)
 - [ ] **E4. Pagination in projectlijst** (bij groei > 50 projecten)
 

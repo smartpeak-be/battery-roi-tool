@@ -179,12 +179,14 @@ import { escapeHtml } from './shared-helpers.js';
         lb = document.createElement('div');
         lb.id = 'pu-lightbox';
         lb.className = 'sp-lightbox';
+        lb.setAttribute('role', 'dialog');
+        lb.setAttribute('aria-label', 'Foto lightbox');
         lb.innerHTML = `
-          <button type="button" class="sp-lightbox-btn close" title="Sluit">×</button>
-          <button type="button" class="sp-lightbox-btn prev" title="Vorige">‹</button>
-          <button type="button" class="sp-lightbox-btn next" title="Volgende">›</button>
-          <button type="button" class="sp-lightbox-btn del" title="Verwijder foto"><i class="fa-solid fa-trash"></i></button>
-          <img data-pu-lightbox-img alt="" />
+          <button type="button" class="sp-lightbox-btn close" title="Sluit" aria-label="Sluit lightbox">×</button>
+          <button type="button" class="sp-lightbox-btn prev" title="Vorige" aria-label="Vorige foto">‹</button>
+          <button type="button" class="sp-lightbox-btn next" title="Volgende" aria-label="Volgende foto">›</button>
+          <button type="button" class="sp-lightbox-btn del" title="Verwijder foto" aria-label="Verwijder foto"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+          <img data-pu-lightbox-img alt="Foto" />
         `;
         document.body.appendChild(lb);
 
@@ -228,6 +230,8 @@ import { escapeHtml } from './shared-helpers.js';
 
       _refreshLightboxImg();
       lb.classList.add('open');
+      // Focus management: move focus into lightbox on open
+      lb.querySelector('.close').focus();
     }
     function _refreshLightboxImg() {
       const img = document.querySelector('#pu-lightbox [data-pu-lightbox-img]');

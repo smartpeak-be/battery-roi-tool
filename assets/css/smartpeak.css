@@ -469,3 +469,26 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   font-size: 0.82rem;
   color: var(--sp-muted, #6b7a99);
 }
+
+/* ── 4. Focus-visible styles for keyboard accessibility ──────────────── */
+
+.projectNameBtn:focus-visible,
+.kanban-card-title:focus-visible,
+.offerte-download-btn:focus-visible,
+.offerte-replace-btn:focus-visible,
+.offerte-deletepdf-btn:focus-visible,
+.offerte-upload-btn:focus-visible,
+.offerte-trash-btn:focus-visible {
+  outline: 2px solid var(--bs-primary, #2c7be5);
+  outline-offset: 2px;
+}
+
+.sp-lightbox-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+}
+
+.status-chip:focus-visible {
+  outline: 2px solid var(--bs-primary, #2c7be5);
+  outline-offset: 2px;
+}
