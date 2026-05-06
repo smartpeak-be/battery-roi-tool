@@ -632,7 +632,7 @@
       text-align: center;
     }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7"></script>
+  <!-- Chart.js loaded lazily on first use — see _loadChartJs() -->
   <script type="module" src="assets/js/csv.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
@@ -827,6 +827,21 @@ let _saved = null; // last renderResults argument, set at render time
 let _energyChartInstance = null;
 let _chartState = { level: 'month', dayMonthIdx: -1 };
 let _chartHandlersWired = false;
+let _chartJsPromise = null;
+
+/** Lazy-load Chart.js from CDN on first use. Returns a Promise that resolves when Chart is available. */
+function _loadChartJs() {
+  if (typeof Chart !== 'undefined') return Promise.resolve();
+  if (_chartJsPromise) return _chartJsPromise;
+  _chartJsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Chart.js kon niet laden'));
+    document.head.appendChild(s);
+  });
+  return _chartJsPromise;
+}
 
 function _setActiveLevel(level) {
   ['Year','Month','Day'].forEach(L => {
@@ -910,10 +925,14 @@ function _buildChartConfig(buckets, dualTariff) {
   };
 }
 
-function renderEnergyChart(d) {
+async function renderEnergyChart(d) {
   const card = document.getElementById('energyChartCard');
   if (!card) return;
   const canvas = document.getElementById('energyChartCanvas');
+
+  try {
+    await _loadChartJs();
+  } catch (_) { /* fall through to Chart === undefined check */ }
 
   if (typeof Chart === 'undefined') {
     card.innerHTML = '<h2><i class="fa-solid fa-chart-line" aria-hidden="true"></i> Afname &amp; Injectie over tijd</h2><div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i> <div>Grafiek niet beschikbaar — Chart.js kon niet laden.</div></div>';
