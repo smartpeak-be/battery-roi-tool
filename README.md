@@ -18,6 +18,20 @@ Interne tool voor SmartPeak om de terugverdientijd van thuisbatterijen te bereke
 | `index.html` | De calculator zelf (project-mode via `?project=<id>`, share-links via `?s=<id>`) |
 | `producten.html` | Productspecificaties per batterijtype |
 
+## Leads
+
+Inkomende leads worden publiek aangemaakt (bijv. via een extern formulier) en
+verschijnen onderaan het dashboard in een aparte leads-tabel. Elke lead bevat
+klantgegevens, eventueel CSV-data, omvormer-kW, tarief en BTW-percentage.
+
+Vanuit het dashboard kan een lead met één klik omgezet worden naar een project:
+de klantdata wordt overgenomen, een nieuw project wordt aangemaakt, en de lead
+krijgt status `converted`. Geconverteerde leads verdwijnen automatisch uit de
+lijst.
+
+Op desktop neemt de projectenlijst ~2/3 van het scherm en de leads ~1/3 onderaan;
+op mobiel staan ze gestapeld.
+
 ## Tech stack
 
 - Vanilla JS (ES modules), geen build step, geen bundler
