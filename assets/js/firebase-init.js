@@ -960,7 +960,10 @@ async function createLead(leadData) {
 async function listLeads() {
   const db = getDb();
   const snap = await db.collection('leads').orderBy('createdAt', 'desc').get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Filter out leads already converted to projects
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(l => l.status !== 'converted');
 }
 
 /** Get a single lead by ID. Returns null if not found. */
@@ -1020,5 +1023,13 @@ async function convertLeadToProject(lead) {
 
   const db = getDb();
   const ref = await db.collection('projects').add(projectData);
+
+  // Mark the lead as converted so it disappears from the leads list
+  await db.collection('leads').doc(lead.id).update({
+    status: 'converted',
+    convertedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    projectId: ref.id
+  });
+
   return ref.id;
 }
