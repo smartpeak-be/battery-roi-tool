@@ -1,7 +1,7 @@
 // e2e/tests/hard-delete.spec.js
 // Verifies that hard-deleting a project cascades to subcollections and Storage.
 import { test, expect } from '../helpers/auth-fixture.js';
-import { createTestProject, cleanupProject, getAdminFirestore, getAdminStorage } from '../helpers/project-helpers.js';
+import { createTestProject, getAdminFirestore, getAdminStorage } from '../helpers/project-helpers.js';
 import { firebaseSignIn } from '../helpers/auth-fixture.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';

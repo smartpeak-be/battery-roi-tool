@@ -1,4 +1,6 @@
 // e2e/helpers/project-helpers.js
+// expect is re-exported from auth-fixture; kept here for future assertions
+// eslint-disable-next-line no-unused-vars
 import { expect } from '@playwright/test';
 import { firebaseSignIn } from './auth-fixture.js';
 import { createRequire } from 'node:module';

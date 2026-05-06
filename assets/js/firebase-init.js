@@ -528,7 +528,7 @@ async function makeThumbnail(source) {
     img = source;
     if (!img.complete || img.naturalWidth === 0) {
       try { await img.decode(); }
-      catch (e) { throw new Error('Afbeelding kon niet geladen worden: ' + (e && e.message ? e.message : e)); }
+      catch (e) { throw new Error('Afbeelding kon niet geladen worden: ' + (e && e.message ? e.message : e), { cause: e }); }
     }
   } else if (source instanceof Blob) {
     img = new Image();
@@ -536,7 +536,7 @@ async function makeThumbnail(source) {
     cleanup = () => URL.revokeObjectURL(url);
     img.src = url;
     try { await img.decode(); }
-    catch (e) { cleanup(); throw new Error('Kan afbeelding niet decoderen: ' + (e && e.message ? e.message : e)); }
+    catch (e) { cleanup(); throw new Error('Kan afbeelding niet decoderen: ' + (e && e.message ? e.message : e), { cause: e }); }
   } else {
     throw new Error('makeThumbnail: source moet File/Blob of HTMLImageElement zijn');
   }
@@ -582,7 +582,7 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   if (file.size > MAX_BYTES) throw new Error('Te groot (max 15 MB).');
   const tag = opts.tag === 'serial' ? 'serial' : 'situatie';
 
-  const safeName     = file.name.replace(/[^\w.\-]+/g, '_').slice(0, 80);
+  const safeName     = file.name.replace(/[^\w.-]+/g, '_').slice(0, 80);
   const safeStripped = safeName.replace(/\.[^.]+$/, '') || 'photo';
   const ts           = Date.now();
   const fullPath     = `projects/${projectId}/${ts}_${safeName}`;
@@ -591,7 +591,7 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   // Step A — generate thumb
   let thumb;
   try { thumb = await makeThumbnail(file); }
-  catch (e) { throw new Error('Thumbnail genereren mislukt: ' + (e && e.message ? e.message : e)); }
+  catch (e) { throw new Error('Thumbnail genereren mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
 
   // Step B — parallel storage upload
   const storage = getStorage();
@@ -602,9 +602,9 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
     ]);
   } catch (e) {
     // best-effort cleanup of whichever blob(s) landed
-    try { await storage.ref(fullPath).delete();  } catch {}
-    try { await storage.ref(thumbPath).delete(); } catch {}
-    throw new Error('Storage upload mislukt: ' + (e && e.message ? e.message : e));
+    try { await storage.ref(fullPath).delete();  } catch (_) { /* best-effort */ }
+    try { await storage.ref(thumbPath).delete(); } catch (_) { /* best-effort */ }
+    throw new Error('Storage upload mislukt: ' + (e && e.message ? e.message : e), { cause: e });
   }
 
   // Step C — Firestore metadata
@@ -623,9 +623,9 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
       uploadedBy:       email,
     });
   } catch (e) {
-    try { await storage.ref(fullPath).delete();  } catch {}
-    try { await storage.ref(thumbPath).delete(); } catch {}
-    throw new Error('Firestore metadata schrijven mislukt: ' + (e && e.message ? e.message : e));
+    try { await storage.ref(fullPath).delete();  } catch (_) { /* best-effort */ }
+    try { await storage.ref(thumbPath).delete(); } catch (_) { /* best-effort */ }
+    throw new Error('Firestore metadata schrijven mislukt: ' + (e && e.message ? e.message : e), { cause: e });
   }
 
   // updatedAt is cosmetic — don't roll back blobs if this fails
@@ -655,7 +655,7 @@ async function backfillThumbnail(projectId, photoDoc) {
   img.crossOrigin = 'anonymous';
   img.src = fullUrl;
   try { await img.decode(); }
-  catch (e) { throw new Error('Backfill: image decode mislukt: ' + (e && e.message ? e.message : e)); }
+  catch (e) { throw new Error('Backfill: image decode mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
 
   const { blob, width, height } = await makeThumbnail(img);
 
