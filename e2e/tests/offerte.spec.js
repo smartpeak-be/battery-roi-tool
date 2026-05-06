@@ -2,7 +2,7 @@
 // Verifies offerte PDF upload, download, delete-PDF-only, and config cascade delete.
 import { test, expect } from '../helpers/auth-fixture.js';
 import { firebaseSignIn } from '../helpers/auth-fixture.js';
-import { createTestProject, uploadCsvToProject, cleanupProject } from '../helpers/project-helpers.js';
+import { createTestProject, uploadCsvToProject, cleanupProject, getAdminFirestore } from '../helpers/project-helpers.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -52,7 +52,17 @@ test.describe('Offerte PDF management', () => {
 
     await page.click('.btn-calculate');
     await page.waitForSelector('#results', { state: 'visible', timeout: 30_000 });
-    await page.waitForTimeout(2000);
+
+    // Wait for the async Firestore save of selectedConfigTypes to complete.
+    // Polling via Admin SDK is more reliable than a fixed timeout.
+    const db = getAdminFirestore();
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const snap = await db.doc(`projects/${projectId}`).get();
+      const types = snap.data()?.lastCalcRun?.inputs?.selectedConfigTypes;
+      if (Array.isArray(types) && types.length > 0) break;
+      await page.waitForTimeout(500);
+    }
 
     await page.close();
     await context.close();
