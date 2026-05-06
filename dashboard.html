@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('toggleShowFinished').addEventListener('change', refreshProjectList);
   document.getElementById('projectSearch').addEventListener('input', () => {
     // Debounce: re-render only (already-loaded list) without re-fetching Firestore.
-    renderCurrent();
+    renderCurrent(true);
   });
   // View toggle (Lijst / Bord). Remembers choice in localStorage.
   document.querySelectorAll('#viewToggle button').forEach(btn => {
@@ -251,7 +251,12 @@ function rowHTML(p, isDeleted) {
 // Cached list of projects from Firestore. Filtering + render happens on this cache.
 let _projectsCache = { active: [], deleted: [] };
 
+// Pagination state (list view only; board view shows all projects).
+const PAGE_SIZE = 25;
+let _currentPage = 1;
+
 async function refreshProjectList(showSpinnerOverlay = false) {
+  _currentPage = 1;
   const el = document.getElementById('projectList');
   el.innerHTML = '<p class="sp-empty-state">⏳ Laden…</p>';
   const showDeleted = document.getElementById('toggleShowDeleted').checked;
@@ -280,7 +285,9 @@ function currentView() {
 
 // Apply filters (search + show-finished) to the cached projects and render in the
 // currently-active view mode (list or board).
-function renderCurrent() {
+function renderCurrent(resetPage = false) {
+  if (resetPage) _currentPage = 1;
+
   const el = document.getElementById('projectList');
   const searchQ = (document.getElementById('projectSearch').value || '').trim().toLowerCase();
   const showFinished = document.getElementById('toggleShowFinished').checked;
@@ -306,15 +313,41 @@ function renderCurrent() {
   if (viewMode === 'board') {
     renderBoard(active, el);
   } else {
-    renderList(active, deleted, el);
+    // Combine active + deleted into one list for pagination.
+    const allFiltered = [...active, ...deleted];
+    const totalPages  = Math.ceil(allFiltered.length / PAGE_SIZE);
+    // Clamp current page to valid range.
+    if (_currentPage > totalPages) _currentPage = totalPages;
+    if (_currentPage < 1) _currentPage = 1;
+    const start = (_currentPage - 1) * PAGE_SIZE;
+    const page  = allFiltered.slice(start, start + PAGE_SIZE);
+    // Split page slice back into active/deleted for row styling.
+    const activeIds  = new Set(active.map(p => p.id));
+    const pageActive = page.filter(p => activeIds.has(p.id));
+    const pageDeleted = page.filter(p => !activeIds.has(p.id));
+    renderList(pageActive, pageDeleted, el, _currentPage, totalPages, allFiltered.length);
   }
 }
 
-function renderList(active, deleted, el) {
+function renderList(active, deleted, el, page, totalPages, totalCount) {
   const rows = [
     ...active.map(p => rowHTML(p, false)),
     ...deleted.map(p => rowHTML(p, true)),
   ].join('');
+
+  // Pagination bar — only shown when there are multiple pages.
+  const paginationHTML = totalPages > 1
+    ? `<nav class="sp-pagination" aria-label="Projectlijst paginering">
+        <button type="button" class="btn btn-sm btn-outline-primary pageBtn" data-dir="prev" ${page <= 1 ? 'disabled' : ''}>
+          <i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Vorige
+        </button>
+        <span class="sp-pagination-info">${page} / ${totalPages} <span class="text-muted">(${totalCount} projecten)</span></span>
+        <button type="button" class="btn btn-sm btn-outline-primary pageBtn" data-dir="next" ${page >= totalPages ? 'disabled' : ''}>
+          Volgende <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+        </button>
+      </nav>`
+    : '';
+
   el.innerHTML = `
     <div class="sp-project-list">
       <table class="table table-hover align-middle mb-0">
@@ -330,8 +363,20 @@ function renderList(active, deleted, el) {
         </thead>
         <tbody>${rows}</tbody>
       </table>
-    </div>`;
+    </div>
+    ${paginationHTML}`;
   wireRowActions(el);
+
+  // Wire pagination buttons.
+  el.querySelectorAll('.pageBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.dir === 'prev' && _currentPage > 1) _currentPage--;
+      else if (btn.dataset.dir === 'next' && _currentPage < totalPages) _currentPage++;
+      renderCurrent();
+      // Scroll project list card into view after page change.
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
 }
 
 function renderBoard(active, el) {
