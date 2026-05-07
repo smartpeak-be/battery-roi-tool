@@ -29,9 +29,12 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // ─── Config (read-only for whitelisted) ──────────────────────
+    // ─── Config (read-only) ──────────────────────────────────────
+    // `products` is the Google-Sheet CSV pointer used by both the
+    // (whitelisted) calculator and the (public) lead wizard, so it is
+    // openly readable. Other config docs stay whitelisted-only.
     match /config/{docId} {
-      allow read:  if isWhitelisted();
+      allow read:  if docId == 'products' || isWhitelisted();
       allow write: if false;
     }
 
