@@ -1021,8 +1021,13 @@ async function precomputeLastCalcRunForLead(lead) {
   try {
     const allDays = buildAllDaysFromDailyCompact(lead.csvDailyCompact);
     // Single tariff: pass null for priceNight so dualTariff resolves to false
-    // and effectivePrice == priceDay.
-    d = processDataPure({ allDays }, pvKw, [{ ...chosen, price }], tariff, null);
+    // and effectivePrice == priceDay. Empty meter metadata (lead form doesn't
+    // capture EAN/meter info) — explicit '' so serializeDForLastCalcRun
+    // doesn't emit undefined fields, which Firestore rejects.
+    d = processDataPure(
+      { allDays, eanCode: '', meterNr: '', meterType: '' },
+      pvKw, [{ ...chosen, price }], tariff, null
+    );
   } catch (e) {
     console.warn('[lead-precompute] processDataPure threw:', e);
     return null;
