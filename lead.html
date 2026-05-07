@@ -151,7 +151,7 @@
 import { escapeHtml, showToast, withSpinner } from './assets/js/shared-helpers.js';
 import { validateCsvHeaders } from './assets/js/csv.js';
 import { csvToAllDaysAndMeta, parseSheetConfigs } from './assets/js/calc-engine.js';
-import { resolveLeadInputs, selectBestConfig, buildLeadResult, buildDefaultsNotes } from './assets/js/lead-calc.js';
+import { resolveLeadInputs, selectBestConfigs, buildLeadResult, buildDefaultsNotes } from './assets/js/lead-calc.js';
 import { extractCsvForStorage } from './assets/js/csv.js';
 
 // ─── STATE ──────────────────────────────────────────────────────────────
@@ -279,8 +279,8 @@ document.getElementById('btnSubmit').addEventListener('click', async () => {
       const configs = parseSheetConfigs(await resp.text());
       if (!configs.length) throw new Error('Geen batterij-configuraties gevonden.');
 
-      // 4. Calculate best ROI
-      const best = selectBestConfig(
+      // 4. Calculate best ROI (top 2 Zendure configs)
+      const bestConfigs = selectBestConfigs(
         _allDaysResult.allDays, configs,
         resolved.pvInverterKw, resolved.pricePerKwh, resolved.effectiveBtw
       );
@@ -297,7 +297,7 @@ document.getElementById('btnSubmit').addEventListener('click', async () => {
         houseAgeOver10Years: rawInputs.houseAgeOver10Years,
         defaultsUsed:       resolved.defaultsUsed,
         notes:              notes,
-        result:             best ? buildLeadResult(best) : null,
+        result:             bestConfigs.length ? buildLeadResult(bestConfigs) : null,
         effectiveBtw:       resolved.effectiveBtw,
         keuring:            true
       };
