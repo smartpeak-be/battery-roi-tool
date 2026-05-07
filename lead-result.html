@@ -74,7 +74,8 @@ function loadChartJs() {
     wireCTA(leadId, lead, 'btnContactBottom');
     if (lead.csvDailyCompact) {
       // Render the chart after the DOM is in place; failure is silent (the card hides itself).
-      renderUsageChart(lead).catch(err => {
+      const selfPct = lead.result ? Math.max(0, Math.min(100, (lead.result.recoveryPctFull || 0) + (lead.result.recoveryPctPartial || 0))) : 0;
+      renderUsageChart(lead, selfPct).catch(err => {
         console.warn('[lead-result] chart render failed:', err);
         const wrap = document.getElementById('usageChartCard');
         if (wrap) wrap.style.display = 'none';
@@ -90,23 +91,34 @@ function loadChartJs() {
 function renderProfitable(lead) {
   const r = lead.result;
   const savingEur   = Math.round(r.annualSavingEur || 0);
-  const totalSelfPct = Math.max(0, Math.min(100, (r.recoveryPctFull || 0) + (r.recoveryPctPartial || 0)));
-  const gridLeftPct  = Math.max(0, 100 - totalSelfPct);
+  const selfPct     = Math.max(0, Math.min(100, (r.recoveryPctFull || 0) + (r.recoveryPctPartial || 0)));
 
-  // Annual kWh covered by the battery, derived from csvDailyCompact for display under the bar.
-  let annualBatteryKwh = null;
+  // Compute annualized kWh for the 3-segment energy bar.
+  let energyBar = null;
   if (lead.csvDailyCompact && Array.isArray(lead.csvDailyCompact.afname)) {
-    const totalAfname = lead.csvDailyCompact.afname.reduce((s, v) => s + (v || 0), 0);
-    const days        = lead.csvDailyCompact.afname.length;
-    const annualAfname = days > 0 ? totalAfname * (365 / days) : 0;
-    annualBatteryKwh   = Math.round(annualAfname * (totalSelfPct / 100));
+    const days          = lead.csvDailyCompact.afname.length;
+    const scale         = days > 0 ? 365 / days : 0;
+    const annualAfname  = lead.csvDailyCompact.afname.reduce((s, v) => s + (v || 0), 0) * scale;
+    const annualInj     = lead.csvDailyCompact.injectie.reduce((s, v) => s + (v || 0), 0) * scale;
+    const batteryKwh    = Math.round(annualAfname * (selfPct / 100));
+    const gridKwh       = Math.round(annualAfname - batteryKwh);
+    const injKwh        = Math.round(annualInj);
+    const total         = injKwh + annualAfname;
+    if (total > 0) {
+      energyBar = {
+        injPct:  (injKwh / total) * 100,
+        batPct:  (batteryKwh / total) * 100,
+        gridPct: (gridKwh / total) * 100,
+        injKwh, batteryKwh, gridKwh,
+      };
+    }
   }
 
   return `
     ${heroCard(savingEur, r)}
     ${solutionCard(r)}
-    ${selfConsumptionCard(totalSelfPct, gridLeftPct, annualBatteryKwh)}
-    ${usageChartCard(lead)}
+    ${energyFlowCard(energyBar)}
+    ${usageChartCard(lead, energyBar)}
     ${ctaCard('btnContact', 'Plan een vrijblijvend gesprek', 'Wij rekenen het exact uit voor jouw woning')}
     ${faqCard()}
     ${packageCard()}
@@ -135,16 +147,11 @@ function renderNotProfitable(lead) {
 
 function heroCard(savingEur, r) {
   const savingTxt = savingEur.toLocaleString('nl-BE');
-  const roiTxt    = isFinite(r.roiYears) ? fmtNl(r.roiYears, 1) : '—';
   return `
     <div class="sp-result-card sp-hero-card text-center">
       <div class="sp-hero-eyebrow">Op basis van jouw eigen verbruik</div>
       <div class="sp-hero-amount">€${savingTxt}<span class="sp-hero-amount-unit"> per jaar</span></div>
       <div class="sp-hero-subtitle">bespaar je op je elektriciteitsfactuur</div>
-      <div class="sp-hero-roi">
-        <i class="fa-solid fa-piggy-bank" aria-hidden="true"></i>
-        Terugverdiend in ~${roiTxt} jaar — daarna verdient de batterij elk jaar voor jou.
-      </div>
     </div>
   `;
 }
@@ -153,12 +160,11 @@ function solutionCard(r) {
   return `
     <div class="sp-result-card">
       <h5 class="text-center mb-1">Jouw aanbevolen oplossing</h5>
-      <p class="text-center text-muted small mb-4">Configuratie ${escapeHtml(r.bestConfigType || '')}</p>
       <div class="sp-result-metrics">
         <div class="sp-metric-tile">
           <div class="sp-result-metric-value">${fmtNl(r.batteryCapKwh, 1)} kWh</div>
           <div class="sp-result-metric-label">Opslagcapaciteit</div>
-          <div class="sp-metric-detail">Genoeg voor een avond koken, wassen en TV-kijken op opgeslagen zonne-energie.</div>
+          <div class="sp-metric-detail">Genoeg voor een avond koken, wassen en TV kijken op opgeslagen zonne-energie.</div>
         </div>
         <div class="sp-metric-tile">
           <div class="sp-result-metric-value">${fmtNl(r.batteryInverterKw, 1)} kW</div>
@@ -175,35 +181,34 @@ function solutionCard(r) {
   `;
 }
 
-function selfConsumptionCard(selfPct, gridPct, annualKwh) {
-  // Hide the per-segment label if its slice is too narrow to read inside the bar (< 15%).
-  const selfLabelInside = selfPct >= 15;
-  const gridLabelInside = gridPct >= 15;
-  const kwhLine = (annualKwh != null && annualKwh > 0)
-    ? `<p class="sp-self-summary"><strong>${annualKwh.toLocaleString('nl-BE')} kWh per jaar</strong> uit jouw eigen zonne-energie in plaats van het net.</p>`
-    : '';
+function energyFlowCard(bar) {
+  if (!bar) return '';
+  const labelIf = (pct, txt) => pct >= 12 ? `<span class="sp-self-bar-label">${txt}</span>` : '';
   return `
     <div class="sp-result-card">
-      <h5 class="text-center mb-2">Hoeveel stroom haal je straks uit jouw eigen batterij?</h5>
-      <p class="text-center text-muted small mb-4">Vandaag komt al jouw avond- en nachtverbruik van het net. Met de batterij vang je de zonne-energie op die je nu gratis weggeeft.</p>
-      <div class="sp-self-bar" role="img" aria-label="${fmtNl(selfPct, 0)}% uit eigen batterij, ${fmtNl(gridPct, 0)}% nog van het net">
-        <div class="sp-self-bar-fill battery" style="width:${selfPct}%">
-          ${selfLabelInside ? `<span class="sp-self-bar-label">${fmtNl(selfPct, 0)}%</span>` : ''}
+      <h5 class="text-center mb-2">Jouw energiestromen op jaarbasis</h5>
+      <p class="text-center text-muted small mb-4">Vandaag gaat jouw overtollige zonne-energie naar het net. Met een batterij sla je een deel daarvan op voor 's avonds en 's nachts.</p>
+      <div class="sp-self-bar" role="img" aria-label="Injectie ${bar.injKwh} kWh, Batterij ${bar.batteryKwh} kWh, Net ${bar.gridKwh} kWh">
+        <div class="sp-self-bar-fill injection" style="width:${bar.injPct}%">
+          ${labelIf(bar.injPct, fmtNl(bar.injPct, 0) + '%')}
         </div>
-        <div class="sp-self-bar-fill grid" style="width:${gridPct}%">
-          ${gridLabelInside ? `<span class="sp-self-bar-label">${fmtNl(gridPct, 0)}%</span>` : ''}
+        <div class="sp-self-bar-fill battery" style="width:${bar.batPct}%">
+          ${labelIf(bar.batPct, fmtNl(bar.batPct, 0) + '%')}
+        </div>
+        <div class="sp-self-bar-fill grid" style="width:${bar.gridPct}%">
+          ${labelIf(bar.gridPct, fmtNl(bar.gridPct, 0) + '%')}
         </div>
       </div>
       <div class="sp-self-legend">
-        <span><span class="sp-self-dot battery"></span> Eigen batterij</span>
-        <span><span class="sp-self-dot grid"></span> Nog van het net</span>
+        <span><span class="sp-self-dot injection"></span> Injectie (${bar.injKwh.toLocaleString('nl-BE')} kWh)</span>
+        <span><span class="sp-self-dot battery"></span> Batterij (${bar.batteryKwh.toLocaleString('nl-BE')} kWh)</span>
+        <span><span class="sp-self-dot grid"></span> Van het net (${bar.gridKwh.toLocaleString('nl-BE')} kWh)</span>
       </div>
-      ${kwhLine}
     </div>
   `;
 }
 
-function usageChartCard(lead) {
+function usageChartCard(lead, energyBar) {
   if (!lead.csvDailyCompact || !Array.isArray(lead.csvDailyCompact.afname)) return '';
   const days = lead.csvDailyCompact.afname.length;
   const periodTxt = lead.result && lead.result.isFullYear
@@ -211,12 +216,12 @@ function usageChartCard(lead) {
     : `${days} dagen`;
   return `
     <div class="sp-result-card" id="usageChartCard">
-      <h5 class="text-center mb-2">Berekend op jouw cijfers</h5>
-      <p class="text-center text-muted small mb-4">Geen algemene gemiddelden — deze analyse gebruikt <strong>${periodTxt}</strong> van jouw eigen Fluvius-data.</p>
+      <h5 class="text-center mb-2">Berekend op jouw eigen Fluvius-data</h5>
+      <p class="text-center text-muted small mb-4">Deze analyse is gebaseerd op <strong>${periodTxt}</strong> van jouw werkelijke verbruik.</p>
       <div class="sp-chart-wrap">
-        <canvas id="usageChart" aria-label="Maandelijks verbruik en injectie"></canvas>
+        <canvas id="usageChart" aria-label="Maandelijks verbruik, injectie en batterijbesparing"></canvas>
       </div>
-      <p class="sp-chart-caption">Het <span style="color:#16a34a;font-weight:600;">groen</span> is de zonne-energie die je nu naar het net stuurt. Het <span style="color:#dc2626;font-weight:600;">rood</span> is wat je later weer afneemt. De batterij vult dat gat in.</p>
+      <p class="sp-chart-caption">Het <span style="color:#16a34a;font-weight:600;">groen</span> is jouw zonne-energie naar het net. Het <span style="color:#0ea5e9;font-weight:600;">blauw</span> is wat de batterij daarvan opvangt. Het <span style="color:#dc2626;font-weight:600;">rood</span> is jouw resterende netverbruik.</p>
     </div>
   `;
 }
@@ -237,19 +242,19 @@ function faqCard() {
   const items = [
     {
       q: 'Wat als er stroomuitval is?',
-      a: 'De meeste batterijen die wij installeren hebben optionele backup-functionaliteit. Bij een stroomonderbreking blijven essentiële kringen — verlichting, koelkast, internet — gewoon werken. Tijdens het plaatsbezoek bekijken we welke setup bij jouw situatie past.'
+      a: 'Bij een stroomonderbreking mag een thuisbatterij wettelijk geen stroom terugleveren aan de woning. Wel beschikken de meeste batterijen over een noodstopcontact dat automatisch actief wordt. Via een verlengkabel kan je dan alsnog kritische toestellen (koelkast, oplader, internet) van stroom voorzien, maar niet de volledige woning overnemen. Er bestaan batterijsystemen die dat wel kunnen, maar dan spreken we over een hogere investering en ingrijpende aanpassingen aan de verdeelkast. Voor de kleinere en stekkerklare batterijen is dat niet mogelijk.'
     },
     {
       q: 'Hoe lang gaat een thuisbatterij mee?',
-      a: 'Een moderne lithium-batterij gaat doorgaans 12 tot 15 jaar mee, ruim langer dan de terugverdientijd. Wij werken enkel met merken die minimaal 10 jaar fabrieksgarantie of een gegarandeerd aantal laadcycli aanbieden.'
+      a: 'Een moderne lithium-batterij gaat doorgaans 12 tot 15 jaar mee, en vaak langer. Gedurende die levensduur vermindert de opslagcapaciteit geleidelijk. Na 10 jaar kan je bijvoorbeeld nog zo\'n 80% van de oorspronkelijke capaciteit verwachten. De batterij blijft daarmee perfect bruikbaar. Wij werken enkel met merken die minimaal 10 jaar fabrieksgarantie of een gegarandeerd aantal laadcycli aanbieden.'
     },
     {
       q: 'Hoeveel ruimte heb ik nodig?',
-      a: 'De batterij is ongeveer zo groot als een smalle koelkast en wordt aan de muur of op de grond geplaatst. Binnen of in de garage volstaat — droog en op kamertemperatuur. Tijdens het bezoek bepalen we samen de beste plek.'
+      a: 'Dat hangt af van de installatie: één toestel of meerdere. Voor de meeste installaties kan je rekenen op 60 cm tot 1 m breed, 30 tot 50 cm diep en 40 tot 60 cm hoog. De batterij wordt aan de muur of op de grond geplaatst, binnen of in de garage. Tijdens het plaatsbezoek bepalen we samen de beste plek.'
     },
     {
       q: 'Werkt dit met mijn bestaande zonnepanelen?',
-      a: 'Ja. We sluiten de batterij parallel aan op je elektriciteitskast — je bestaande omvormer en panelen hoeven niet vervangen te worden. We controleren wel of je zekeringskast en aansluiting geschikt zijn.'
+      a: 'Ja. We sluiten de batterij parallel aan op je elektriciteitskast. Je bestaande omvormer en panelen hoeven niet vervangen te worden. We controleren wel of je zekeringskast en aansluiting geschikt zijn.'
     }
   ];
   const itemsHtml = items.map((it, i) => `
@@ -306,7 +311,7 @@ function renderDisclaimer(lead) {
 
 // ── Chart ────────────────────────────────────────────────────────────────────
 
-async function renderUsageChart(lead) {
+async function renderUsageChart(lead, selfPct) {
   await loadChartJs();
   const dc = lead.csvDailyCompact;
   if (!dc || !dc.startDate || !Array.isArray(dc.afname) || dc.afname.length === 0) {
@@ -331,11 +336,20 @@ async function renderUsageChart(lead) {
   }
 
   const months = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  // Show at most the last 12 months for visual clarity.
   const trimmed = months.length > 12 ? months.slice(-12) : months;
   const labels  = trimmed.map(([, v]) => v.label);
-  const afname  = trimmed.map(([, v]) => Math.round(v.afname));
   const inj     = trimmed.map(([, v]) => Math.round(v.injectie));
+  const afname  = trimmed.map(([, v]) => Math.round(v.afname));
+
+  // Estimate monthly battery savings proportional to monthly injection,
+  // capped at monthly consumption. Annual total = afname * selfPct / 100.
+  const totalInj = inj.reduce((s, v) => s + v, 0);
+  const totalAf  = afname.reduce((s, v) => s + v, 0);
+  const annualBatteryKwh = totalAf * (selfPct || 0) / 100;
+  const battery = trimmed.map(([, v]) => {
+    const share = totalInj > 0 ? v.injectie / totalInj : 1 / trimmed.length;
+    return Math.round(Math.min(share * annualBatteryKwh, v.afname));
+  });
 
   const ctx = document.getElementById('usageChart');
   if (!ctx) return;
@@ -347,20 +361,31 @@ async function renderUsageChart(lead) {
       labels,
       datasets: [
         {
-          label: 'Afname (van het net)',
-          data: afname,
-          borderColor: '#dc2626',
-          backgroundColor: 'rgba(220,38,38,0.10)',
+          label: 'Injectie (naar het net)',
+          data: inj,
+          borderColor: '#16a34a',
+          backgroundColor: 'rgba(22,163,74,0.10)',
           fill: true,
           tension: 0.3,
           borderWidth: 2,
           pointRadius: 3
         },
         {
-          label: 'Injectie (naar het net)',
-          data: inj,
-          borderColor: '#16a34a',
-          backgroundColor: 'rgba(22,163,74,0.10)',
+          label: 'Batterijbesparing',
+          data: battery,
+          borderColor: '#0ea5e9',
+          backgroundColor: 'rgba(14,165,233,0.18)',
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2,
+          pointRadius: 3,
+          borderDash: [6, 3]
+        },
+        {
+          label: 'Afname (van het net)',
+          data: afname,
+          borderColor: '#dc2626',
+          backgroundColor: 'rgba(220,38,38,0.10)',
           fill: true,
           tension: 0.3,
           borderWidth: 2,
