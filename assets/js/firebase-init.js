@@ -950,10 +950,37 @@ async function createLead(leadData) {
     ...leadData,
     status: 'cold_lead',
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    hotLeadAt: null
+    hotLeadAt: null,
+    deletedAt: null
   };
   const ref = await db.collection('leads').add(doc);
   return ref.id;
+}
+
+/** Soft-delete a lead: set deletedAt to a server timestamp. Restorable. */
+async function softDeleteLead(leadId) {
+  const db = getDb();
+  await db.collection('leads').doc(leadId).update({
+    deletedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+/** Restore a soft-deleted lead: clear deletedAt. */
+async function restoreLead(leadId) {
+  const db = getDb();
+  await db.collection('leads').doc(leadId).update({
+    deletedAt: null
+  });
+}
+
+/**
+ * Permanently delete a lead document. Leads have no sub-collections, so this
+ * is a single-doc delete. The associated `mail` doc (if any) is independent
+ * and is NOT touched (audit trail).
+ */
+async function hardDeleteLead(leadId) {
+  const db = getDb();
+  await db.collection('leads').doc(leadId).delete();
 }
 
 /** List all leads, ordered by createdAt desc. */

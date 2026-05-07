@@ -153,9 +153,15 @@
 
     <!-- Leads -->
     <div class="card mt-3" id="leadsCard" style="display:none;">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i> Leads</span>
-        <span class="badge bg-primary" id="leadsCount">0</span>
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span>
+          <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i> Leads
+          <span class="badge bg-primary ms-1" id="leadsCount">0</span>
+        </span>
+        <div class="form-check form-switch m-0">
+          <input class="form-check-input" type="checkbox" id="toggleShowDeletedLeads">
+          <label class="form-check-label small" for="toggleShowDeletedLeads">Toon verwijderde</label>
+        </div>
       </div>
       <div class="card-body p-0 p-md-3" id="leadsList"></div>
     </div>
@@ -220,6 +226,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('projectSearch').addEventListener('input', () => {
     // Debounce: re-render only (already-loaded list) without re-fetching Firestore.
     renderCurrent();
+  });
+
+  // Leads "Toon verwijderde" toggle: persisted, re-render only (cache already loaded).
+  const leadsToggle = document.getElementById('toggleShowDeletedLeads');
+  try {
+    leadsToggle.checked = localStorage.getItem('smartpeak.showDeletedLeads') === '1';
+  } catch {}
+  leadsToggle.addEventListener('change', () => {
+    try { localStorage.setItem('smartpeak.showDeletedLeads', leadsToggle.checked ? '1' : '0'); } catch {}
+    renderLeads();
   });
   // View toggle (Lijst / Bord). Remembers choice in localStorage.
   document.querySelectorAll('#viewToggle button').forEach(btn => {
@@ -844,46 +860,72 @@ wireStatusChipClicks(document, () => refreshProjectList());
 
 // ─── LEADS SECTION ──────────────────────────────────────────────────────
 
+let _leadsCache = { active: [], deleted: [] };
+
 async function refreshLeads() {
   const card = document.getElementById('leadsCard');
-  const el   = document.getElementById('leadsList');
-  const badge = document.getElementById('leadsCount');
   try {
-    const leads = await listLeads();
-    if (!leads.length) { card.style.display = 'none'; return; }
+    const all = await listLeads();
+    _leadsCache.active  = all.filter(l => !l.deletedAt);
+    _leadsCache.deleted = all.filter(l =>  l.deletedAt);
+    if (!_leadsCache.active.length && !_leadsCache.deleted.length) {
+      card.style.display = 'none';
+      return;
+    }
     card.style.display = '';
-    badge.textContent = leads.length;
-    el.innerHTML = `
-      <table class="table table-hover align-middle mb-0">
-        <thead>
-          <tr>
-            <th>Naam</th>
-            <th class="d-none d-sm-table-cell">Email</th>
-            <th>Status</th>
-            <th class="d-none d-sm-table-cell">Datum</th>
-            <th class="text-end">Acties</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${leads.map(l => leadRowHTML(l)).join('')}
-        </tbody>
-      </table>`;
-    wireLeadActions(el);
+    renderLeads();
   } catch (e) {
     console.error('refreshLeads failed:', e);
     card.style.display = 'none';
   }
 }
 
-function leadRowHTML(l) {
+function renderLeads() {
+  const el    = document.getElementById('leadsList');
+  const badge = document.getElementById('leadsCount');
+  const showDeleted = document.getElementById('toggleShowDeletedLeads').checked;
+
+  badge.textContent = _leadsCache.active.length;
+
+  const rows = [
+    ..._leadsCache.active.map(l => leadRowHTML(l, false)),
+    ...(showDeleted ? _leadsCache.deleted.map(l => leadRowHTML(l, true)) : []),
+  ].join('');
+
+  if (!rows) {
+    el.innerHTML = '<p class="sp-empty-state">Geen openstaande leads.</p>';
+    return;
+  }
+  el.innerHTML = `
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Naam</th>
+          <th class="d-none d-sm-table-cell">Email</th>
+          <th>Status</th>
+          <th class="d-none d-sm-table-cell">Datum</th>
+          <th class="text-end">Acties</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  wireLeadActions(el);
+}
+
+function leadRowHTML(l, isDeleted) {
   const date = l.createdAt ? fmtDate(l.createdAt) : '—';
   const statusLabel = l.status === 'hot_lead' ? 'Hot lead' : 'Cold lead';
   const statusColor = l.status === 'hot_lead' ? '#dc2626' : '#6b7a8d';
   const resultLink = l.result
     ? `<a href="lead-result.html?r=${l.id}" class="btn btn-sm btn-outline-secondary" title="Bekijk resultaat" aria-label="Bekijk resultaat" target="_blank"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></a>`
     : '';
+  const action = isDeleted
+    ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreLeadBtn" data-id="${l.id}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
+       <button type="button" class="btn btn-sm btn-outline-danger permdelLeadBtn" data-id="${l.id}" data-name="${escapeHtml(l.customerName || '')}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
+    : `<button type="button" class="btn btn-sm btn-outline-primary convertLeadBtn" data-id="${l.id}" title="Maak project aan" aria-label="Maak project aan"><i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i></button>
+       <button type="button" class="btn btn-sm btn-outline-danger deleteLeadBtn" data-id="${l.id}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
   return `
-    <tr>
+    <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${l.id}">
       <td>${escapeHtml(l.customerName || '')}</td>
       <td class="d-none d-sm-table-cell text-break"><a href="mailto:${escapeHtml(l.email || '')}">${escapeHtml(l.email || '')}</a></td>
       <td><span class="badge" style="background:${statusColor};">${statusLabel}</span></td>
@@ -891,7 +933,7 @@ function leadRowHTML(l) {
       <td class="text-end">
         <div class="d-flex gap-1 justify-content-end">
           ${resultLink}
-          <button type="button" class="btn btn-sm btn-outline-primary convertLeadBtn" data-id="${l.id}" title="Maak project aan" aria-label="Maak project aan"><i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i></button>
+          ${action}
         </div>
       </td>
     </tr>`;
@@ -910,6 +952,38 @@ function wireLeadActions(el) {
           window.location.href = `project-edit.html?project=${projectId}`;
         } catch (e) {
           showToast('Fout: ' + (e.message || e), 'danger');
+        }
+      });
+    });
+  });
+  el.querySelectorAll('.deleteLeadBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Lead verwijderen? Hij wordt soft-deleted en blijft herstelbaar via "Toon verwijderde".')) return;
+      await withSpinner(async () => {
+        try { await softDeleteLead(btn.dataset.id); await refreshLeads(); }
+        catch (err) { showToast('Kon niet verwijderen: ' + (err && err.message ? err.message : err), 'danger'); }
+      });
+    });
+  });
+  el.querySelectorAll('.restoreLeadBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await withSpinner(async () => {
+        try { await restoreLead(btn.dataset.id); await refreshLeads(); }
+        catch (err) { showToast('Kon niet herstellen: ' + (err && err.message ? err.message : err), 'danger'); }
+      });
+    });
+  });
+  el.querySelectorAll('.permdelLeadBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id   = btn.dataset.id;
+      const name = btn.dataset.name || '(lead)';
+      if (!confirm(`Definitief verwijderen van lead '${name}'?\n\nDe lead-data wordt permanent gewist. Dit kan niet ongedaan worden.`)) return;
+      btn.disabled = true;
+      await withSpinner(async () => {
+        try { await hardDeleteLead(id); await refreshLeads(); }
+        catch (err) {
+          showToast('Definitief verwijderen mislukt: ' + (err && err.message ? err.message : err), 'danger');
+          btn.disabled = false;
         }
       });
     });
