@@ -29,7 +29,14 @@ markeert de lead als `status: 'converted'` met `projectId`, en navigeert naar
 `project-edit.html?project=<id>`. Lead-document velden: `customerName`, `email`,
 `status` (`cold_lead` | `hot_lead` | `converted`), `createdAt`, `pvInverterKw`,
 `pricePerKwh`, `effectiveBtw`, `notes`, optioneel `csvDailyCompact`,
-`convertedAt`, `projectId`.
+`convertedAt`, `projectId`. Wanneer de lead-wizard een `result.bestConfigType`
+heeft berekend, schrijft `convertLeadToProject` ook
+`pendingConfigTypes: [type]` op het project-doc; `index.html` leest dat veld
+in de `csvUpload && !lastCalcRun` tak en pre-selecteert de config-picker zodat
+Kevin/Ruben enkel nog op Bereken hoeven te klikken. Het veld is dormant zodra
+`lastCalcRun` bestaat (geen cleanup nodig). De leads-card blijft altijd
+zichtbaar zodra `listLeads()` slaagt — ook bij lege lijst — zodat de "Toon
+verwijderde" toggle bereikbaar blijft om soft-deleted leads te herstellen.
 
 **Kanban-bord view (2026-04-20)** — Alternatieve dashboard-view via "🗂 Bord" toggle; keuze in localStorage `smartpeak.dashboardView`. 5 kolommen gemapd op `PROJECT_PHASES` (Nieuw / Bezoek / Offerte / Uitvoering / Afgesloten) die de 16 statussen groeperen via `phaseForStatus()`. Native HTML5 drag-drop: kaart slepen naar kolom → `updateProjectStatus(id, phase.statuses[0])` (eerste status van die fase). Fijnregeling binnen de fase via de status-chip-klik op de kaart (zelfde popover als in lijst-view). Soft-deleted projecten komen niet in het bord; filter "Toon verwijderde" is lijst-only.
 

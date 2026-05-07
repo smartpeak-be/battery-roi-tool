@@ -913,10 +913,8 @@ async function refreshLeads() {
     const all = await listLeads();
     _leadsCache.active  = all.filter(l => !l.deletedAt);
     _leadsCache.deleted = all.filter(l =>  l.deletedAt);
-    if (!_leadsCache.active.length && !_leadsCache.deleted.length) {
-      card.style.display = 'none';
-      return;
-    }
+    // Card stays visible even when empty so deleted leads remain restorable
+    // via the "Toon verwijderde" toggle.
     card.style.display = '';
     renderLeads();
   } catch (e) {
@@ -938,7 +936,10 @@ function renderLeads() {
   ].join('');
 
   if (!rows) {
-    el.innerHTML = '<p class="sp-empty-state">Geen openstaande leads.</p>';
+    const hint = (!showDeleted && _leadsCache.deleted.length)
+      ? ` Vink <em>Toon verwijderde</em> aan om verwijderde leads (${_leadsCache.deleted.length}) te zien.`
+      : '';
+    el.innerHTML = `<p class="sp-empty-state">Geen openstaande leads.${hint}</p>`;
     return;
   }
   el.innerHTML = `

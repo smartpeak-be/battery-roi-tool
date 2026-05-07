@@ -20,7 +20,14 @@ test.describe('Lead to project conversion', () => {
       pvInverterKw: 3.5,
       pricePerKwh: 0.34,
       effectiveBtw: 21,
-      notes: 'E2E test lead'
+      notes: 'E2E test lead',
+      result: {
+        bestConfigType: 'E2E_TestConfig_BestROI',
+        batteryCapKwh: 10,
+        batteryInverterKw: 5,
+        roiYears: 6.5,
+        annualSavingEur: 1200
+      }
     });
     leadId = ref.id;
     console.log(`[setup] Created test lead: ${leadId}`);
@@ -94,6 +101,8 @@ test.describe('Lead to project conversion', () => {
     // in the dashboard list.
     expect(projectData.deletedAt).toBeNull();
     expect(projectData.createdBy).toBeTruthy();
+    // Lead's best-ROI config is carried forward so the calculator opens preselected.
+    expect(projectData.pendingConfigTypes).toEqual(['E2E_TestConfig_BestROI']);
 
     // Confirm the project actually shows up in the same query the dashboard uses.
     const activeSnap = await db.collection('projects')

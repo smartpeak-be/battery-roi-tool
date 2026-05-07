@@ -1060,6 +1060,11 @@ async function convertLeadToProject(lead) {
   if (lead.effectiveBtw) {
     projectData.site = { houseAgeOver10Years: lead.effectiveBtw === 6 };
   }
+  // Carry the lead's best-ROI config forward so the calculator opens
+  // with it preselected (read by index.html when !lastCalcRun).
+  if (lead.result && lead.result.bestConfigType) {
+    projectData.pendingConfigTypes = [lead.result.bestConfigType];
+  }
 
   const db  = getDb();
   const ref = await db.collection('projects').add(projectData);
