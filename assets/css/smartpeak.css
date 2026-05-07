@@ -493,6 +493,28 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   outline-offset: 2px;
 }
 
+/* ── 5. Pagination bar for project list ──────────────────────────────────── */
+
+.sp-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+.sp-pagination-info {
+  font-size: 0.88rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sp-pagination .btn:focus-visible {
+  outline: 2px solid var(--bs-primary, #2c7be5);
+  outline-offset: 2px;
+}
+
 /* ── 6. Lead wizard ─────────────────────────────────────────────────────── */
 
 .sp-wizard-steps {

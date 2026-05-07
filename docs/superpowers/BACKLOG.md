@@ -102,7 +102,12 @@ Status: `[ ]` open · `[~]` bezig · `[x]` klaar
       Eager `<script>` tag verwijderd (~206 KB). `_loadChartJs()` laadt
       Chart.js dynamisch bij eerste aanroep van `renderEnergyChart()`.
       Deduplicatie via `_chartJsPromise`. Graceful fallback bij CDN-fout.
-- [ ] **E4. Pagination in projectlijst** (bij groei > 50 projecten)
+- [x] **E4. Pagination in projectlijst** (bij groei > 50 projecten)
+      Client-side paginering in lijst-view: `PAGE_SIZE = 25`, Vorige/Volgende
+      knoppen + "pagina X / Y (N projecten)" indicator. Pagina reset bij
+      zoeken, filter-wijziging, of Firestore-refresh. Kanban-bord toont
+      alle projecten (kolommen segmenteren al per fase). CSS in
+      `smartpeak.css` (`.sp-pagination`).
 
 ---
 
