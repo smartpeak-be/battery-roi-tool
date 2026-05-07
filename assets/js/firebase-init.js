@@ -1025,9 +1025,26 @@ async function createMailDoc(mailData) {
  * `csvUpload.dailyCompact` (where the calculator reads it) and email lives
  * on `customer.email` (where the drawer / project-edit form read it).
  */
-async function convertLeadToProject(lead) {
+async function convertLeadToProject(lead, opts = {}) {
   const email = currentUserEmail();
   const now   = firebase.firestore.FieldValue.serverTimestamp();
+
+  // Prepend a one-line lead-analysis summary to notes whenever the wizard
+  // calculated a winning config — so Kevin/Ruben see it at a glance in the
+  // drawer/edit form without opening the calculator.
+  let notes = lead.notes || '';
+  if (lead.result && lead.result.bestConfigType) {
+    const lr   = lead.result;
+    const roi  = (typeof lr.roiYears === 'number' && isFinite(lr.roiYears))
+      ? lr.roiYears.toFixed(1).replace('.', ',') + ' j'
+      : '?';
+    const save = (typeof lr.annualSavingEur === 'number' && isFinite(lr.annualSavingEur))
+      ? '€' + Math.round(lr.annualSavingEur).toLocaleString('nl-BE')
+      : '?';
+    const header = `[Lead-analyse] Beste config: ${lr.bestConfigType} — ROI ~${roi} (optimistisch), ~${save}/jaar besparing.`;
+    notes = notes ? `${header}\n\n${notes}` : header;
+  }
+
   const projectData = {
     customerName: lead.customerName || '',
     projectName:  '',
@@ -1036,13 +1053,17 @@ async function convertLeadToProject(lead) {
     createdAt:    now,
     updatedAt:    now,
     deletedAt:    null,
-    notes:        lead.notes || '',
+    notes,
     csvUpload:    lead.csvDailyCompact ? {
       uploadedAt:   now,
       uploadedBy:   email,
       dailyCompact: lead.csvDailyCompact,
     } : null,
-    lastCalcRun:  null,
+    // Caller may precompute the full ROI run so the project opens with
+    // results already rendered (no manual Bereken needed). Falls back to
+    // null when precompute wasn't possible — pendingConfigTypes still
+    // seeds the picker in that case.
+    lastCalcRun:  opts.lastCalcRun || null,
   };
   if (lead.email) {
     projectData.customer = { email: lead.email };
@@ -1059,6 +1080,11 @@ async function convertLeadToProject(lead) {
   }
   if (lead.effectiveBtw) {
     projectData.site = { houseAgeOver10Years: lead.effectiveBtw === 6 };
+  }
+  // Carry the lead's best-ROI config forward so the calculator opens
+  // with it preselected (read by index.html when !lastCalcRun).
+  if (lead.result && lead.result.bestConfigType) {
+    projectData.pendingConfigTypes = [lead.result.bestConfigType];
   }
 
   const db  = getDb();

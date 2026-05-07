@@ -33,6 +33,20 @@ import { escapeHtml, showToast } from './assets/js/shared-helpers.js';
 
 const container = document.getElementById('resultContainer');
 
+let _chartJsPromise = null;
+function loadChartJs() {
+  if (typeof Chart !== 'undefined') return Promise.resolve();
+  if (_chartJsPromise) return _chartJsPromise;
+  _chartJsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Chart.js kon niet laden'));
+    document.head.appendChild(s);
+  });
+  return _chartJsPromise;
+}
+
 (async function loadResult() {
   const params = new URLSearchParams(window.location.search);
   const leadId = params.get('r');
@@ -50,65 +64,228 @@ const container = document.getElementById('resultContainer');
     }
 
     if (!lead.result) {
-      // Not profitable
-      container.innerHTML = `
-        <div class="sp-result-card text-center">
-          <h5 class="mb-3">Jouw batterij-analyse</h5>
-          <p>Op basis van je verbruiksdata is een thuisbatterij momenteel niet rendabel. Dit kan veranderen bij hogere energieprijzen of een ander verbruikspatroon.</p>
-        </div>
-        ${renderDisclaimer(lead)}
-        ${renderCTA(lead)}
-      `;
+      container.innerHTML = renderNotProfitable(lead);
       wireCTA(leadId, lead);
       return;
     }
 
-    const r = lead.result;
-    container.innerHTML = `
-      <div class="sp-result-card">
-        <h5 class="text-center mb-4">Jouw batterij-analyse</h5>
-        <div class="sp-result-metrics">
-          <div>
-            <div class="sp-result-metric-value">${fmtNl(r.batteryCapKwh, 1)} kWh</div>
-            <div class="sp-result-metric-label">Opslagcapaciteit</div>
-          </div>
-          <div>
-            <div class="sp-result-metric-value">${fmtNl(r.batteryInverterKw, 1)} kW</div>
-            <div class="sp-result-metric-label">Omvormvermogen</div>
-          </div>
-          <div>
-            <div class="sp-result-metric-value">${fmtNl(r.roiYears, 1)} jaar</div>
-            <div class="sp-result-metric-label">Terugverdientijd</div>
-          </div>
-        </div>
-        <div class="sp-result-bars">
-          <div class="sp-result-bar-label">
-            <span>Volledige lading</span>
-            <span>${fmtNl(r.recoveryPctFull, 1)}%</span>
-          </div>
-          <div class="sp-result-bar">
-            <div class="sp-result-bar-fill full" style="width:${Math.min(r.recoveryPctFull, 100)}%"></div>
-          </div>
-          <div class="sp-result-bar-label">
-            <span>Gedeeltelijke lading</span>
-            <span>${fmtNl(r.recoveryPctPartial, 1)}%</span>
-          </div>
-          <div class="sp-result-bar">
-            <div class="sp-result-bar-fill partial" style="width:${Math.min(r.recoveryPctPartial, 100)}%"></div>
-          </div>
-        </div>
-      </div>
-      ${renderDisclaimer(lead)}
-      ${renderCTA(lead)}
-    `;
-    wireCTA(leadId, lead);
+    container.innerHTML = renderProfitable(lead);
+    wireCTA(leadId, lead, 'btnContact');
+    wireCTA(leadId, lead, 'btnContactBottom');
+    if (lead.csvDailyCompact) {
+      // Render the chart after the DOM is in place; failure is silent (the card hides itself).
+      renderUsageChart(lead).catch(err => {
+        console.warn('[lead-result] chart render failed:', err);
+        const wrap = document.getElementById('usageChartCard');
+        if (wrap) wrap.style.display = 'none';
+      });
+    }
   } catch (e) {
     container.innerHTML = `<p class="text-center text-danger py-5">Kon resultaat niet laden: ${escapeHtml(e.message || String(e))}</p>`;
   }
 })();
 
-function fmtNl(n, decimals = 1) {
-  return Number(n).toFixed(decimals).replace('.', ',');
+// ── Renderers ────────────────────────────────────────────────────────────────
+
+function renderProfitable(lead) {
+  const r = lead.result;
+  const savingEur   = Math.round(r.annualSavingEur || 0);
+  const totalSelfPct = Math.max(0, Math.min(100, (r.recoveryPctFull || 0) + (r.recoveryPctPartial || 0)));
+  const gridLeftPct  = Math.max(0, 100 - totalSelfPct);
+
+  // Annual kWh covered by the battery, derived from csvDailyCompact for display under the bar.
+  let annualBatteryKwh = null;
+  if (lead.csvDailyCompact && Array.isArray(lead.csvDailyCompact.afname)) {
+    const totalAfname = lead.csvDailyCompact.afname.reduce((s, v) => s + (v || 0), 0);
+    const days        = lead.csvDailyCompact.afname.length;
+    const annualAfname = days > 0 ? totalAfname * (365 / days) : 0;
+    annualBatteryKwh   = Math.round(annualAfname * (totalSelfPct / 100));
+  }
+
+  return `
+    ${heroCard(savingEur, r)}
+    ${solutionCard(r)}
+    ${selfConsumptionCard(totalSelfPct, gridLeftPct, annualBatteryKwh)}
+    ${usageChartCard(lead)}
+    ${ctaCard('btnContact', 'Plan een vrijblijvend gesprek', 'Wij rekenen het exact uit voor jouw woning')}
+    ${faqCard()}
+    ${packageCard()}
+    ${ctaCard('btnContactBottom', 'Plan een vrijblijvend gesprek', 'Klaar voor de volgende stap?')}
+    ${renderDisclaimer(lead)}
+  `;
+}
+
+function renderNotProfitable(lead) {
+  return `
+    <div class="sp-result-card text-center">
+      <h5 class="mb-3">Jouw batterij-analyse</h5>
+      <p class="mb-3">Op basis van je huidige verbruiksprofiel verdient een thuisbatterij zich vandaag nog niet binnen een redelijke termijn terug.</p>
+      <p class="mb-0 text-start">Dat kan veranderen wanneer:</p>
+      <ul class="text-start">
+        <li>de energieprijzen stijgen,</li>
+        <li>je elektriciteitsverbruik toeneemt (bv. warmtepomp of elektrische wagen),</li>
+        <li>de injectievergoeding verder daalt.</li>
+      </ul>
+      <p class="mb-0">We bekijken graag samen of er andere opties zijn voor jouw situatie.</p>
+    </div>
+    ${ctaCard('btnContact', 'Plan een vrijblijvend gesprek', 'We denken graag mee')}
+    ${renderDisclaimer(lead)}
+  `;
+}
+
+function heroCard(savingEur, r) {
+  const savingTxt = savingEur.toLocaleString('nl-BE');
+  const roiTxt    = isFinite(r.roiYears) ? fmtNl(r.roiYears, 1) : '—';
+  return `
+    <div class="sp-result-card sp-hero-card text-center">
+      <div class="sp-hero-eyebrow">Op basis van jouw eigen verbruik</div>
+      <div class="sp-hero-amount">€${savingTxt}<span class="sp-hero-amount-unit"> per jaar</span></div>
+      <div class="sp-hero-subtitle">bespaar je op je elektriciteitsfactuur</div>
+      <div class="sp-hero-roi">
+        <i class="fa-solid fa-piggy-bank" aria-hidden="true"></i>
+        Terugverdiend in ~${roiTxt} jaar — daarna verdient de batterij elk jaar voor jou.
+      </div>
+    </div>
+  `;
+}
+
+function solutionCard(r) {
+  return `
+    <div class="sp-result-card">
+      <h5 class="text-center mb-1">Jouw aanbevolen oplossing</h5>
+      <p class="text-center text-muted small mb-4">Configuratie ${escapeHtml(r.bestConfigType || '')}</p>
+      <div class="sp-result-metrics">
+        <div class="sp-metric-tile">
+          <div class="sp-result-metric-value">${fmtNl(r.batteryCapKwh, 1)} kWh</div>
+          <div class="sp-result-metric-label">Opslagcapaciteit</div>
+          <div class="sp-metric-detail">Genoeg voor een avond koken, wassen en TV-kijken op opgeslagen zonne-energie.</div>
+        </div>
+        <div class="sp-metric-tile">
+          <div class="sp-result-metric-value">${fmtNl(r.batteryInverterKw, 1)} kW</div>
+          <div class="sp-result-metric-label">Omvormvermogen</div>
+          <div class="sp-metric-detail">Snel genoeg om je piekverbruik op te vangen, ook als de waterkoker en oven samen draaien.</div>
+        </div>
+        <div class="sp-metric-tile">
+          <div class="sp-result-metric-value">${fmtNl(r.roiYears, 1)} jaar</div>
+          <div class="sp-result-metric-label">Terugverdientijd</div>
+          <div class="sp-metric-detail">Vanaf dan verdient de batterij elk jaar geld op je energiefactuur.</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function selfConsumptionCard(selfPct, gridPct, annualKwh) {
+  // Hide the per-segment label if its slice is too narrow to read inside the bar (< 15%).
+  const selfLabelInside = selfPct >= 15;
+  const gridLabelInside = gridPct >= 15;
+  const kwhLine = (annualKwh != null && annualKwh > 0)
+    ? `<p class="sp-self-summary"><strong>${annualKwh.toLocaleString('nl-BE')} kWh per jaar</strong> uit jouw eigen zonne-energie in plaats van het net.</p>`
+    : '';
+  return `
+    <div class="sp-result-card">
+      <h5 class="text-center mb-2">Hoeveel stroom haal je straks uit jouw eigen batterij?</h5>
+      <p class="text-center text-muted small mb-4">Vandaag komt al jouw avond- en nachtverbruik van het net. Met de batterij vang je de zonne-energie op die je nu gratis weggeeft.</p>
+      <div class="sp-self-bar" role="img" aria-label="${fmtNl(selfPct, 0)}% uit eigen batterij, ${fmtNl(gridPct, 0)}% nog van het net">
+        <div class="sp-self-bar-fill battery" style="width:${selfPct}%">
+          ${selfLabelInside ? `<span class="sp-self-bar-label">${fmtNl(selfPct, 0)}%</span>` : ''}
+        </div>
+        <div class="sp-self-bar-fill grid" style="width:${gridPct}%">
+          ${gridLabelInside ? `<span class="sp-self-bar-label">${fmtNl(gridPct, 0)}%</span>` : ''}
+        </div>
+      </div>
+      <div class="sp-self-legend">
+        <span><span class="sp-self-dot battery"></span> Eigen batterij</span>
+        <span><span class="sp-self-dot grid"></span> Nog van het net</span>
+      </div>
+      ${kwhLine}
+    </div>
+  `;
+}
+
+function usageChartCard(lead) {
+  if (!lead.csvDailyCompact || !Array.isArray(lead.csvDailyCompact.afname)) return '';
+  const days = lead.csvDailyCompact.afname.length;
+  const periodTxt = lead.result && lead.result.isFullYear
+    ? 'een volledig jaar'
+    : `${days} dagen`;
+  return `
+    <div class="sp-result-card" id="usageChartCard">
+      <h5 class="text-center mb-2">Berekend op jouw cijfers</h5>
+      <p class="text-center text-muted small mb-4">Geen algemene gemiddelden — deze analyse gebruikt <strong>${periodTxt}</strong> van jouw eigen Fluvius-data.</p>
+      <div class="sp-chart-wrap">
+        <canvas id="usageChart" aria-label="Maandelijks verbruik en injectie"></canvas>
+      </div>
+      <p class="sp-chart-caption">Het <span style="color:#16a34a;font-weight:600;">groen</span> is de zonne-energie die je nu naar het net stuurt. Het <span style="color:#dc2626;font-weight:600;">rood</span> is wat je later weer afneemt. De batterij vult dat gat in.</p>
+    </div>
+  `;
+}
+
+function ctaCard(btnId, btnText, eyebrow) {
+  return `
+    <div class="sp-result-card sp-cta-card text-center">
+      ${eyebrow ? `<div class="sp-cta-eyebrow">${escapeHtml(eyebrow)}</div>` : ''}
+      <button type="button" class="btn btn-primary btn-lg sp-cta-button" id="${btnId}">
+        <i class="fa-solid fa-phone" aria-hidden="true"></i> ${escapeHtml(btnText)}
+      </button>
+      <p class="sp-cta-sub">Geen verplichting · Plaatsbezoek gratis · Antwoord binnen 24&nbsp;uur</p>
+    </div>
+  `;
+}
+
+function faqCard() {
+  const items = [
+    {
+      q: 'Wat als er stroomuitval is?',
+      a: 'De meeste batterijen die wij installeren hebben optionele backup-functionaliteit. Bij een stroomonderbreking blijven essentiële kringen — verlichting, koelkast, internet — gewoon werken. Tijdens het plaatsbezoek bekijken we welke setup bij jouw situatie past.'
+    },
+    {
+      q: 'Hoe lang gaat een thuisbatterij mee?',
+      a: 'Een moderne lithium-batterij gaat doorgaans 12 tot 15 jaar mee, ruim langer dan de terugverdientijd. Wij werken enkel met merken die minimaal 10 jaar fabrieksgarantie of een gegarandeerd aantal laadcycli aanbieden.'
+    },
+    {
+      q: 'Hoeveel ruimte heb ik nodig?',
+      a: 'De batterij is ongeveer zo groot als een smalle koelkast en wordt aan de muur of op de grond geplaatst. Binnen of in de garage volstaat — droog en op kamertemperatuur. Tijdens het bezoek bepalen we samen de beste plek.'
+    },
+    {
+      q: 'Werkt dit met mijn bestaande zonnepanelen?',
+      a: 'Ja. We sluiten de batterij parallel aan op je elektriciteitskast — je bestaande omvormer en panelen hoeven niet vervangen te worden. We controleren wel of je zekeringskast en aansluiting geschikt zijn.'
+    }
+  ];
+  const itemsHtml = items.map((it, i) => `
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="faqHead${i}">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#faqBody${i}" aria-expanded="false" aria-controls="faqBody${i}">
+          ${escapeHtml(it.q)}
+        </button>
+      </h2>
+      <div id="faqBody${i}" class="accordion-collapse collapse" aria-labelledby="faqHead${i}" data-bs-parent="#leadFaq">
+        <div class="accordion-body">${escapeHtml(it.a)}</div>
+      </div>
+    </div>
+  `).join('');
+  return `
+    <div class="sp-result-card">
+      <h5 class="text-center mb-3">Veelgestelde vragen</h5>
+      <div class="accordion" id="leadFaq">${itemsHtml}</div>
+    </div>
+  `;
+}
+
+function packageCard() {
+  return `
+    <div class="sp-result-card">
+      <h5 class="text-center mb-3">Wat zit in de prijs?</h5>
+      <ul class="sp-package-list">
+        <li><i class="fa-solid fa-check icon-ok"></i> Levering van de batterij en bijhorende componenten</li>
+        <li><i class="fa-solid fa-check icon-ok"></i> Plaatsing en aansluiting in de zekeringskast</li>
+        <li><i class="fa-solid fa-check icon-ok"></i> Configuratie van laad- en ontlaadschema's voor maximale besparing</li>
+        <li><i class="fa-solid fa-check icon-ok"></i> Bebat-bijdragen</li>
+        <li><i class="fa-solid fa-check icon-ok"></i> Verplichte AREI-keuring na installatie</li>
+      </ul>
+    </div>
+  `;
 }
 
 function renderDisclaimer(lead) {
@@ -118,39 +295,126 @@ function renderDisclaimer(lead) {
     if (lead.defaultsUsed.pricePerKwh) defaults.push('<li>Energiekost: standaardwaarde 0,34 EUR/kWh gebruikt</li>');
     if (lead.defaultsUsed.houseAgeOver10Years) defaults.push('<li>BTW: 21% (woningtype niet opgegeven)</li>');
   }
-  const defaultsHtml = defaults.length ? `<ul>${defaults.join('')}</ul>` : '';
+  const defaultsHtml = defaults.length ? `<p class="mb-1 mt-2"><small>Aannames:</small></p><ul>${defaults.join('')}</ul>` : '';
   return `
     <div class="sp-lead-disclaimer">
-      <p class="mb-1">Deze berekening is gebaseerd op jouw eigen verbruiksdata en omvat het volledige SmartPeak-pakket: plaatsing, aansluiting in de kast, Bebat-bijdragen, elektriciteitsschema&rsquo;s en keuring. Andere opties zijn mogelijk.</p>
       ${defaultsHtml}
-      <p class="mb-0 mt-2"><small>Dit resultaat is een indicatie op basis van de beschikbare gegevens. Voor een nauwkeurige berekening op maat nemen we graag contact met je op.</small></p>
+      <p class="mb-0"><small>Dit resultaat is een indicatie op basis van de beschikbare gegevens en gebruikt het optimistische scenario. Voor een nauwkeurige berekening op maat nemen we graag contact met je op.</small></p>
     </div>
   `;
 }
 
-function renderCTA(lead) {
-  if (lead.status === 'hot_lead') {
-    return `<div class="sp-lead-cta">
-      <p class="sp-lead-cta-done"><i class="fa-solid fa-circle-check"></i> Aanvraag ontvangen — we nemen snel contact op!</p>
-    </div>`;
+// ── Chart ────────────────────────────────────────────────────────────────────
+
+async function renderUsageChart(lead) {
+  await loadChartJs();
+  const dc = lead.csvDailyCompact;
+  if (!dc || !dc.startDate || !Array.isArray(dc.afname) || dc.afname.length === 0) {
+    const wrap = document.getElementById('usageChartCard');
+    if (wrap) wrap.style.display = 'none';
+    return;
   }
-  return `<div class="sp-lead-cta">
-    <button type="button" class="btn btn-primary btn-lg" id="btnContact">
-      <i class="fa-solid fa-phone" aria-hidden="true"></i> Contacteer mij voor een vrijblijvend gesprek
-    </button>
-  </div>`;
+
+  // Bucket per month from the daily arrays.
+  const start = new Date(dc.startDate + 'T00:00:00');
+  const buckets = new Map(); // 'YYYY-MM' → { afname, injectie, label }
+  for (let i = 0; i < dc.afname.length; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!buckets.has(key)) {
+      buckets.set(key, { afname: 0, injectie: 0, label: monthShortLabel(d) });
+    }
+    const b = buckets.get(key);
+    b.afname   += dc.afname[i]   || 0;
+    b.injectie += dc.injectie[i] || 0;
+  }
+
+  const months = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  // Show at most the last 12 months for visual clarity.
+  const trimmed = months.length > 12 ? months.slice(-12) : months;
+  const labels  = trimmed.map(([, v]) => v.label);
+  const afname  = trimmed.map(([, v]) => Math.round(v.afname));
+  const inj     = trimmed.map(([, v]) => Math.round(v.injectie));
+
+  const ctx = document.getElementById('usageChart');
+  if (!ctx) return;
+
+  // eslint-disable-next-line no-undef
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Afname (van het net)',
+          data: afname,
+          borderColor: '#dc2626',
+          backgroundColor: 'rgba(220,38,38,0.10)',
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2,
+          pointRadius: 3
+        },
+        {
+          label: 'Injectie (naar het net)',
+          data: inj,
+          borderColor: '#16a34a',
+          backgroundColor: 'rgba(22,163,74,0.10)',
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2,
+          pointRadius: 3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 14 } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('nl-BE')} kWh`
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { callback: (v) => v.toLocaleString('nl-BE') + ' kWh' }
+        }
+      }
+    }
+  });
 }
 
-function wireCTA(leadId, lead) {
-  const btn = document.getElementById('btnContact');
+function monthShortLabel(d) {
+  const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+  return `${months[d.getMonth()]} '${String(d.getFullYear()).slice(-2)}`;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtNl(n, decimals = 1) {
+  return Number(n).toFixed(decimals).replace('.', ',');
+}
+
+function wireCTA(leadId, lead, btnId = 'btnContact') {
+  const btn = document.getElementById(btnId);
   if (!btn) return;
+  // If the lead is already hot, swap the button for the confirmation right away.
+  if (lead.status === 'hot_lead') {
+    btn.parentElement.innerHTML = '<p class="sp-lead-cta-done"><i class="fa-solid fa-circle-check"></i> Aanvraag ontvangen — we nemen snel contact op!</p>';
+    return;
+  }
   btn.addEventListener('click', async () => {
-    btn.disabled = true;
+    const allButtons = document.querySelectorAll('.sp-cta-button');
+    allButtons.forEach(b => { b.disabled = true; });
     btn.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Even geduld...';
     try {
       await updateLeadToHot(leadId);
-
-      // Send notification email to Kevin/Ruben
       await createMailDoc({
         to: ['kevin@bloxit.be', 'ledsrepair@gmail.com'],
         message: {
@@ -163,14 +427,14 @@ function wireCTA(leadId, lead) {
                  <p><a href="https://smartpeak-be.github.io/battery-roi-tool/dashboard.html">Open dashboard</a></p>`
         }
       });
-
-      // Replace button with confirmation
-      const ctaDiv = btn.parentElement;
-      ctaDiv.innerHTML = '<p class="sp-lead-cta-done"><i class="fa-solid fa-circle-check"></i> Aanvraag ontvangen — we nemen snel contact op!</p>';
+      // Replace every CTA card with the confirmation message so neither button can be clicked again.
+      document.querySelectorAll('.sp-cta-card').forEach(card => {
+        card.innerHTML = '<p class="sp-lead-cta-done mb-0"><i class="fa-solid fa-circle-check"></i> Aanvraag ontvangen — we nemen snel contact op!</p>';
+      });
     } catch (e) {
       showToast('Er ging iets mis. Probeer opnieuw.', 'danger');
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fa-solid fa-phone" aria-hidden="true"></i> Contacteer mij voor een vrijblijvend gesprek';
+      allButtons.forEach(b => { b.disabled = false; });
+      btn.innerHTML = '<i class="fa-solid fa-phone" aria-hidden="true"></i> Plan een vrijblijvend gesprek';
     }
   });
 }

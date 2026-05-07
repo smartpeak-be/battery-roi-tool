@@ -2149,7 +2149,11 @@ async function loadProjectIntoUI(id) {
       }
     } else if (proj.csvUpload && !proj.lastCalcRun) {
       // CSV present but never calculated — load the form values (if any) but don't auto-render results.
-      // User clicks Bereken when ready.
+      // User clicks Bereken when ready. If the project carries a pending config seed
+      // (e.g. from lead conversion), load configs and preselect it so the picker is ready.
+      if (Array.isArray(proj.pendingConfigTypes) && proj.pendingConfigTypes.some(t => t)) {
+        loadConfigs().then(() => _populateConfigSelects(proj.pendingConfigTypes)).catch(() => {});
+      }
     } else {
       // No CSV at all — show the upload prompt.
       document.getElementById('projectMissingCsv').style.display = '';

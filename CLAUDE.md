@@ -29,7 +29,26 @@ markeert de lead als `status: 'converted'` met `projectId`, en navigeert naar
 `project-edit.html?project=<id>`. Lead-document velden: `customerName`, `email`,
 `status` (`cold_lead` | `hot_lead` | `converted`), `createdAt`, `pvInverterKw`,
 `pricePerKwh`, `effectiveBtw`, `notes`, optioneel `csvDailyCompact`,
-`convertedAt`, `projectId`.
+`convertedAt`, `projectId`. Wanneer de lead-wizard een `result.bestConfigType`
+heeft berekend, prependt `convertLeadToProject` een eenregelige
+`[Lead-analyse] Beste config: … — ROI … j, ~€…/jaar` header aan
+`projectData.notes`, en schrijft daarnaast `pendingConfigTypes: [type]` op
+het project-doc; `index.html` leest dat veld in de `csvUpload && !lastCalcRun`
+tak en pre-selecteert de config-picker. **Volledige precompute-pad
+(2026-05-07):** Het dashboard's `wireLeadActions` roept eerst
+`precomputeLastCalcRunForLead(lead)` aan dat de Google-Sheet configs ophaalt,
+de chosen config opzoekt, `buildAllDaysFromDailyCompact` + `processDataPure`
+draait, en het resultaat via `serializeDForLastCalcRun` (calc-engine.js) in de
+`lastCalcRun` shape giet. Slaagt dat → de nieuwe project-doc krijgt
+`lastCalcRun: { calculatedAt, calculatedBy, inputs, results }` direct
+ingevuld zodat de calculator bij openen meteen volledige resultaten toont
+(geen Bereken-klik nodig). Faalt 't (geen CSV op lead, sheet onbereikbaar,
+config niet meer in sheet, processDataPure throws) → `lastCalcRun: null` en
+de `pendingConfigTypes`-fallback zorgt dat enkel de picker preselecteerd is.
+Het pendingConfigTypes-veld is dormant zodra `lastCalcRun` bestaat (geen
+cleanup nodig). De leads-card blijft altijd zichtbaar zodra `listLeads()`
+slaagt — ook bij lege lijst — zodat de "Toon verwijderde" toggle bereikbaar
+blijft om soft-deleted leads te herstellen.
 
 **Kanban-bord view (2026-04-20)** — Alternatieve dashboard-view via "🗂 Bord" toggle; keuze in localStorage `smartpeak.dashboardView`. 5 kolommen gemapd op `PROJECT_PHASES` (Nieuw / Bezoek / Offerte / Uitvoering / Afgesloten) die de 16 statussen groeperen via `phaseForStatus()`. Native HTML5 drag-drop: kaart slepen naar kolom → `updateProjectStatus(id, phase.statuses[0])` (eerste status van die fase). Fijnregeling binnen de fase via de status-chip-klik op de kaart (zelfde popover als in lijst-view). Soft-deleted projecten komen niet in het bord; filter "Toon verwijderde" is lijst-only.
 
@@ -231,7 +250,7 @@ spec na deze iteratie.
 
 **Access model (2026-04-20)** — Drie access-tiers:
 1. **Bare `index.html`** is geen publieke entry. Top-of-body inline redirect naar `dashboard.html`. Kevin/Ruben komen altijd via dashboard of project-link binnen.
-2. **Product-sheet URL** leeft in Firestore `config/products.csvUrl` (niet meer hardcoded). Security rule: `allow read: if isWhitelisted()`, `allow write: if false`. `getProductsConfig()` in `firebase-init.js` haalt het op; `loadConfigs()` gebruikt dat in plaats van een constante. Zonder login → `loadConfigs` faalt → geen berekening mogelijk zelfs als je de redirect omzeilt.
+2. **Product-sheet URL** leeft in Firestore `config/products.csvUrl` (niet meer hardcoded). Security rule: `allow read: if docId == 'products' || isWhitelisted()` (publiek leesbaar omdat de lead-wizard `lead.html` ongeauthenticeerd dezelfde productlijst nodig heeft); `allow write: if false`. Andere `config/*` docs blijven whitelisted-only. `getProductsConfig()` in `firebase-init.js` haalt het op; `loadConfigs()` gebruikt dat in plaats van een constante.
 3. **Share-links** zijn klant-facing en activeren `body.readonly-mode` via `engageReadOnly()` na `_applyLoadedState`. CSS hide't Bereken, "Configuraties laden", "Kopieer deellink" en de share-URL row; inputs worden grijs met `pointer-events:none`. Resultaten blijven volledig leesbaar. Twee varianten:
    - `?s=<id>` — huidige variant: `createShare(payload, projectId)` schrijft het volledige v:5 snapshot (inputs + results + dailyCompact) naar Firestore `shares/<autoId>`. `getShare(id)` haalt het terug. Security rules: read = `true` (publiek), create/delete = `isWhitelisted()`, update = `false`. URL blijft kort ongeacht dataset-grootte.
    - `?data=<b64>` — legacy variant: base64 payload in URL. Nog ondersteund voor links die al in omloop zijn; wordt niet meer gegenereerd.

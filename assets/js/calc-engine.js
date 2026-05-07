@@ -184,6 +184,42 @@ export function csvToAllDaysAndMeta(csvText) {
   return { allDays, eanCode, meterNr, meterType };
 }
 
+// Convert a `d` (output of processDataPure) into the lastCalcRun.results shape
+// the project doc stores: ISO-stringified dates, no allDays/windowDays/dailyCompact.
+// (Per-day data lives at the top level of the project doc under csvUpload, so we
+// don't duplicate it here.) Mirrors the r-block of index.html's _serializeState
+// so buildSavedFromProject + _restoreState can hydrate the UI from the result.
+export function serializeDForLastCalcRun(d) {
+  return {
+    isFullYear: d.isFullYear,
+    windowStart: d.windowStart.toISOString().slice(0, 10),
+    lastDate: d.lastDate.toISOString().slice(0, 10),
+    firstDate: d.firstDate.toISOString().slice(0, 10),
+    daysInWindow: d.daysInWindow,
+    totalDaysCSV: d.allDays.length,
+    totalAfname: d.totalAfname,
+    totalInjectie: d.totalInjectie,
+    totalAfnamedag: d.totalAfnamedag,
+    totalAfnamenacht: d.totalAfnamenacht,
+    totalInjectiedag: d.totalInjectiedag,
+    totalInjectienacht: d.totalInjectienacht,
+    dualTariff: d.dualTariff,
+    priceDay: d.priceDay,
+    priceNight: d.dualTariff ? d.priceNight : null,
+    effectivePrice: d.effectivePrice,
+    pvInv: d.pvInv,
+    configResults: d.configResults,
+    monthMap: d.monthMap,
+    eanCode: d.eanCode,
+    meterNr: d.meterNr,
+    meterType: d.meterType,
+    capAnalysis: d.capAnalysis,
+    numYears: d.numYears != null ? d.numYears : 1,
+    yearsStart: d.yearsStart ? d.yearsStart.toISOString().slice(0, 10) : null,
+    avgTotals: d.avgTotals || null,
+  };
+}
+
 // Rebuild allDays array from a project's dailyCompact (Firestore-stored per-day data).
 // Mirrors the restore-path in _restoreState.
 export function buildAllDaysFromDailyCompact(dc) {
