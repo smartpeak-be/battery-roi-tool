@@ -991,44 +991,57 @@ async function createMailDoc(mailData) {
 /**
  * Convert a lead into a project. Creates a new project doc with data from the lead.
  * Returns the new project ID.
+ *
+ * The shape mirrors createProject() so the resulting doc passes the
+ * listActiveProjects() filter (`where('deletedAt','==',null)`) — Firestore
+ * excludes docs that lack the field entirely. CSV data is nested under
+ * `csvUpload.dailyCompact` (where the calculator reads it) and email lives
+ * on `customer.email` (where the drawer / project-edit form read it).
  */
 async function convertLeadToProject(lead) {
+  const email = currentUserEmail();
+  const now   = firebase.firestore.FieldValue.serverTimestamp();
   const projectData = {
     customerName: lead.customerName || '',
-    projectName: '',
-    status: 'nieuw_contact',
-    email: lead.email || '',
-    notes: lead.notes || '',
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    projectName:  '',
+    status:       'nieuw_contact',
+    createdBy:    email,
+    createdAt:    now,
+    updatedAt:    now,
+    deletedAt:    null,
+    notes:        lead.notes || '',
+    csvUpload:    lead.csvDailyCompact ? {
+      uploadedAt:   now,
+      uploadedBy:   email,
+      dailyCompact: lead.csvDailyCompact,
+    } : null,
+    lastCalcRun:  null,
   };
-  // Copy CSV data if available
-  if (lead.csvDailyCompact) {
-    projectData.csvDailyCompact = lead.csvDailyCompact;
+  if (lead.email) {
+    projectData.customer = { email: lead.email };
   }
-  // Copy calc-relevant fields
   if (lead.pvInverterKw) {
     projectData.solar = { inverters: [{ powerKw: lead.pvInverterKw }] };
   }
   if (lead.pricePerKwh) {
     projectData.supplier = {
       isSingleTariff: true,
-      priceDay: lead.pricePerKwh,
-      priceNight: lead.pricePerKwh
+      priceDay:       lead.pricePerKwh,
+      priceNight:     lead.pricePerKwh,
     };
   }
   if (lead.effectiveBtw) {
     projectData.site = { houseAgeOver10Years: lead.effectiveBtw === 6 };
   }
 
-  const db = getDb();
+  const db  = getDb();
   const ref = await db.collection('projects').add(projectData);
 
   // Mark the lead as converted so it disappears from the leads list
   await db.collection('leads').doc(lead.id).update({
-    status: 'converted',
+    status:      'converted',
     convertedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    projectId: ref.id
+    projectId:   ref.id,
   });
 
   return ref.id;
