@@ -858,7 +858,7 @@ async function refreshLeads() {
         <thead>
           <tr>
             <th>Naam</th>
-            <th>Email</th>
+            <th class="d-none d-sm-table-cell">Email</th>
             <th>Status</th>
             <th class="d-none d-sm-table-cell">Datum</th>
             <th class="text-end">Acties</th>
@@ -885,7 +885,7 @@ function leadRowHTML(l) {
   return `
     <tr>
       <td>${escapeHtml(l.customerName || '')}</td>
-      <td><a href="mailto:${escapeHtml(l.email || '')}">${escapeHtml(l.email || '')}</a></td>
+      <td class="d-none d-sm-table-cell text-break"><a href="mailto:${escapeHtml(l.email || '')}">${escapeHtml(l.email || '')}</a></td>
       <td><span class="badge" style="background:${statusColor};">${statusLabel}</span></td>
       <td class="d-none d-sm-table-cell text-muted small">${date}</td>
       <td class="text-end">
