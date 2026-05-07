@@ -84,8 +84,23 @@ test.describe('Lead to project conversion', () => {
     const db = getAdminFirestore();
     const projectDoc = await db.collection('projects').doc(projectId).get();
     expect(projectDoc.exists).toBe(true);
-    expect(projectDoc.data().customerName).toBe(testLeadName);
-    expect(projectDoc.data().email).toBe('e2e-test@example.com');
+    const projectData = projectDoc.data();
+    expect(projectData.customerName).toBe(testLeadName);
+    // Email lives under customer.email (where the drawer/project-edit form read it),
+    // not at the top level.
+    expect(projectData.customer?.email).toBe('e2e-test@example.com');
+    // Regression: deletedAt MUST exist and be null, otherwise listActiveProjects()
+    // (where('deletedAt','==',null)) excludes the doc and the project is invisible
+    // in the dashboard list.
+    expect(projectData.deletedAt).toBeNull();
+    expect(projectData.createdBy).toBeTruthy();
+
+    // Confirm the project actually shows up in the same query the dashboard uses.
+    const activeSnap = await db.collection('projects')
+      .where('deletedAt', '==', null)
+      .get();
+    const activeIds = activeSnap.docs.map(d => d.id);
+    expect(activeIds).toContain(projectId);
 
     // Verify lead was marked as converted
     const leadDoc = await db.collection('leads').doc(leadId).get();
