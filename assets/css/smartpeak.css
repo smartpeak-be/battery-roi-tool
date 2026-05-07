@@ -567,9 +567,181 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
 /* ── 7. Lead result page ────────────────────────────────────────────────── */
 
 .sp-lead-result {
-  max-width: 540px;
+  max-width: 760px;
   margin: 0 auto;
   padding: 24px 16px;
+}
+
+/* Hero card — big euro savings number above the fold */
+.sp-hero-card {
+  background: linear-gradient(135deg, #f0f7ff 0%, #ffffff 60%);
+  border: 1px solid #d9e6f7;
+  padding: 36px 24px 28px;
+}
+.sp-hero-eyebrow {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7a8d;
+  margin-bottom: 8px;
+}
+.sp-hero-amount {
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--bs-primary, #2c7be5);
+  line-height: 1.05;
+  margin-bottom: 4px;
+}
+.sp-hero-amount-unit {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #4a5a70;
+}
+.sp-hero-subtitle {
+  font-size: 1.05rem;
+  color: #4a5a70;
+  margin-bottom: 18px;
+}
+.sp-hero-roi {
+  font-size: 0.95rem;
+  color: #2c3e50;
+  background: rgba(44, 123, 229, 0.08);
+  border-radius: 999px;
+  padding: 8px 16px;
+  display: inline-block;
+}
+.sp-hero-roi i { margin-right: 6px; color: var(--bs-primary, #2c7be5); }
+
+/* Metric tile micro-uitleg */
+.sp-metric-tile {
+  flex: 1;
+  min-width: 0;
+}
+.sp-metric-detail {
+  font-size: 0.78rem;
+  color: #6b7a8d;
+  margin-top: 6px;
+  line-height: 1.35;
+}
+
+/* Self-consumption stacked bar */
+.sp-self-bar {
+  display: flex;
+  height: 36px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e9ecef;
+  margin-bottom: 10px;
+}
+.sp-self-bar-fill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: width 0.6s ease;
+  min-width: 0;
+}
+.sp-self-bar-fill.battery { background: linear-gradient(90deg, #2c7be5, #1f5fb5); }
+.sp-self-bar-fill.grid    { background: #adb5bd; }
+.sp-self-bar-label {
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+.sp-self-legend {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: #495057;
+  margin-bottom: 12px;
+}
+.sp-self-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.sp-self-dot.battery { background: #2c7be5; }
+.sp-self-dot.grid    { background: #adb5bd; }
+.sp-self-summary {
+  text-align: center;
+  font-size: 0.95rem;
+  color: #2c3e50;
+  margin: 0;
+}
+
+/* Eigen-data line chart */
+.sp-chart-wrap {
+  position: relative;
+  height: 280px;
+  margin-bottom: 10px;
+}
+.sp-chart-caption {
+  font-size: 0.85rem;
+  color: #495057;
+  text-align: center;
+  margin: 0;
+}
+
+/* Final CTA card */
+.sp-cta-card {
+  background: linear-gradient(135deg, #fff 0%, #f0f7ff 100%);
+  border: 1px solid #d9e6f7;
+  padding: 28px 24px;
+}
+.sp-cta-eyebrow {
+  font-size: 0.95rem;
+  color: #4a5a70;
+  margin-bottom: 14px;
+  font-weight: 500;
+}
+.sp-cta-button {
+  font-size: 1.1rem;
+  padding: 14px 36px;
+  font-weight: 600;
+}
+.sp-cta-sub {
+  font-size: 0.85rem;
+  color: #6b7a8d;
+  margin: 14px 0 0;
+}
+
+/* "Wat zit erbij" lijst */
+.sp-package-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.sp-package-list li {
+  padding: 8px 0;
+  font-size: 0.95rem;
+  color: #2c3e50;
+  border-bottom: 1px solid #f0f2f5;
+}
+.sp-package-list li:last-child { border-bottom: none; }
+.sp-package-list i { margin-right: 10px; }
+
+/* Mobile: stack metric tiles, shrink hero number */
+@media (max-width: 575px) {
+  .sp-result-metrics {
+    flex-direction: column;
+    gap: 0;
+  }
+  .sp-metric-tile {
+    padding: 12px 0;
+    border-bottom: 1px solid #f0f2f5;
+  }
+  .sp-metric-tile:last-child { border-bottom: none; }
+  .sp-hero-amount { font-size: 2.4rem; }
+  .sp-hero-amount-unit { font-size: 1.1rem; }
+  .sp-hero-card { padding: 28px 18px 22px; }
+  .sp-chart-wrap { height: 240px; }
 }
 
 .sp-result-card {
