@@ -180,6 +180,7 @@
 
 <script type="module">
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, showSpinner, updateSpinner, hideSpinner, withSpinner } from './assets/js/shared-helpers.js';
+import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from './assets/js/calc-engine.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
@@ -985,6 +986,64 @@ function leadRowHTML(l, isDeleted) {
     </tr>`;
 }
 
+// Re-run the wizard's chosen-config calc on the dashboard side and serialize
+// it into a project-shaped lastCalcRun, so the converted project opens with
+// results already rendered. Returns null on any failure — the caller treats
+// that as "no precompute" and falls back to pendingConfigTypes preselection.
+async function precomputeLastCalcRunForLead(lead) {
+  if (!lead.csvDailyCompact || !lead.result || !lead.result.bestConfigType) return null;
+
+  let configs;
+  try {
+    const cfg  = await getProductsConfig();
+    if (!cfg || !cfg.csvUrl) return null;
+    const resp = await fetch(cfg.csvUrl);
+    if (!resp.ok) return null;
+    configs = parseSheetConfigs(await resp.text());
+  } catch (e) {
+    console.warn('[lead-precompute] config fetch failed:', e);
+    return null;
+  }
+
+  const chosen = configs.find(c => c.type === lead.result.bestConfigType);
+  if (!chosen) return null;
+
+  const btw      = (lead.effectiveBtw === 6) ? 6 : 21;
+  const price    = chosen.prices[`${btw}_yes`];
+  if (!price || price <= 0) return null;
+
+  const pvKw    = (typeof lead.pvInverterKw === 'number' && lead.pvInverterKw > 0)
+    ? lead.pvInverterKw : 3.5;
+  const tariff  = (typeof lead.pricePerKwh  === 'number' && lead.pricePerKwh  > 0)
+    ? lead.pricePerKwh  : 0.34;
+
+  let d;
+  try {
+    const allDays = buildAllDaysFromDailyCompact(lead.csvDailyCompact);
+    // Single tariff: pass null for priceNight so dualTariff resolves to false
+    // and effectivePrice == priceDay.
+    d = processDataPure({ allDays }, pvKw, [{ ...chosen, price }], tariff, null);
+  } catch (e) {
+    console.warn('[lead-precompute] processDataPure threw:', e);
+    return null;
+  }
+  if (!d) return null;
+
+  return {
+    lastCalcRun: {
+      calculatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      calculatedBy: currentUserEmail() || 'lead-conversion',
+      inputs: {
+        pvInv:      pvKw,
+        priceDay:   tariff,
+        priceNight: null,
+        selectedConfigTypes: [chosen.type],
+      },
+      results: serializeDForLastCalcRun(d),
+    },
+  };
+}
+
 function wireLeadActions(el) {
   el.querySelectorAll('.convertLeadBtn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -993,7 +1052,8 @@ function wireLeadActions(el) {
         try {
           const lead = await getLead(btn.dataset.id);
           if (!lead) { showToast('Lead niet gevonden.', 'danger'); return; }
-          const projectId = await convertLeadToProject(lead);
+          const precomputed = await precomputeLastCalcRunForLead(lead);
+          const projectId = await convertLeadToProject(lead, precomputed || {});
           // Navigate directly (window.open gets blocked by popup blockers after async)
           window.location.href = `project-edit.html?project=${projectId}`;
         } catch (e) {

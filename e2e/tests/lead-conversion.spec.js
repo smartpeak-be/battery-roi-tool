@@ -103,6 +103,14 @@ test.describe('Lead to project conversion', () => {
     expect(projectData.createdBy).toBeTruthy();
     // Lead's best-ROI config is carried forward so the calculator opens preselected.
     expect(projectData.pendingConfigTypes).toEqual(['E2E_TestConfig_BestROI']);
+    // Notes are prefixed with a one-line lead-analysis header so Kevin/Ruben
+    // see the recommendation without opening the calculator.
+    expect(projectData.notes).toContain('[Lead-analyse]');
+    expect(projectData.notes).toContain('E2E_TestConfig_BestROI');
+    expect(projectData.notes).toContain('E2E test lead'); // original lead.notes preserved
+    // No CSV on this test lead → precompute can't run → lastCalcRun stays null
+    // and pendingConfigTypes is the only seed (verified above).
+    expect(projectData.lastCalcRun).toBeNull();
 
     // Confirm the project actually shows up in the same query the dashboard uses.
     const activeSnap = await db.collection('projects')
