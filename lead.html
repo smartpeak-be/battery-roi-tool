@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Batterij-analyse — SmartPeak</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css"
+        integrity="sha512-jnSuA4Ss2PkkikSOLtYs8BlYIeeIK1h99ty4YfvRPAlzr377vr3CXDb7sb7eEEBYjDtcYj+AjBH3FLv5uSJuXg=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="assets/css/smartpeak.css" />
+</head>
+<body style="background:#f4f6fb;">
+
+<div class="container py-4" style="max-width:560px;">
+
+  <!-- Step indicator -->
+  <div class="sp-wizard-steps" id="wizardDots">
+    <div class="sp-wizard-dot active"></div>
+    <div class="sp-wizard-dot"></div>
+    <div class="sp-wizard-dot"></div>
+  </div>
+
+  <!-- Step 1: CSV upload -->
+  <div class="sp-wizard-step active" id="step1">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Upload je verbruiksgegevens</h5>
+        <div class="alert alert-info small">
+          <strong>Hoe verkrijg je dit bestand?</strong>
+          <ol class="mb-0 mt-1">
+            <li>Ga naar <a href="https://mijn.fluvius.be" target="_blank" rel="noopener">mijn.fluvius.be</a></li>
+            <li>Log in met je eID of itsme</li>
+            <li>Ga naar <em>Mijn verbruik</em> &rarr; <em>Gegevens downloaden</em></li>
+            <li>Kies een periode van minstens 1 jaar en download als CSV</li>
+          </ol>
+        </div>
+        <div class="sp-drop-zone" id="csvDropZone">
+          <i class="fa-solid fa-cloud-arrow-up fa-2x mb-2" style="color:#8899b4;" aria-hidden="true"></i>
+          <div>Sleep je CSV-bestand hierheen of <strong>klik om te bladeren</strong></div>
+          <input type="file" id="csvFileInput" accept=".csv" />
+        </div>
+        <div id="csvFeedback" class="sp-csv-feedback"></div>
+        <div class="sp-wizard-nav">
+          <div></div>
+          <button type="button" class="btn btn-primary" id="btnStep1Next" disabled>
+            Volgende <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Contact details -->
+  <div class="sp-wizard-step" id="step2">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Jouw gegevens</h5>
+        <p class="text-muted small">We sturen je persoonlijk resultaat naar dit emailadres.</p>
+        <div class="mb-3">
+          <label for="leadName" class="form-label">Naam <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="leadName" required placeholder="Voornaam en achternaam" />
+          <div class="invalid-feedback">Vul je naam in.</div>
+        </div>
+        <div class="mb-3">
+          <label for="leadEmail" class="form-label">Email <span class="text-danger">*</span></label>
+          <input type="email" class="form-control" id="leadEmail" required placeholder="jan@voorbeeld.be" />
+          <div class="invalid-feedback">Vul een geldig emailadres in.</div>
+        </div>
+        <div class="sp-wizard-nav">
+          <button type="button" class="btn btn-outline-secondary btnBack" data-back="1">
+            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Terug
+          </button>
+          <button type="button" class="btn btn-primary" id="btnStep2Next">
+            Volgende <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Optional fields -->
+  <div class="sp-wizard-step" id="step3">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Optionele gegevens voor een nauwkeuriger resultaat</h5>
+        <div class="mb-3">
+          <label class="form-label">Is je woning 10 jaar of ouder?</label>
+          <div class="form-text mb-2">Bepaalt het BTW-tarief (6% voor oudere woningen, 21% voor nieuwere).</div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="houseAge" id="houseAgeYes" value="true" />
+            <label class="form-check-label" for="houseAgeYes">Ja, 10 jaar of ouder</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="houseAge" id="houseAgeNo" value="false" />
+            <label class="form-check-label" for="houseAgeNo">Nee, jonger dan 10 jaar</label>
+          </div>
+          <div class="form-text text-muted mt-1">Niet ingevuld? We rekenen met 21% BTW.</div>
+        </div>
+        <div class="mb-3">
+          <label for="leadPvKw" class="form-label">Totaal omvormervermogen (kW)</label>
+          <div class="form-text mb-1">Het piekvermogen van je zonnepanelen-omvormer. Staat vermeld op je omvormer of in de specificaties van je installatie.</div>
+          <input type="number" class="form-control" id="leadPvKw" step="0.1" min="0.1" max="100" placeholder="bv. 3.5" />
+          <div class="form-text text-muted">Niet ingevuld? We rekenen met 3,5 kW.</div>
+        </div>
+        <div class="mb-3">
+          <label for="leadPrice" class="form-label">Energiekost per kWh (EUR)</label>
+          <div class="form-text mb-1">Je totale elektriciteitsprijs per kWh, inclusief alle kosten. Vind je op je energiefactuur.</div>
+          <input type="number" class="form-control" id="leadPrice" step="0.01" min="0.01" max="2.00" placeholder="bv. 0.34" />
+          <div class="form-text text-muted">Niet ingevuld? We rekenen met 0,34 EUR/kWh.</div>
+        </div>
+        <div class="sp-wizard-nav">
+          <button type="button" class="btn btn-outline-secondary btnBack" data-back="2">
+            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Terug
+          </button>
+          <button type="button" class="btn btn-primary" id="btnSubmit">
+            <i class="fa-solid fa-calculator" aria-hidden="true"></i> Bereken mijn resultaat
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: Confirmation -->
+  <div class="sp-wizard-step" id="step4">
+    <div class="card">
+      <div class="card-body text-center py-5">
+        <i class="fa-solid fa-envelope-circle-check fa-3x mb-3" style="color:#16a34a;" aria-hidden="true"></i>
+        <h5 class="card-title mb-3">Je resultaat is onderweg!</h5>
+        <p>We hebben je persoonlijke batterij-analyse verstuurd naar<br/><strong id="confirmEmail"></strong>.</p>
+        <p class="text-muted small">Controleer ook je spam-map. Je resultaat blijft beschikbaar via de link in je email.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index:1090"></div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="assets/js/firebase-init.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"
+        integrity="sha512-7Pi/otdlbbCR+LnW+F7PwFcSDJOuUJB3OxtEHbg4vSMvzvJjde4Po1v4BR9Gdc9aXNUNFVUY+SK51wWT8WF0Gg=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script type="module">
+import { escapeHtml, showToast, withSpinner } from './assets/js/shared-helpers.js';
+import { validateCsvHeaders } from './assets/js/csv.js';
+import { csvToAllDaysAndMeta, parseSheetConfigs } from './assets/js/calc-engine.js';
+import { resolveLeadInputs, selectBestConfig, buildLeadResult, buildDefaultsNotes } from './assets/js/lead-calc.js';
+import { extractCsvForStorage } from './assets/js/csv.js';
+
+// ─── STATE ──────────────────────────────────────────────────────────────
+let _csvText = null;
+let _allDaysResult = null;  // { allDays, eanCode, meterNr, meterType }
+let _currentStep = 1;
+
+// ─── WIZARD NAVIGATION ─────────────────────────────────────────────────
+
+function goToStep(n) {
+  _currentStep = n;
+  document.querySelectorAll('.sp-wizard-step').forEach((el, i) => {
+    el.classList.toggle('active', i + 1 === n);
+  });
+  document.querySelectorAll('.sp-wizard-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', i + 1 === n);
+    dot.classList.toggle('done', i + 1 < n);
+  });
+}
+
+// Back buttons
+document.querySelectorAll('.btnBack').forEach(btn => {
+  btn.addEventListener('click', () => goToStep(parseInt(btn.dataset.back)));
+});
+
+// ─── STEP 1: CSV ────────────────────────────────────────────────────────
+
+const dropZone = document.getElementById('csvDropZone');
+const fileInput = document.getElementById('csvFileInput');
+const feedback  = document.getElementById('csvFeedback');
+const btnNext1  = document.getElementById('btnStep1Next');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) handleCsvFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) handleCsvFile(fileInput.files[0]);
+});
+
+function handleCsvFile(file) {
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    feedback.className = 'sp-csv-feedback error';
+    feedback.textContent = 'Selecteer een CSV-bestand (.csv).';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    const validation = validateCsvHeaders(text);
+    if (!validation.valid) {
+      feedback.className = 'sp-csv-feedback error';
+      feedback.innerHTML = escapeHtml(validation.errors.join(' '));
+      _csvText = null;
+      _allDaysResult = null;
+      btnNext1.disabled = true;
+      return;
+    }
+    try {
+      _allDaysResult = csvToAllDaysAndMeta(text);
+      _csvText = text;
+    } catch (e) {
+      feedback.className = 'sp-csv-feedback error';
+      feedback.textContent = e.message || 'Fout bij verwerken van CSV.';
+      _csvText = null;
+      _allDaysResult = null;
+      btnNext1.disabled = true;
+      return;
+    }
+    const days = _allDaysResult.allDays.length;
+    if (days < 365) {
+      feedback.className = 'sp-csv-feedback warning';
+      feedback.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> CSV geladen — ${days} dagen verbruiksdata. Minder dan 1 jaar: resultaat wordt geschat op basis van beschikbare periode.`;
+    } else {
+      feedback.className = 'sp-csv-feedback success';
+      feedback.innerHTML = `<i class="fa-solid fa-circle-check"></i> CSV geladen — ${days} dagen verbruiksdata gevonden.`;
+    }
+    btnNext1.disabled = false;
+  };
+  reader.readAsText(file);
+}
+
+btnNext1.addEventListener('click', () => goToStep(2));
+
+// ─── STEP 2: CONTACT ───────────────────────────────────────────────────
+
+document.getElementById('btnStep2Next').addEventListener('click', () => {
+  const name  = document.getElementById('leadName');
+  const email = document.getElementById('leadEmail');
+  let valid = true;
+  if (!name.value.trim()) { name.classList.add('is-invalid'); valid = false; } else { name.classList.remove('is-invalid'); }
+  if (!email.value.trim() || !email.validity.valid) { email.classList.add('is-invalid'); valid = false; } else { email.classList.remove('is-invalid'); }
+  if (valid) goToStep(3);
+});
+
+// ─── STEP 3: SUBMIT ────────────────────────────────────────────────────
+
+document.getElementById('btnSubmit').addEventListener('click', async () => {
+  const btnSubmit = document.getElementById('btnSubmit');
+  btnSubmit.disabled = true;
+
+  try {
+    await withSpinner(async () => {
+      // 1. Initialize Firebase (no auth needed for leads)
+      initFirebase();
+
+      // 2. Resolve inputs with defaults
+      const houseAgeRadio = document.querySelector('input[name="houseAge"]:checked');
+      const rawInputs = {
+        pvInverterKw: parseFloat(document.getElementById('leadPvKw').value) || 0,
+        pricePerKwh:  parseFloat(document.getElementById('leadPrice').value) || 0,
+        houseAgeOver10Years: houseAgeRadio ? houseAgeRadio.value === 'true' : null
+      };
+      const resolved = resolveLeadInputs(rawInputs);
+
+      // 3. Fetch product configs
+      const cfg = await getProductsConfig();
+      if (!cfg || !cfg.csvUrl) throw new Error('Productconfiguratie niet beschikbaar.');
+      const resp = await fetch(cfg.csvUrl);
+      if (!resp.ok) throw new Error('Kon productlijst niet ophalen.');
+      const configs = parseSheetConfigs(await resp.text());
+      if (!configs.length) throw new Error('Geen batterij-configuraties gevonden.');
+
+      // 4. Calculate best ROI
+      const best = selectBestConfig(
+        _allDaysResult.allDays, configs,
+        resolved.pvInverterKw, resolved.pricePerKwh, resolved.effectiveBtw
+      );
+
+      // 5. Build lead document
+      const csvStorage = extractCsvForStorage(_csvText);
+      const notes = buildDefaultsNotes(resolved.defaultsUsed);
+      const leadDoc = {
+        customerName:       document.getElementById('leadName').value.trim(),
+        email:              document.getElementById('leadEmail').value.trim(),
+        csvDailyCompact:    csvStorage.dailyCompact,
+        pvInverterKw:       resolved.pvInverterKw,
+        pricePerKwh:        resolved.pricePerKwh,
+        houseAgeOver10Years: rawInputs.houseAgeOver10Years,
+        defaultsUsed:       resolved.defaultsUsed,
+        notes:              notes,
+        result:             best ? buildLeadResult(best) : null,
+        effectiveBtw:       resolved.effectiveBtw,
+        keuring:            true
+      };
+
+      // 6. Save to Firestore
+      const leadId = await createLead(leadDoc);
+
+      // 7. Send result email
+      const resultUrl = `${window.location.origin}${window.location.pathname.replace('lead.html', 'lead-result.html')}?r=${leadId}`;
+      await createMailDoc({
+        to: leadDoc.email,
+        message: {
+          subject: 'Je batterij-analyse is klaar — SmartPeak',
+          html: `<p>Hallo ${escapeHtml(leadDoc.customerName)},</p>
+                 <p>Je persoonlijke batterij-analyse is klaar! Bekijk je resultaat via onderstaande link:</p>
+                 <p><a href="${resultUrl}" style="display:inline-block;padding:12px 24px;background:#2c7be5;color:#fff;text-decoration:none;border-radius:8px;">Bekijk mijn resultaat</a></p>
+                 <p>Met vriendelijke groeten,<br/>SmartPeak</p>`
+        }
+      });
+
+      // 8. Show confirmation
+      document.getElementById('confirmEmail').textContent = leadDoc.email;
+      goToStep(4);
+    }, { message: 'Berekening uitvoeren...' });
+  } catch (e) {
+    showToast('Er ging iets mis: ' + (e.message || e), 'danger');
+    btnSubmit.disabled = false;
+  }
+});
+</script>
+
+</body>
+</html>

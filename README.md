@@ -13,10 +13,24 @@ Interne tool voor SmartPeak om de terugverdientijd van thuisbatterijen te bereke
 
 | Pagina | Doel |
 |---|---|
-| `dashboard.html` | Login-gated werkruimte (lijst + kanban-bord) voor projectbeheer |
+| `dashboard.html` | Login-gated werkruimte (lijst + kanban-bord) voor projectbeheer + leads |
 | `project-edit.html` | Project aanmaken/bewerken: klantgegevens, technische opmeting, foto's |
 | `index.html` | De calculator zelf (project-mode via `?project=<id>`, share-links via `?s=<id>`) |
 | `producten.html` | Productspecificaties per batterijtype |
+
+## Leads
+
+Inkomende leads worden publiek aangemaakt (bijv. via een extern formulier) en
+verschijnen onderaan het dashboard in een aparte leads-tabel. Elke lead bevat
+klantgegevens, eventueel CSV-data, omvormer-kW, tarief en BTW-percentage.
+
+Vanuit het dashboard kan een lead met één klik omgezet worden naar een project:
+de klantdata wordt overgenomen, een nieuw project wordt aangemaakt, en de lead
+krijgt status `converted`. Geconverteerde leads verdwijnen automatisch uit de
+lijst.
+
+Op desktop neemt de projectenlijst ~2/3 van het scherm en de leads ~1/3 onderaan;
+op mobiel staan ze gestapeld.
 
 ## Tech stack
 
@@ -42,8 +56,21 @@ Ga naar `http://localhost:8000`. Firebase auth is vereist voor dashboard/project
 npx vitest run
 
 # E2E tests (Playwright + Firebase Admin)
+# Vereist: e2e/service-account-key.json + lokale server op poort 8000
 npx playwright test --config=e2e/playwright.config.js
 ```
+
+## Firestore rules deployen
+
+`firebase deploy --only firestore:rules` (CLI v15) deployt **niet** naar de
+named database (`smartpeak-battery-roi-be`). Gebruik in plaats daarvan:
+
+```bash
+node e2e/deploy-rules-default.cjs
+```
+
+Dit deployt `firestore.rules` naar zowel de default als named database release
+via de REST API.
 
 ## Bestandsstructuur
 
@@ -64,6 +91,7 @@ assets/
     smartpeak.css            # Backoffice styling (Bootstrap overrides)
 tests/                      # Vitest unit tests
 e2e/                        # Playwright E2E tests
+  deploy-rules-default.cjs  # Firestore rules deployer (REST API)
 docs/                       # Design specs en implementatieplannen
 ```
 

@@ -55,6 +55,12 @@ const firebaseInitGlobals = {
   addProjectSerial: 'readonly',
   updateProjectSerial: 'readonly',
   deleteProjectSerial: 'readonly',
+  createLead: 'readonly',
+  listLeads: 'readonly',
+  getLead: 'readonly',
+  updateLeadToHot: 'readonly',
+  createMailDoc: 'readonly',
+  convertLeadToProject: 'readonly',
   // shared-helpers.js exports (loaded as module but exposes to window)
   escapeHtml: 'readonly',
   showToast: 'readonly',
@@ -70,7 +76,7 @@ export default [
 
   // ── Browser ES-module source files (calc-engine, csv, shared-helpers) ─────
   {
-    files: ['assets/js/calc-engine.js', 'assets/js/csv.js', 'assets/js/shared-helpers.js'],
+    files: ['assets/js/calc-engine.js', 'assets/js/csv.js', 'assets/js/shared-helpers.js', 'assets/js/lead-calc.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',

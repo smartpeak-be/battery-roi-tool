@@ -1,0 +1,53 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: check if the authenticated user is whitelisted
+    function isWhitelisted() {
+      return request.auth != null &&
+             request.auth.token.email in ['kevin@bloxit.be', 'ledsrepair@gmail.com'];
+    }
+
+    // ─── Projects ──────────────────────────────────────────────────
+    match /projects/{projectId} {
+      allow read, write: if isWhitelisted();
+
+      match /comments/{commentId} {
+        allow read, write: if isWhitelisted();
+      }
+
+      match /photos/{photoId} {
+        allow read, write: if isWhitelisted();
+      }
+    }
+
+    // ─── Shares (public read, whitelisted create/delete) ─────────
+    match /shares/{shareId} {
+      allow read:   if true;
+      allow create, delete: if isWhitelisted();
+      allow update: if false;
+    }
+
+    // ─── Config (read-only for whitelisted) ──────────────────────
+    match /config/{docId} {
+      allow read:  if isWhitelisted();
+      allow write: if false;
+    }
+
+    // ─── Leads (public create, public read by ID, whitelisted list) ─
+    match /leads/{leadId} {
+      allow get:    if true;
+      allow list:   if isWhitelisted();
+      allow create: if true;
+      allow update: if isWhitelisted();
+      allow delete: if isWhitelisted();
+    }
+
+    // ─── Mail (trigger email extension) ──────────────────────────
+    match /mail/{mailId} {
+      allow create: if true;
+      allow read, update, delete: if false;
+    }
+  }
+}

@@ -20,10 +20,44 @@
   <style>
     /*
      * Page-specific overrides live here. Global app styles are in
-     * assets/css/smartpeak.css (loaded above). Keep this block empty
-     * unless a rule is truly only relevant for dashboard.html.
+     * assets/css/smartpeak.css (loaded above). Keep this block minimal
+     * — only rules truly relevant for dashboard.html.
      */
 
+    /* Desktop: fill viewport, projects scroll, leads pinned at bottom */
+    @media (min-width: 992px) {
+      #stateAuthorized {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #stateAuthorized > nav { flex-shrink: 0; }
+      #stateAuthorized > main {
+        flex: 1;
+        min-height: 0;          /* allow flex child to shrink below content */
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding-bottom: 0 !important;
+      }
+      /* Toolbar stays fixed size */
+      #stateAuthorized > main > .card.mb-3 { flex-shrink: 0; }
+      /* Project list fills remaining space and scrolls */
+      #stateAuthorized > main > .card:not(.mb-3):not(#leadsCard) {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
+      /* Leads card pinned at bottom, max 1/3 screen */
+      #leadsCard {
+        flex-shrink: 0;
+        max-height: 33vh;
+        overflow-y: auto;
+        margin-top: 0.75rem !important;
+        margin-bottom: 0 !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -116,6 +150,21 @@
         <p class="sp-empty-state">⏳ Laden…</p>
       </div>
     </div>
+
+    <!-- Leads -->
+    <div class="card mt-3" id="leadsCard" style="display:none;">
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span>
+          <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i> Leads
+          <span class="badge bg-primary ms-1" id="leadsCount">0</span>
+        </span>
+        <div class="form-check form-switch m-0">
+          <input class="form-check-input" type="checkbox" id="toggleShowDeletedLeads">
+          <label class="form-check-label small" for="toggleShowDeletedLeads">Toon verwijderde</label>
+        </div>
+      </div>
+      <div class="card-body p-0 p-md-3" id="leadsList"></div>
+    </div>
   </main>
 </div>
 
@@ -169,6 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('userDisplayName').textContent = user.displayName || user.email;
     showState('stateAuthorized');
     refreshProjectList(true);
+    refreshLeads();
   });
 
   document.getElementById('toggleShowDeleted').addEventListener('change', refreshProjectList);
@@ -176,6 +226,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('projectSearch').addEventListener('input', () => {
     // Debounce: re-render only (already-loaded list) without re-fetching Firestore.
     renderCurrent(true);
+  });
+
+  // Leads "Toon verwijderde" toggle: persisted, re-render only (cache already loaded).
+  const leadsToggle = document.getElementById('toggleShowDeletedLeads');
+  try {
+    leadsToggle.checked = localStorage.getItem('smartpeak.showDeletedLeads') === '1';
+  } catch {}
+  leadsToggle.addEventListener('change', () => {
+    try { localStorage.setItem('smartpeak.showDeletedLeads', leadsToggle.checked ? '1' : '0'); } catch {}
+    renderLeads();
   });
   // View toggle (Lijst / Bord). Remembers choice in localStorage.
   document.querySelectorAll('#viewToggle button').forEach(btn => {
@@ -842,6 +902,138 @@ function renderComments(project, comments) {
 
 // Status-dropdown delegation via shared component (assets/js/status-chip.js)
 wireStatusChipClicks(document, () => refreshProjectList());
+
+// ─── LEADS SECTION ──────────────────────────────────────────────────────
+
+let _leadsCache = { active: [], deleted: [] };
+
+async function refreshLeads() {
+  const card = document.getElementById('leadsCard');
+  try {
+    const all = await listLeads();
+    _leadsCache.active  = all.filter(l => !l.deletedAt);
+    _leadsCache.deleted = all.filter(l =>  l.deletedAt);
+    if (!_leadsCache.active.length && !_leadsCache.deleted.length) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = '';
+    renderLeads();
+  } catch (e) {
+    console.error('refreshLeads failed:', e);
+    card.style.display = 'none';
+  }
+}
+
+function renderLeads() {
+  const el    = document.getElementById('leadsList');
+  const badge = document.getElementById('leadsCount');
+  const showDeleted = document.getElementById('toggleShowDeletedLeads').checked;
+
+  badge.textContent = _leadsCache.active.length;
+
+  const rows = [
+    ..._leadsCache.active.map(l => leadRowHTML(l, false)),
+    ...(showDeleted ? _leadsCache.deleted.map(l => leadRowHTML(l, true)) : []),
+  ].join('');
+
+  if (!rows) {
+    el.innerHTML = '<p class="sp-empty-state">Geen openstaande leads.</p>';
+    return;
+  }
+  el.innerHTML = `
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Naam</th>
+          <th class="d-none d-sm-table-cell">Email</th>
+          <th>Status</th>
+          <th class="d-none d-sm-table-cell">Datum</th>
+          <th class="text-end">Acties</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  wireLeadActions(el);
+}
+
+function leadRowHTML(l, isDeleted) {
+  const date = l.createdAt ? fmtDate(l.createdAt) : '—';
+  const statusLabel = l.status === 'hot_lead' ? 'Hot lead' : 'Cold lead';
+  const statusColor = l.status === 'hot_lead' ? '#dc2626' : '#6b7a8d';
+  const resultLink = l.result
+    ? `<a href="lead-result.html?r=${l.id}" class="btn btn-sm btn-outline-secondary" title="Bekijk resultaat" aria-label="Bekijk resultaat" target="_blank"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></a>`
+    : '';
+  const action = isDeleted
+    ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreLeadBtn" data-id="${l.id}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
+       <button type="button" class="btn btn-sm btn-outline-danger permdelLeadBtn" data-id="${l.id}" data-name="${escapeHtml(l.customerName || '')}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
+    : `<button type="button" class="btn btn-sm btn-outline-primary convertLeadBtn" data-id="${l.id}" title="Maak project aan" aria-label="Maak project aan"><i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i></button>
+       <button type="button" class="btn btn-sm btn-outline-danger deleteLeadBtn" data-id="${l.id}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
+  return `
+    <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${l.id}">
+      <td>${escapeHtml(l.customerName || '')}</td>
+      <td class="d-none d-sm-table-cell text-break"><a href="mailto:${escapeHtml(l.email || '')}">${escapeHtml(l.email || '')}</a></td>
+      <td><span class="badge" style="background:${statusColor};">${statusLabel}</span></td>
+      <td class="d-none d-sm-table-cell text-muted small">${date}</td>
+      <td class="text-end">
+        <div class="d-flex gap-1 justify-content-end">
+          ${resultLink}
+          ${action}
+        </div>
+      </td>
+    </tr>`;
+}
+
+function wireLeadActions(el) {
+  el.querySelectorAll('.convertLeadBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Lead omzetten naar een project?')) return;
+      await withSpinner(async () => {
+        try {
+          const lead = await getLead(btn.dataset.id);
+          if (!lead) { showToast('Lead niet gevonden.', 'danger'); return; }
+          const projectId = await convertLeadToProject(lead);
+          // Navigate directly (window.open gets blocked by popup blockers after async)
+          window.location.href = `project-edit.html?project=${projectId}`;
+        } catch (e) {
+          showToast('Fout: ' + (e.message || e), 'danger');
+        }
+      });
+    });
+  });
+  el.querySelectorAll('.deleteLeadBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Lead verwijderen? Hij wordt soft-deleted en blijft herstelbaar via "Toon verwijderde".')) return;
+      await withSpinner(async () => {
+        try { await softDeleteLead(btn.dataset.id); await refreshLeads(); }
+        catch (err) { showToast('Kon niet verwijderen: ' + (err && err.message ? err.message : err), 'danger'); }
+      });
+    });
+  });
+  el.querySelectorAll('.restoreLeadBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await withSpinner(async () => {
+        try { await restoreLead(btn.dataset.id); await refreshLeads(); }
+        catch (err) { showToast('Kon niet herstellen: ' + (err && err.message ? err.message : err), 'danger'); }
+      });
+    });
+  });
+  el.querySelectorAll('.permdelLeadBtn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id   = btn.dataset.id;
+      const name = btn.dataset.name || '(lead)';
+      if (!confirm(`Definitief verwijderen van lead '${name}'?\n\nDe lead-data wordt permanent gewist. Dit kan niet ongedaan worden.`)) return;
+      btn.disabled = true;
+      await withSpinner(async () => {
+        try { await hardDeleteLead(id); await refreshLeads(); }
+        catch (err) {
+          showToast('Definitief verwijderen mislukt: ' + (err && err.message ? err.message : err), 'danger');
+          btn.disabled = false;
+        }
+      });
+    });
+  });
+}
 
 // Responsive view: re-render on breakpoint cross (992px)
 let _wasDesktop = window.innerWidth >= 992;

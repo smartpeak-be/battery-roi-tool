@@ -1,7 +1,7 @@
 // e2e/tests/hard-delete.spec.js
 // Verifies that hard-deleting a project cascades to subcollections and Storage.
 import { test, expect } from '../helpers/auth-fixture.js';
-import { createTestProject, getAdminFirestore, getAdminStorage } from '../helpers/project-helpers.js';
+import { createTestProject, getAdminFirestore, getAdminStorage, cleanupProject } from '../helpers/project-helpers.js';
 import { firebaseSignIn } from '../helpers/auth-fixture.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -65,7 +65,15 @@ test.describe('Hard delete cascade', () => {
     await context.close();
   });
 
-  // No afterAll cleanup — the test itself deletes the project
+  // Safety-net: if the UI hard-delete test fails, clean up via Admin SDK
+  // so leftover E2E_HARDDELETE projects don't accumulate.
+  test.afterAll(async () => {
+    const db = getAdminFirestore();
+    const doc = await db.doc(`projects/${projectId}`).get();
+    if (doc.exists) {
+      await cleanupProject(projectId);
+    }
+  });
 
   test('project has subcollection data before delete', async () => {
     const db = getAdminFirestore();
