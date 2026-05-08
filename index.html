@@ -731,6 +731,13 @@
   <div id="configSelectorsArea" style="display:none;">
     <div id="configPickerList" class="config-picker-grid"></div>
   </div>
+  <div id="manualConfigArea">
+    <div id="manualConfigCards"></div>
+    <div id="manualConfigFormContainer" style="display:none;"></div>
+    <button type="button" id="addManualConfigBtn" class="btn btn-secondary" style="margin-top:8px; display:none;" onclick="showManualConfigForm()">
+      <i class="fa-solid fa-plus"></i> Manuele configuratie
+    </button>
+  </div>
 </div>
 
 <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-top:8px;">
@@ -1019,6 +1026,7 @@ function _serializeState() {
       priceNight: (d.dualTariff && !isNaN(d.priceNight)) ? d.priceNight : null,
       selectedConfigTypes: d.configResults.map(cr => cr.cfg.type),
     },
+    manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : undefined,
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
@@ -1132,8 +1140,18 @@ function _applyLoadedState(state, showBanner) {
   set('pvInverter',    f.pvInv);
   set('elecPrice',     f.priceDay);
   set('elecPriceNight',f.priceNight);
+
+  // Restore manual configs if present
+  if (state.manualConfigs && typeof state.manualConfigs === 'object') {
+    _manualConfigs = { ...state.manualConfigs };
+    renderManualConfigCards();
+    // Show manual config button when restoring manual configs
+    const mcBtn = document.getElementById('addManualConfigBtn');
+    if (mcBtn) mcBtn.style.display = '';
+  }
+
   if ((state.v === 2 || state.v === 3 || state.v === 4 || state.v === 5) && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
-    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes)).catch(() => {});
+    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)))).catch(() => {});
   }
   const r = _restoreState(state.r);
   if (showBanner) {
@@ -1159,6 +1177,9 @@ function showToast(msg) {
 // CSV URL lives in Firestore `config/products` doc (auth-gated read).
 // Fetched via getProductsConfig() in loadConfigs().
 let _sheetConfigs = null;
+
+// Manual configs — keyed by type ('MANUAL_<timestamp>'). Same resolved shape as sheet configs.
+let _manualConfigs = {};
 
 function _getPriceKey() {
   return `${document.getElementById('btwSelect').value}_${document.getElementById('keuringSelect').value}`;
@@ -1186,6 +1207,27 @@ function readSelectedConfigs() {
   return [...document.querySelectorAll('#configPickerList .config-select')]
     .map(s => s.value)
     .filter(v => v);
+}
+
+// Read ALL selected configs: sheet picker selections + manual configs.
+// Returns array of resolved config objects ready for processDataPure.
+function readAllSelectedConfigObjects() {
+  const priceKey = _getPriceKey();
+  // Sheet configs from dropdowns
+  const sheetTypes = readSelectedConfigs();
+  const sheetResolved = sheetTypes
+    .map(type => {
+      const c = _sheetConfigs.find(x => x.type === type);
+      return c ? { type: c.type, omschrijving: c.omschrijving, batCap: c.batCap, batInv: c.batInv, eff: c.eff, price: c.prices[priceKey] } : null;
+    })
+    .filter(Boolean);
+
+  // Manual configs (already have price resolved)
+  const manualResolved = Object.values(_manualConfigs).map(mc => ({
+    type: mc.type, omschrijving: `${mc.merk} ${mc.omschrijving}`, batCap: mc.batCap, batInv: mc.batInv, eff: mc.eff, price: mc.price, isManual: true,
+  }));
+
+  return [...sheetResolved, ...manualResolved];
 }
 
 // Render N+1 pickers where N = number of selected types. Always one trailing
@@ -1221,6 +1263,134 @@ function _populateConfigSelects(selectedTypes) {
   renderConfigPickers(selectedTypes);
 }
 
+// ─── MANUAL CONFIG FORM ──────────────────────────────────────────────────────
+
+function _buildManualConfigFormHtml(existing) {
+  const e = existing || {};
+  return `
+    <div class="manual-config-form card" style="padding:16px; margin-top:10px; border:2px solid var(--accent);">
+      <h4 style="margin:0 0 12px 0; font-size:1rem;">Manuele configuratie${e.type ? ' bewerken' : ''}</h4>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Merk *</label>
+          <input type="text" id="mcfMerk" value="${e.merk || ''}" placeholder="bv. Huawei" required>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Omschrijving *</label>
+          <input type="text" id="mcfOmschrijving" value="${e.omschrijving || ''}" placeholder="bv. Luna 2000 10kWh" required>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Opslag capaciteit (kWh) *</label>
+          <input type="number" id="mcfBatCap" value="${e.batCap || ''}" min="0.1" step="0.01" placeholder="bv. 10" required>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Omvormer capaciteit (kW) *</label>
+          <input type="number" id="mcfBatInv" value="${e.batInv || ''}" min="0.1" step="0.01" placeholder="bv. 5" required>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Totaalprijs incl. BTW (&euro;) *</label>
+          <input type="number" id="mcfPrice" value="${e.price || ''}" min="1" step="1" placeholder="bv. 8500" required>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>BTW %</label>
+          <input type="number" id="mcfBtw" value="${e.btwPercent != null ? e.btwPercent : 21}" min="0" max="100" step="1">
+        </div>
+      </div>
+      <div style="margin-top:12px; display:flex; gap:8px;">
+        <button type="button" class="btn btn-calculate" onclick="submitManualConfigForm('${e.type || ''}')" style="font-size:0.9rem; padding:6px 16px;">
+          ${e.type ? 'Opslaan' : 'Toevoegen'}
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="hideManualConfigForm()" style="font-size:0.9rem; padding:6px 16px;">
+          Annuleren
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function showManualConfigForm(existingType) {
+  const container = document.getElementById('manualConfigFormContainer');
+  const existing = existingType ? _manualConfigs[existingType] : null;
+  container.innerHTML = _buildManualConfigFormHtml(existing);
+  container.style.display = '';
+  document.getElementById('addManualConfigBtn').style.display = 'none';
+  document.getElementById('mcfMerk').focus();
+}
+
+function hideManualConfigForm() {
+  const container = document.getElementById('manualConfigFormContainer');
+  container.innerHTML = '';
+  container.style.display = 'none';
+  document.getElementById('addManualConfigBtn').style.display = '';
+}
+
+function submitManualConfigForm(editType) {
+  const merk         = document.getElementById('mcfMerk').value.trim();
+  const omschrijving = document.getElementById('mcfOmschrijving').value.trim();
+  const batCap       = parseFloat(document.getElementById('mcfBatCap').value);
+  const batInv       = parseFloat(document.getElementById('mcfBatInv').value);
+  const price        = parseFloat(document.getElementById('mcfPrice').value);
+  const btwPercent   = parseInt(document.getElementById('mcfBtw').value, 10) || 21;
+
+  // Validation
+  const errors = [];
+  if (!merk) errors.push('Merk is verplicht.');
+  if (!omschrijving) errors.push('Omschrijving is verplicht.');
+  if (!batCap || batCap <= 0) errors.push('Opslag capaciteit moet > 0 zijn.');
+  if (!batInv || batInv <= 0) errors.push('Omvormer capaciteit moet > 0 zijn.');
+  if (!price || price <= 0) errors.push('Totaalprijs moet > 0 zijn.');
+  if (errors.length) { alert(errors.join('\n')); return; }
+
+  const type = editType || `MANUAL_${Date.now()}`;
+  _manualConfigs[type] = {
+    type,
+    omschrijving,
+    merk,
+    batCap,
+    batInv,
+    eff: 0.90,
+    price,
+    btwPercent,
+    isManual: true,
+  };
+
+  hideManualConfigForm();
+  renderManualConfigCards();
+}
+
+function renderManualConfigCards() {
+  const container = document.getElementById('manualConfigCards');
+  if (!container) return;
+  const entries = Object.values(_manualConfigs);
+  if (!entries.length) { container.innerHTML = ''; return; }
+
+  container.innerHTML = entries.map(mc => `
+    <div class="manual-config-card" style="display:flex; align-items:center; gap:10px; padding:8px 12px; margin-top:6px; border:1px solid var(--border); border-radius:8px; background:var(--card-bg);">
+      <span style="background:var(--accent); color:#fff; font-size:0.7rem; padding:2px 8px; border-radius:4px; font-weight:600;">Manueel</span>
+      <span style="flex:1; font-size:0.9rem;">
+        <strong>${escapeHtml(mc.merk)} ${escapeHtml(mc.omschrijving)}</strong>
+        &mdash; ${fmt2(mc.batCap)} kWh / ${fmt2(mc.batInv)} kW &mdash; ${fmtEur(mc.price)}
+      </span>
+      <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px;" onclick="editManualConfig('${mc.type}')" title="Bewerken">
+        <i class="fa-solid fa-pen-to-square"></i>
+      </button>
+      <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px; color:var(--danger);" onclick="deleteManualConfig('${mc.type}')" title="Verwijderen">
+        <i class="fa-solid fa-trash"></i>
+      </button>
+    </div>
+  `).join('');
+}
+
+function editManualConfig(type) {
+  showManualConfigForm(type);
+}
+
+function deleteManualConfig(type) {
+  if (!confirm('Manuele configuratie verwijderen?')) return;
+  delete _manualConfigs[type];
+  renderManualConfigCards();
+}
+
 async function loadConfigs() {
   const statusEl = document.getElementById('configsStatus');
   statusEl.innerHTML = '<span class="spinner"></span> Laden...';
@@ -1234,6 +1404,7 @@ async function loadConfigs() {
       if (!_sheetConfigs.length) throw new Error('Geen configuraties gevonden in de sheet.');
       _populateConfigSelects();
       document.getElementById('configSelectorsArea').style.display = '';
+      document.getElementById('addManualConfigBtn').style.display = '';
       statusEl.textContent = `✅ ${_sheetConfigs.length} configuraties geladen.`;
     } catch(e) {
       statusEl.textContent = `❌ Fout bij laden: ${e.message}`;
@@ -1258,12 +1429,7 @@ async function calculate() {
   }
 
   const priceKey = _getPriceKey();
-  const selectedConfigs = readSelectedConfigs()
-    .map(type => {
-      const c = _sheetConfigs.find(x => x.type === type);
-      return c ? { type: c.type, omschrijving: c.omschrijving, batCap: c.batCap, batInv: c.batInv, eff: c.eff, price: c.prices[priceKey] } : null;
-    })
-    .filter(Boolean);
+  const selectedConfigs = readAllSelectedConfigObjects();
 
   if (!selectedConfigs.length) { alert('Kies minstens één productconfiguratie.'); return; }
 
@@ -1541,12 +1707,18 @@ function renderScenarioGrid(d) {
   let gridHTML = '';
   d.configResults.forEach((cr, idx) => {
     const { cfg, pvGtBat, scenWC, scenOpt } = cr;
+    const cfgLabel = cfg.isManual
+      ? `${escapeHtml(cfg.omschrijving)} <span style="background:var(--primary);color:#fff;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">Manueel</span>`
+      : `${escapeHtml(cfg.type)} — ${escapeHtml(cfg.omschrijving)}`;
+    const specsBtn = cfg.isManual
+      ? ''
+      : `<button class="btn-spec" onclick="window.open('producten.html?type=${encodeURIComponent(cfg.type)}', '_blank', 'noopener')">📖 Productspecs ↗</button>`;
     gridHTML += `<div style="grid-column:1/-1;">
       <div class="config-group-header">
         🔋 Configuratie ${idx+1}
-        <span class="cfg-sub">${cfg.type} — ${cfg.omschrijving}</span>
+        <span class="cfg-sub">${cfgLabel}</span>
         <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}</span>
-        <button class="btn-spec" onclick="window.open('producten.html?type=${encodeURIComponent(cfg.type)}', '_blank', 'noopener')">📖 Productspecs ↗</button>
+        ${specsBtn}
       </div>
     </div>`;
     const subWC = pvGtBat
@@ -1751,6 +1923,7 @@ async function saveProjectCalcRun(d) {
   await saveLastCalcRun(_projectId, {
     inputs: { pvInv: pvInverter, priceDay, priceNight, selectedConfigTypes },
     results,
+    manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
   });
   showToast('💾 Opgeslagen in project');
 }
@@ -2152,7 +2325,7 @@ async function loadProjectIntoUI(id) {
       // User clicks Bereken when ready. If the project carries a pending config seed
       // (e.g. from lead conversion), load configs and preselect it so the picker is ready.
       if (Array.isArray(proj.pendingConfigTypes) && proj.pendingConfigTypes.some(t => t)) {
-        loadConfigs().then(() => _populateConfigSelects(proj.pendingConfigTypes)).catch(() => {});
+        loadConfigs().then(() => _populateConfigSelects(proj.pendingConfigTypes.filter(t => !isManualConfig(t)))).catch(() => {});
       }
     } else {
       // No CSV at all — show the upload prompt.
@@ -2279,16 +2452,22 @@ function buildSavedFromProject(proj) {
       priceNight: proj.lastCalcRun.inputs.priceNight,
       selectedConfigTypes: proj.lastCalcRun.inputs.selectedConfigTypes,
     } : {},
+    manualConfigs: proj.manualConfigs || {},
     r,
   };
 }
 
 // ─── Expose functions used by inline onclick handlers ───────────────────────
 // (ES modules don't put top-level declarations on `window`)
-window.loadConfigs   = loadConfigs;
-window.calculate     = calculate;
-window.copyShareLink = copyShareLink;
-window.showToast     = showToast;
+window.loadConfigs            = loadConfigs;
+window.calculate              = calculate;
+window.copyShareLink          = copyShareLink;
+window.showToast              = showToast;
+window.showManualConfigForm   = showManualConfigForm;
+window.hideManualConfigForm   = hideManualConfigForm;
+window.submitManualConfigForm = submitManualConfigForm;
+window.editManualConfig       = editManualConfig;
+window.deleteManualConfig     = deleteManualConfig;
 
 </script>
 </body>

@@ -135,6 +135,7 @@ function mergeProjectMetadata(project) {
   };
   merged.offertes      = project.offertes || {};
   merged.serialNumbers = Array.isArray(project.serialNumbers) ? project.serialNumbers : [];
+  merged.manualConfigs = project.manualConfigs || {};
   return merged;
 }
 
@@ -395,8 +396,24 @@ async function saveLastCalcRun(projectId, saved) {
     lastCalcRun,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
   };
+
+  // Persist manual config definitions (full replace — always reflect current state).
+  if (saved.manualConfigs && Object.keys(saved.manualConfigs).length > 0) {
+    update.manualConfigs = saved.manualConfigs;
+  } else {
+    // Clear any previous manual configs if none are selected anymore.
+    update.manualConfigs = firebase.firestore.FieldValue.delete();
+  }
+
   for (const t of removedWithPdf) {
     update[`offertes.${t}`] = firebase.firestore.FieldValue.delete();
+  }
+
+  // Also clean up manualConfigs entries for removed manual types.
+  const removedManual = prevSelected.filter(t =>
+    !newSelected.includes(t) && isManualConfig(t));
+  for (const t of removedManual) {
+    update[`manualConfigs.${t}`] = firebase.firestore.FieldValue.delete();
   }
 
   await ref.update(update);
@@ -495,6 +512,7 @@ function hasUnreadComments(project, email) {
 function isMarstekConfig(type) { return typeof type === 'string' && type.startsWith('MARVE'); }
 function isZendureConfig(type) { return typeof type === 'string' && type.startsWith('ZSF'); }
 function isSupportedConfig(type) { return isMarstekConfig(type) || isZendureConfig(type); }
+function isManualConfig(type) { return typeof type === 'string' && type.startsWith('MANUAL_'); }
 
 // Returns: false (no warning), 'no-measurement' (warning), 'unsupported' (error)
 function groundFaultStatus(project) {
@@ -809,6 +827,11 @@ async function deleteProjectConfig(projectId, type) {
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
   };
 
+  // Also remove manual config definition if this is a manual type.
+  if (isManualConfig(type)) {
+    updates[`manualConfigs.${type}`] = firebase.firestore.FieldValue.delete();
+  }
+
   const oldResults = (data.lastCalcRun && data.lastCalcRun.results) || null;
   if (oldResults && Array.isArray(oldResults.configResults)) {
     const removeIdx = oldResults.configResults.findIndex(cr => cr && cr.cfg && cr.cfg.type === type);
@@ -1099,3 +1122,9 @@ async function convertLeadToProject(lead, opts = {}) {
 
   return ref.id;
 }
+
+// ─── EXPOSE HELPERS ON WINDOW ────────────────────────────────────────────────
+window.isMarstekConfig = isMarstekConfig;
+window.isZendureConfig = isZendureConfig;
+window.isSupportedConfig = isSupportedConfig;
+window.isManualConfig = isManualConfig;
