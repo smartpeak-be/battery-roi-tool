@@ -59,16 +59,52 @@ export function validateCsvHeaders(csvText) {
 }
 
 /**
- * Parse a dd-mm-yyyy date string. Returns null for unparseable input.
+ * Parse a date string from a Fluvius CSV export.
+ * Handles multiple formats:
+ *  - dd-mm-yyyy  (standard Fluvius)
+ *  - d/mm/yyyy   (slash separator, no leading zeros)
+ *  - dd/mm/yyyy  (slash separator, with leading zeros)
+ *  - mm-dd-yyyy / mm/dd/yyyy  (if detectable — when first part > 12 it must be day)
+ *
+ * Auto-detects day vs month position:
+ *  - Default assumption: first part = day, second = month (Belgian convention)
+ *  - If first part > 12 → first is day (confirms default)
+ *  - If second part > 12 → second is day, first is month (swap)
+ *  - If both ≤ 12 → assume Belgian convention (day first)
+ *
+ * Returns null for unparseable input.
  */
 export function parseDate(str) {
   if (!str || typeof str !== 'string') return null;
-  const parts = str.split('-');
+  // Support both '-' and '/' separators
+  const parts = str.split(/[-/]/);
   if (parts.length !== 3) return null;
-  const [d, m, y] = parts;
-  const day = +d, month = +m, year = +y;
-  if (!year || !month || !day || month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const date = new Date(year, month - 1, day);
+
+  let a = +parts[0], b = +parts[1], y = +parts[2];
+  if (!a || !b || !y) return null;
+
+  // Third part must be a 4-digit year; reject yyyy-mm-dd
+  if (y < 1900 || y > 2100) return null;
+  // Also reject if first part looks like a 4-digit year (yyyy-mm-dd)
+  if (a > 999) return null;
+
+  let day, month;
+  if (a > 12) {
+    // First part > 12 → must be day
+    day = a;
+    month = b;
+  } else if (b > 12) {
+    // Second part > 12 → must be day, first is month
+    day = b;
+    month = a;
+  } else {
+    // Both ≤ 12 → Belgian convention: day first
+    day = a;
+    month = b;
+  }
+
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(y, month - 1, day);
   // Guard against NaN dates (e.g. from overflow or bad input)
   if (isNaN(date.getTime())) return null;
   return date;
@@ -129,7 +165,7 @@ export function extractCsvForStorage(csvText) {
 
   if (!allDays.length) {
     const detail = skippedDates > 0
-      ? ` ${skippedDates} rij(en) hadden een ongeldig datumformaat (verwacht: dd-mm-jjjj).`
+      ? ` ${skippedDates} rij(en) hadden een ongeldig datumformaat (verwacht: dd-mm-jjjj of d/mm/jjjj).`
       : '';
     throw new Error('Geen bruikbare data gevonden in het CSV bestand.' + detail);
   }
