@@ -95,14 +95,19 @@ function renderOffertesCards(project) {
       : `<button class="btn btn-sm btn-outline-primary offerte-upload-btn"     data-offerte-action data-type="${escapeHtml(t)}" title="Upload offerte" aria-label="Upload offerte"><i class="fa-solid fa-upload" aria-hidden="true"></i></button>
          <button class="btn btn-sm btn-outline-danger  offerte-trash-btn"      data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen" aria-label="Config verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
 
+    const isManual = typeof window.isManualConfig === 'function' && window.isManualConfig(t);
+    const titleLabel = isManual
+      ? `<span class="badge bg-primary" style="font-size:0.65rem; vertical-align:middle; margin-right:4px;">Manueel</span>${escapeHtml(cfg.omschrijving)}`
+      : escapeHtml(cfg.type);
+
     return `
       <div class="col">
         <div class="offerte-row h-100 ${pdf ? 'has-pdf' : 'missing-pdf'}">
           <div class="offerte-row-head">
             ${iconState}
-            <span class="offerte-row-title">${escapeHtml(cfg.type)}</span>
+            <span class="offerte-row-title">${titleLabel}</span>
           </div>
-          <div class="offerte-row-desc">${escapeHtml(cfg.omschrijving || '')}</div>
+          <div class="offerte-row-desc">${isManual ? '' : escapeHtml(cfg.omschrijving || '')}</div>
           <div class="offerte-row-meta">
             € ${_formatEuros(cfg.priceEur)}${cfg.batCap ? ' · ' + escapeHtml(String(cfg.batCap)) + ' kWh' : ''}${cfg.batInv ? ' · ' + escapeHtml(String(cfg.batInv)) + ' kW' : ''}
           </div>
@@ -190,9 +195,14 @@ function openOfferteModal(project, configType, onUploaded) {
   const cfg  = _findConfigByType(project, configType);
   const existing = (project.offertes || {})[configType];
 
+  const isManual = typeof window.isManualConfig === 'function' && window.isManualConfig(configType);
+  const modalTitle = isManual
+    ? `<span class="badge bg-primary" style="font-size:0.7rem; vertical-align:middle; margin-right:6px;">Manueel</span>${escapeHtml(cfg.omschrijving)}`
+    : `${escapeHtml(cfg.type)} · ${escapeHtml(cfg.omschrijving || '')}`;
+
   body.innerHTML = `
     <div class="offerte-cfg-header">
-      <div class="offerte-cfg-type" style="font-weight:600;">${escapeHtml(cfg.type)} · ${escapeHtml(cfg.omschrijving || '')}</div>
+      <div class="offerte-cfg-type" style="font-weight:600;">${modalTitle}</div>
       <div class="offerte-cfg-meta" style="color:var(--sp-muted);font-size:.9rem;margin-top:2px;">
         ${cfg.batCap ? escapeHtml(String(cfg.batCap)) + ' kWh · ' : ''}${cfg.batInv ? escapeHtml(String(cfg.batInv)) + ' kW omvormer · ' : ''}€ ${_formatEuros(cfg.priceEur)}
       </div>

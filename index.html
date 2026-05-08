@@ -1026,6 +1026,7 @@ function _serializeState() {
       priceNight: (d.dualTariff && !isNaN(d.priceNight)) ? d.priceNight : null,
       selectedConfigTypes: d.configResults.map(cr => cr.cfg.type),
     },
+    manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : undefined,
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
@@ -1706,12 +1707,18 @@ function renderScenarioGrid(d) {
   let gridHTML = '';
   d.configResults.forEach((cr, idx) => {
     const { cfg, pvGtBat, scenWC, scenOpt } = cr;
+    const cfgLabel = cfg.isManual
+      ? `${escapeHtml(cfg.omschrijving)} <span style="background:var(--primary);color:#fff;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">Manueel</span>`
+      : `${escapeHtml(cfg.type)} — ${escapeHtml(cfg.omschrijving)}`;
+    const specsBtn = cfg.isManual
+      ? ''
+      : `<button class="btn-spec" onclick="window.open('producten.html?type=${encodeURIComponent(cfg.type)}', '_blank', 'noopener')">📖 Productspecs ↗</button>`;
     gridHTML += `<div style="grid-column:1/-1;">
       <div class="config-group-header">
         🔋 Configuratie ${idx+1}
-        <span class="cfg-sub">${cfg.type} — ${cfg.omschrijving}</span>
+        <span class="cfg-sub">${cfgLabel}</span>
         <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}</span>
-        <button class="btn-spec" onclick="window.open('producten.html?type=${encodeURIComponent(cfg.type)}', '_blank', 'noopener')">📖 Productspecs ↗</button>
+        ${specsBtn}
       </div>
     </div>`;
     const subWC = pvGtBat
