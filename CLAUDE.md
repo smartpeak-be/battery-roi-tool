@@ -219,9 +219,9 @@ enkel een tekstveld + delete. De oude `uploadProjectPhoto` is ook verwijderd.
 2. `processData` aggregates per-day from rows keyed by `EAN-code` / `Register` (`afname`/`injectie`, optional `dag`/`nacht` split for dual-tariff users). Each per-day record has `afname`, `injectie`, `afnamedag`, `afnamenacht`, `injectiedag`, `injectienacht` (in kWh).
 3. A **rolling 365-day window** ending on the last CSV date is the canonical period. If less than a year of data, results are **extrapolated** via `scaleFactor = 365 / daysInWindow` and `isFullYear = false` triggers warning UI.
 4. **Multi-year averaging:** when ≥ 2 complete 365-day blocks of data exist, `computePerYearStats` slices `allDays` into N year-blocks counting backward from `lastDate` and `averageStats` produces an avg-across-N-years counterpart for every numeric field. The renderer shows a `· gem. N j: …` companion (via the `renderWithAvg` helper) and a `▼` marker on progress bars at the avg position. All gated on `numYears >= 2`; the < 2-year UI is byte-identical to the single-year case.
-5. **Per-config scenarios — always two cards.** For every config the renderer emits both Worst Case (`scenWC`) and Optimistisch (`scenOpt`):
+5. **Per-config scenarios — always two cards.** For every config the renderer emits both Worst Case (`scenWC`) and Realistisch (`scenOpt`):
    - **Worst Case** uses the `useCap=true` path in `calcScenario` / inner `calc`: each day's stored energy is capped at that day's `d.afname` (`Math.min(dayCharged, d.afname)`) so battery savings can never exceed actual grid consumption that day. When `pvInverter > batteryInverter`, the daily-injection threshold is also scaled up by `pvInv / batInv` (battery can't fully charge in a single day at low irradiance).
-   - **Optimistisch** uses `useCap=false` and the unscaled threshold — the ideal-world ceiling.
+   - **Realistisch** uses `useCap=false` and the unscaled threshold — the ideal-world ceiling.
    - The truth lies between the two; the salesperson presents the spread.
 6. Capacity analysis (`capAnalysis`) sweeps 2.5→200 kWh in 2.5 kWh steps and reports the largest capacity that still has ≥100 fully-charged days/year — used as the "max sensible capacity" recommendation. The MAX flag is always driven by Year 1 (afgelopen jaar), not the multi-year average.
 

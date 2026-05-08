@@ -6,7 +6,7 @@ Interne tool voor SmartPeak om de terugverdientijd van thuisbatterijen te bereke
 
 1. Upload een Fluvius CSV-export (kwartierwaarden afname/injectie)
 2. Kies een of meerdere batterijconfiguraties uit het productassortiment (Google Sheet)
-3. De calculator toont per configuratie twee scenario's (**Worst Case** en **Optimistisch**) met jaarlijkse besparing, terugverdientijd, en capaciteitsanalyse
+3. De calculator toont per configuratie twee scenario's (**Worst Case** en **Realistisch**) met jaarlijkse besparing, terugverdientijd, en capaciteitsanalyse
 4. Resultaten kunnen gedeeld worden via een publieke link of opgeslagen als project in Firestore
 
 ## Pagina's

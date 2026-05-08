@@ -1064,7 +1064,7 @@ async function convertLeadToProject(lead, opts = {}) {
     const save = (typeof lr.annualSavingEur === 'number' && isFinite(lr.annualSavingEur))
       ? '€' + Math.round(lr.annualSavingEur).toLocaleString('nl-BE')
       : '?';
-    const header = `[Lead-analyse] Beste config: ${lr.bestConfigType} — ROI ~${roi} (optimistisch), ~${save}/jaar besparing.`;
+    const header = `[Lead-analyse] Beste config: ${lr.bestConfigType} — ROI ~${roi} (realistisch), ~${save}/jaar besparing.`;
     notes = notes ? `${header}\n\n${notes}` : header;
   }
 

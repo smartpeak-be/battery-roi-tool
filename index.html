@@ -1528,7 +1528,7 @@ function renderPeriodAlert(d) {
 
 /** Render the scenario explanation + optional inverter-mismatch warning into #scenarioAlert. */
 function renderScenarioAlert(d) {
-  let html = `<div class="alert alert-info"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <div>Voor elke configuratie tonen we twee scenario's: <strong>Worst Case</strong> (realistisch — met cap op dagelijkse afname) en <strong>Optimistisch</strong> (ideaal — geen beperking). De waarheid ligt ertussen.</div></div>`;
+  let html = `<div class="alert alert-info"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <div>Voor elke configuratie tonen we twee scenario's: <strong>Worst Case</strong> (conservatief — met cap op dagelijkse afname) en <strong>Realistisch</strong> (ideaal — geen beperking). De waarheid ligt ertussen.</div></div>`;
   const anyPvGtBat = d.configResults.some(cr => cr.pvGtBat);
   if (anyPvGtBat) {
     const names = d.configResults
@@ -1597,7 +1597,7 @@ function renderSummaryCard(d) {
   document.getElementById('summaryCard').style.display = '';
 }
 
-/** Build HTML for a single scenario card (Worst Case or Optimistisch). */
+/** Build HTML for a single scenario card (Worst Case or Realistisch). */
 function makeScenCard(d, title, badge, badgeClass, cssClass, scen, installPrice, extraInfo, mainColorOverride, scenAvg) {
   const fkw  = n => fmt2(n) + ' kWh';
   const fday = n => Math.round(n) + ' d';
@@ -1734,7 +1734,7 @@ function renderScenarioGrid(d) {
         ? `Zelfde installatie — aanname: batterij laadt volledig (drempel = ${fmt2(cfg.batCap)} kWh) en wordt elke dag volledig verbruikt.`
         : `Aanname: batterij laadt volledig en wordt elke dag volledig verbruikt.`;
       gridHTML += makeScenCard(d,
-        'Optimistisch', '✨ Optimistisch', 'badge-blue', 'optimistic',
+        'Realistisch', '✨ Realistisch', 'badge-blue', 'optimistic',
         scenOpt, cfg.price, subOpt, 'blue',
         cr.scenOptAvg
       );
