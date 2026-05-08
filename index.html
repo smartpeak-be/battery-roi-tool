@@ -313,6 +313,7 @@
 
     /* ─── READ-ONLY MODE (for ?data=<b64> share-link viewers) ─────────────── */
     body.readonly-mode #csvUploadCard,
+    body.readonly-mode #configPickerCard,
     body.readonly-mode .btn-calculate,
     body.readonly-mode .btn-loadsave,
     body.readonly-mode .btn-load-configs,
@@ -706,7 +707,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="configPickerCard">
   <h2><span class="icon">🔋</span> Productconfiguratie selectie</h2>
   <div class="form-grid" style="margin-bottom:16px;">
     <div class="form-group">
