@@ -1139,8 +1139,18 @@ function _applyLoadedState(state, showBanner) {
   set('pvInverter',    f.pvInv);
   set('elecPrice',     f.priceDay);
   set('elecPriceNight',f.priceNight);
+
+  // Restore manual configs if present
+  if (state.manualConfigs && typeof state.manualConfigs === 'object') {
+    _manualConfigs = { ...state.manualConfigs };
+    renderManualConfigCards();
+    // Show manual config button when restoring manual configs
+    const mcBtn = document.getElementById('addManualConfigBtn');
+    if (mcBtn) mcBtn.style.display = '';
+  }
+
   if ((state.v === 2 || state.v === 3 || state.v === 4 || state.v === 5) && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
-    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes)).catch(() => {});
+    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)))).catch(() => {});
   }
   const r = _restoreState(state.r);
   if (showBanner) {
@@ -2308,7 +2318,7 @@ async function loadProjectIntoUI(id) {
       // User clicks Bereken when ready. If the project carries a pending config seed
       // (e.g. from lead conversion), load configs and preselect it so the picker is ready.
       if (Array.isArray(proj.pendingConfigTypes) && proj.pendingConfigTypes.some(t => t)) {
-        loadConfigs().then(() => _populateConfigSelects(proj.pendingConfigTypes)).catch(() => {});
+        loadConfigs().then(() => _populateConfigSelects(proj.pendingConfigTypes.filter(t => !isManualConfig(t)))).catch(() => {});
       }
     } else {
       // No CSV at all — show the upload prompt.
@@ -2435,6 +2445,7 @@ function buildSavedFromProject(proj) {
       priceNight: proj.lastCalcRun.inputs.priceNight,
       selectedConfigTypes: proj.lastCalcRun.inputs.selectedConfigTypes,
     } : {},
+    manualConfigs: proj.manualConfigs || {},
     r,
   };
 }
