@@ -434,10 +434,28 @@
 
     /* ── Config picker ───────────────────────────────────────────────────── */
     .config-picker-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
       margin-top: 12px;
+    }
+    .config-picker-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+    .config-picker-row .form-group { flex: 1; margin-bottom: 0; }
+    .config-picker-row .meerkost-wrap {
+      width: 160px;
+      flex-shrink: 0;
+    }
+    .config-picker-row .meerkost-wrap label {
+      font-size: 0.78rem;
+      white-space: nowrap;
+      text-transform: none;
+    }
+    .config-picker-row .meerkost-wrap input {
+      width: 100%;
     }
     select {
       border: 1.5px solid var(--border); border-radius: 8px;
@@ -1028,6 +1046,7 @@ function _serializeState() {
       selectedConfigTypes: d.configResults.map(cr => cr.cfg.type),
     },
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : undefined,
+    meerkostMap: (() => { const m = {}; d.configResults.forEach(cr => { if (cr.cfg.meerkost > 0) m[cr.cfg.type] = cr.cfg.meerkost; }); return Object.keys(m).length > 0 ? m : undefined; })(),
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
@@ -1152,7 +1171,8 @@ function _applyLoadedState(state, showBanner) {
   }
 
   if ((state.v === 2 || state.v === 3 || state.v === 4 || state.v === 5) && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
-    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)))).catch(() => {});
+    const mkMap = state.meerkostMap || {};
+    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), mkMap)).catch(() => {});
   }
   const r = _restoreState(state.r);
   if (showBanner) {
@@ -1214,12 +1234,23 @@ function readSelectedConfigs() {
 // Returns array of resolved config objects ready for processDataPure.
 function readAllSelectedConfigObjects() {
   const priceKey = _getPriceKey();
+  const btwPercent = parseFloat(document.getElementById('btwSelect').value) || 21;
+  const meerkostMap = _readMeerkostFromDom();
   // Sheet configs from dropdowns
   const sheetTypes = readSelectedConfigs();
   const sheetResolved = sheetTypes
     .map(type => {
       const c = _sheetConfigs.find(x => x.type === type);
-      return c ? { type: c.type, omschrijving: c.omschrijving, batCap: c.batCap, batInv: c.batInv, eff: c.eff, price: c.prices[priceKey] } : null;
+      if (!c) return null;
+      const basePrice = c.prices[priceKey];
+      const meerkostExBtw = meerkostMap[type] || 0;
+      const meerkostInclBtw = meerkostExBtw * (1 + btwPercent / 100);
+      return {
+        type: c.type, omschrijving: c.omschrijving, batCap: c.batCap, batInv: c.batInv, eff: c.eff,
+        price: basePrice + meerkostInclBtw,
+        meerkost: meerkostExBtw,
+        meerkostInclBtw,
+      };
     })
     .filter(Boolean);
 
@@ -1231,37 +1262,61 @@ function readAllSelectedConfigObjects() {
   return [...sheetResolved, ...manualResolved];
 }
 
+// Read current meerkost values from the DOM, keyed by config type.
+function _readMeerkostFromDom() {
+  const map = {};
+  document.querySelectorAll('#configPickerList .config-picker-row').forEach(row => {
+    const sel = row.querySelector('.config-select');
+    const inp = row.querySelector('.meerkost-input');
+    if (sel && inp && sel.value) {
+      const v = parseFloat(inp.value) || 0;
+      if (v > 0) map[sel.value] = v;
+    }
+  });
+  return map;
+}
+
 // Render N+1 pickers where N = number of selected types. Always one trailing
 // empty picker so the user can add another. Already-picked types are disabled
 // in the other pickers to prevent duplicates without visually hiding them.
-function renderConfigPickers(selectedTypes) {
+// meerkostMap is an optional { [type]: number } map for restoring meerkost values.
+function renderConfigPickers(selectedTypes, meerkostMap) {
   const list = document.getElementById('configPickerList');
   if (!list) return;
+  // Preserve current meerkost values before re-rendering (merge with provided map).
+  const currentMeerkost = { ..._readMeerkostFromDom(), ...(meerkostMap || {}) };
   const chosen = (selectedTypes || []).filter(v => v);
   list.innerHTML = '';
   for (let i = 0; i <= chosen.length; i++) {
     const currentValue = chosen[i] || '';
     const others = chosen.filter((_, j) => j !== i);
-    const wrap = document.createElement('div');
-    wrap.className = 'form-group';
+    const row = document.createElement('div');
+    row.className = 'config-picker-row';
     const isFirst = i === 0;
     const labelTxt = isFirst
       ? 'Configuratie 1 <span style="color:var(--danger);font-size:1rem;">*</span>'
       : `Configuratie ${i + 1} <span style="font-weight:400;text-transform:none;color:var(--muted)">(optioneel)</span>`;
-    wrap.innerHTML = `
-      <label>${labelTxt}</label>
-      <select class="config-select">${_buildConfigOptionsHtml(currentValue, others, isFirst)}</select>
+    const meerkostVal = currentValue && currentMeerkost[currentValue] ? currentMeerkost[currentValue] : 0;
+    row.innerHTML = `
+      <div class="form-group">
+        <label>${labelTxt}</label>
+        <select class="config-select">${_buildConfigOptionsHtml(currentValue, others, isFirst)}</select>
+      </div>
+      <div class="meerkost-wrap">
+        <label>Meerkost (ex BTW)</label>
+        <input type="number" class="meerkost-input" min="0" step="50" value="${meerkostVal}">
+      </div>
     `;
-    wrap.querySelector('.config-select').addEventListener('change', () => {
+    row.querySelector('.config-select').addEventListener('change', () => {
       renderConfigPickers(readSelectedConfigs());
     });
-    list.appendChild(wrap);
+    list.appendChild(row);
   }
 }
 
 // Legacy shim — kept because _applyLoadedState still calls this name.
-function _populateConfigSelects(selectedTypes) {
-  renderConfigPickers(selectedTypes);
+function _populateConfigSelects(selectedTypes, meerkostMap) {
+  renderConfigPickers(selectedTypes, meerkostMap);
 }
 
 // ─── MANUAL CONFIG FORM ──────────────────────────────────────────────────────
@@ -1718,7 +1773,7 @@ function renderScenarioGrid(d) {
       <div class="config-group-header">
         🔋 Configuratie ${idx+1}
         <span class="cfg-sub">${cfgLabel}</span>
-        <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}</span>
+        <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}${cfg.meerkost > 0 ? ` <span style="font-size:0.75rem;color:var(--muted);">(incl. ${fmtEur(cfg.meerkostInclBtw)} meerkost)</span>` : ''}</span>
         ${specsBtn}
       </div>
     </div>`;
@@ -1901,6 +1956,10 @@ async function saveProjectCalcRun(d) {
   const priceNight = (priceNightRaw && priceNightRaw.trim() !== '') ? parseFloat(priceNightRaw) : null;
   const selectedConfigTypes = (d.configResults || []).map(cr => cr.cfg && cr.cfg.type).filter(Boolean);
 
+  // Build meerkostMap from configResults (ex BTW values).
+  const meerkostMap = {};
+  (d.configResults || []).forEach(cr => { if (cr.cfg && cr.cfg.meerkost > 0) meerkostMap[cr.cfg.type] = cr.cfg.meerkost; });
+
   // Build results: same as _serializeState's `r` block, but strip dailyCompact since it lives
   // separately in csvUpload (otherwise we'd duplicate the per-day arrays in Firestore).
   const r = _serializeState();
@@ -1922,7 +1981,8 @@ async function saveProjectCalcRun(d) {
   }
 
   await saveLastCalcRun(_projectId, {
-    inputs: { pvInv: pvInverter, priceDay, priceNight, selectedConfigTypes },
+    inputs: { pvInv: pvInverter, priceDay, priceNight, selectedConfigTypes,
+              meerkostMap: Object.keys(meerkostMap).length > 0 ? meerkostMap : null },
     results,
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
   });
@@ -2454,6 +2514,7 @@ function buildSavedFromProject(proj) {
       selectedConfigTypes: proj.lastCalcRun.inputs.selectedConfigTypes,
     } : {},
     manualConfigs: proj.manualConfigs || {},
+    meerkostMap: (proj.lastCalcRun && proj.lastCalcRun.inputs && proj.lastCalcRun.inputs.meerkostMap) || undefined,
     r,
   };
 }
