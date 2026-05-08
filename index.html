@@ -1198,6 +1198,27 @@ function readSelectedConfigs() {
     .filter(v => v);
 }
 
+// Read ALL selected configs: sheet picker selections + manual configs.
+// Returns array of resolved config objects ready for processDataPure.
+function readAllSelectedConfigObjects() {
+  const priceKey = _getPriceKey();
+  // Sheet configs from dropdowns
+  const sheetTypes = readSelectedConfigs();
+  const sheetResolved = sheetTypes
+    .map(type => {
+      const c = _sheetConfigs.find(x => x.type === type);
+      return c ? { type: c.type, omschrijving: c.omschrijving, batCap: c.batCap, batInv: c.batInv, eff: c.eff, price: c.prices[priceKey] } : null;
+    })
+    .filter(Boolean);
+
+  // Manual configs (already have price resolved)
+  const manualResolved = Object.values(_manualConfigs).map(mc => ({
+    type: mc.type, omschrijving: `${mc.merk} ${mc.omschrijving}`, batCap: mc.batCap, batInv: mc.batInv, eff: mc.eff, price: mc.price, isManual: true,
+  }));
+
+  return [...sheetResolved, ...manualResolved];
+}
+
 // Render N+1 pickers where N = number of selected types. Always one trailing
 // empty picker so the user can add another. Already-picked types are disabled
 // in the other pickers to prevent duplicates without visually hiding them.
@@ -1397,12 +1418,7 @@ async function calculate() {
   }
 
   const priceKey = _getPriceKey();
-  const selectedConfigs = readSelectedConfigs()
-    .map(type => {
-      const c = _sheetConfigs.find(x => x.type === type);
-      return c ? { type: c.type, omschrijving: c.omschrijving, batCap: c.batCap, batInv: c.batInv, eff: c.eff, price: c.prices[priceKey] } : null;
-    })
-    .filter(Boolean);
+  const selectedConfigs = readAllSelectedConfigObjects();
 
   if (!selectedConfigs.length) { alert('Kies minstens één productconfiguratie.'); return; }
 
@@ -1890,6 +1906,7 @@ async function saveProjectCalcRun(d) {
   await saveLastCalcRun(_projectId, {
     inputs: { pvInv: pvInverter, priceDay, priceNight, selectedConfigTypes },
     results,
+    manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
   });
   showToast('💾 Opgeslagen in project');
 }
