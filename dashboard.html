@@ -991,7 +991,14 @@ function leadRowHTML(l, isDeleted) {
 // results already rendered. Returns null on any failure — the caller treats
 // that as "no precompute" and falls back to pendingConfigTypes preselection.
 async function precomputeLastCalcRunForLead(lead) {
-  if (!lead.csvDailyCompact || !lead.result || !lead.result.bestConfigType) return null;
+  if (!lead.csvDailyCompact || !lead.result) return null;
+  // Support both legacy (bestConfigType) and new (configTypes array) result shapes
+  const resultTypes = lead.result.configTypes
+    ? lead.result.configTypes
+    : lead.result.bestConfigType
+      ? [lead.result.bestConfigType]
+      : null;
+  if (!resultTypes || !resultTypes.length) return null;
 
   let configs;
   try {
@@ -1005,12 +1012,19 @@ async function precomputeLastCalcRunForLead(lead) {
     return null;
   }
 
-  const chosen = configs.find(c => c.type === lead.result.bestConfigType);
-  if (!chosen) return null;
-
   const btw      = (lead.effectiveBtw === 6) ? 6 : 21;
-  const price    = chosen.prices[`${btw}_yes`];
-  if (!price || price <= 0) return null;
+  const priceKey = `${btw}_yes`;
+
+  // Resolve all config types from the lead result
+  const selectedConfigs = [];
+  for (const typeName of resultTypes) {
+    const found = configs.find(c => c.type === typeName);
+    if (!found) continue;
+    const price = found.prices[priceKey];
+    if (!price || price <= 0) continue;
+    selectedConfigs.push({ ...found, price });
+  }
+  if (!selectedConfigs.length) return null;
 
   const pvKw    = (typeof lead.pvInverterKw === 'number' && lead.pvInverterKw > 0)
     ? lead.pvInverterKw : 3.5;
@@ -1026,7 +1040,7 @@ async function precomputeLastCalcRunForLead(lead) {
     // doesn't emit undefined fields, which Firestore rejects.
     d = processDataPure(
       { allDays, eanCode: '', meterNr: '', meterType: '' },
-      pvKw, [{ ...chosen, price }], tariff, null
+      pvKw, selectedConfigs, tariff, null
     );
   } catch (e) {
     console.warn('[lead-precompute] processDataPure threw:', e);
@@ -1042,7 +1056,7 @@ async function precomputeLastCalcRunForLead(lead) {
         pvInv:      pvKw,
         priceDay:   tariff,
         priceNight: null,
-        selectedConfigTypes: [chosen.type],
+        selectedConfigTypes: selectedConfigs.map(c => c.type),
       },
       results: serializeDForLastCalcRun(d),
     },

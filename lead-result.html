@@ -74,7 +74,9 @@ function loadChartJs() {
     wireCTA(leadId, lead, 'btnContactBottom');
     if (lead.csvDailyCompact) {
       // Render the chart after the DOM is in place; failure is silent (the card hides itself).
-      const selfPct = lead.result ? Math.max(0, Math.min(100, (lead.result.recoveryPctFull || 0) + (lead.result.recoveryPctPartial || 0))) : 0;
+      const recF = rVal(lead.result ? lead.result.recoveryPctFull : 0);
+      const recP = rVal(lead.result ? lead.result.recoveryPctPartial : 0);
+      const selfPct = Math.max(0, Math.min(100, (recF.max || 0) + (recP.max || 0)));
       renderUsageChart(lead, selfPct).catch(err => {
         console.warn('[lead-result] chart render failed:', err);
         const wrap = document.getElementById('usageChartCard');
@@ -90,8 +92,13 @@ function loadChartJs() {
 
 function renderProfitable(lead) {
   const r = lead.result;
-  const savingEur   = Math.round(r.annualSavingEur || 0);
-  const selfPct     = Math.max(0, Math.min(100, (r.recoveryPctFull || 0) + (r.recoveryPctPartial || 0)));
+  const savingVal   = rVal(r.annualSavingEur);
+  const savingEur   = Math.round(savingVal.max || 0);   // hero shows best (max) saving
+  const recFull     = rVal(r.recoveryPctFull);
+  const recPartial  = rVal(r.recoveryPctPartial);
+  // For energy bar / chart we use the average of min+max self-consumption %
+  const selfPctMax  = Math.max(0, Math.min(100, (recFull.max || 0) + (recPartial.max || 0)));
+  const selfPct     = selfPctMax;
 
   // Compute annualized kWh for the 3-segment energy bar.
   let energyBar = null;
@@ -146,11 +153,11 @@ function renderNotProfitable(lead) {
 }
 
 function heroCard(savingEur, r) {
-  const savingTxt = savingEur.toLocaleString('nl-BE');
+  const savingTxt = fmtEurRange(r.annualSavingEur);
   return `
     <div class="sp-result-card sp-hero-card text-center">
       <div class="sp-hero-eyebrow">Op basis van jouw eigen verbruik</div>
-      <div class="sp-hero-amount">€${savingTxt}<span class="sp-hero-amount-unit"> per jaar</span></div>
+      <div class="sp-hero-amount">${savingTxt}<span class="sp-hero-amount-unit"> per jaar</span></div>
       <div class="sp-hero-subtitle">bespaar je op je elektriciteitsfactuur</div>
     </div>
   `;
@@ -162,17 +169,17 @@ function solutionCard(r) {
       <h5 class="text-center mb-1">Jouw aanbevolen oplossing</h5>
       <div class="sp-result-metrics">
         <div class="sp-metric-tile">
-          <div class="sp-result-metric-value">${fmtNl(r.batteryCapKwh, 1)} kWh</div>
+          <div class="sp-result-metric-value">${fmtRange(r.batteryCapKwh, 1, ' kWh')}</div>
           <div class="sp-result-metric-label">Opslagcapaciteit</div>
           <div class="sp-metric-detail">Genoeg voor een avond koken, wassen en TV kijken op opgeslagen zonne-energie.</div>
         </div>
         <div class="sp-metric-tile">
-          <div class="sp-result-metric-value">${fmtNl(r.batteryInverterKw, 1)} kW</div>
+          <div class="sp-result-metric-value">${fmtRange(r.batteryInverterKw, 1, ' kW')}</div>
           <div class="sp-result-metric-label">Omvormvermogen</div>
           <div class="sp-metric-detail">Snel genoeg om je piekverbruik op te vangen, ook als de waterkoker en oven samen draaien.</div>
         </div>
         <div class="sp-metric-tile">
-          <div class="sp-result-metric-value">${fmtNl(r.roiYears, 1)} jaar</div>
+          <div class="sp-result-metric-value">${fmtRange(r.roiYears, 1, ' jaar')}</div>
           <div class="sp-result-metric-label">Terugverdientijd</div>
           <div class="sp-metric-detail">Vanaf dan verdient de batterij elk jaar geld op je energiefactuur.</div>
         </div>
@@ -424,6 +431,30 @@ function monthShortLabel(d) {
 
 function fmtNl(n, decimals = 1) {
   return Number(n).toFixed(decimals).replace('.', ',');
+}
+
+/** Read a result field that may be a plain number (legacy) or { min, max } (range). */
+function rVal(field) {
+  if (field && typeof field === 'object' && 'min' in field) return field;
+  return { min: field, max: field };
+}
+
+/** Format a range field: "x" when min===max, "x tot y" otherwise. */
+function fmtRange(field, decimals = 1, suffix = '') {
+  const { min, max } = rVal(field);
+  const a = fmtNl(min, decimals);
+  const b = fmtNl(max, decimals);
+  if (a === b) return a + suffix;
+  return `${a} tot ${b}${suffix}`;
+}
+
+/** Format a EUR range: "€x" or "€x – €y". */
+function fmtEurRange(field) {
+  const { min, max } = rVal(field);
+  const a = Math.round(min).toLocaleString('nl-BE');
+  const b = Math.round(max).toLocaleString('nl-BE');
+  if (a === b) return `€${a}`;
+  return `€${a} – €${b}`;
 }
 
 function wireCTA(leadId, lead, btnId = 'btnContact') {
