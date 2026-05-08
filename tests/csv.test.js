@@ -78,6 +78,7 @@ describe('validateCsvHeaders', () => {
 });
 
 describe('parseDate', () => {
+  // ── Standard dd-mm-yyyy with dash separator ──────────────────────────
   it('parses dd-mm-yyyy to correct Date', () => {
     const d = parseDate('15-03-2025');
     expect(d.getFullYear()).toBe(2025);
@@ -92,6 +93,53 @@ describe('parseDate', () => {
     expect(d.getDate()).toBe(1);
   });
 
+  // ── Slash separator ──────────────────────────────────────────────────
+  it('parses dd/mm/yyyy with slash separator', () => {
+    const d = parseDate('15/03/2025');
+    expect(d.getFullYear()).toBe(2025);
+    expect(d.getMonth()).toBe(2);
+    expect(d.getDate()).toBe(15);
+  });
+
+  it('parses d/mm/yyyy without leading zero (real Fluvius export)', () => {
+    const d = parseDate('8/05/2023');
+    expect(d.getFullYear()).toBe(2023);
+    expect(d.getMonth()).toBe(4); // May = 4
+    expect(d.getDate()).toBe(8);
+  });
+
+  it('parses d/m/yyyy without any leading zeros', () => {
+    const d = parseDate('3/7/2024');
+    expect(d.getFullYear()).toBe(2024);
+    expect(d.getMonth()).toBe(6); // July = 6
+    expect(d.getDate()).toBe(3);
+  });
+
+  // ── Day > 12 detection ───────────────────────────────────────────────
+  it('detects day when first part > 12 (dd/mm/yyyy)', () => {
+    const d = parseDate('28/02/2024');
+    expect(d.getFullYear()).toBe(2024);
+    expect(d.getMonth()).toBe(1); // Feb
+    expect(d.getDate()).toBe(28);
+  });
+
+  it('detects day when second part > 12 (mm/dd/yyyy)', () => {
+    // If someone provides month-first format and day > 12, we detect it
+    const d = parseDate('02/28/2024');
+    expect(d.getFullYear()).toBe(2024);
+    expect(d.getMonth()).toBe(1); // Feb
+    expect(d.getDate()).toBe(28);
+  });
+
+  // ── Ambiguous dates (both ≤ 12) default to Belgian day-first ────────
+  it('assumes Belgian day-first when both parts ≤ 12', () => {
+    const d = parseDate('05/03/2024');
+    expect(d.getFullYear()).toBe(2024);
+    expect(d.getMonth()).toBe(2); // March (Belgian: day=5, month=3)
+    expect(d.getDate()).toBe(5);
+  });
+
+  // ── Edge cases and invalid input ─────────────────────────────────────
   it('returns null for null/undefined/empty', () => {
     expect(parseDate(null)).toBeNull();
     expect(parseDate(undefined)).toBeNull();
@@ -120,6 +168,14 @@ describe('parseDate', () => {
   it('returns null for garbage input', () => {
     expect(parseDate('abc-def-ghi')).toBeNull();
     expect(parseDate('not-a-date')).toBeNull();
+  });
+
+  it('parses mixed separators gracefully (regex splits on both)', () => {
+    // '01-03/2024' splits into ['01','03','2024'] which is a valid date
+    const d = parseDate('01-03/2024');
+    expect(d).not.toBeNull();
+    expect(d.getDate()).toBe(1);
+    expect(d.getMonth()).toBe(2); // March
   });
 });
 
@@ -219,5 +275,21 @@ describe('extractCsvForStorage', () => {
       '="541";M001;DMM;NOPE;03-01-2024;Injectie;3,000;kWh;Gevalideerd',
     ].join('\n');
     expect(() => extractCsvForStorage(csv)).toThrow('ongeldig datumformaat');
+  });
+
+  it('parses CSV with slash-separated dates without leading zeros (real Fluvius variant)', () => {
+    const csv = [
+      'Van (datum);Van (tijdstip);Tot (datum);Tot (tijdstip);EAN-code;Meter;Metertype;Register;Volume;Eenheid;Validatiestatus;Omschrijving',
+      '8/05/2023;0:00:00;9/05/2023;0:00:00;="541999";M001;DMM;Afname;10,500;kWh;Gevalideerd;test',
+      '8/05/2023;0:00:00;9/05/2023;0:00:00;="541999";M001;DMM;Injectie;4,200;kWh;Gevalideerd;test',
+      '9/05/2023;0:00:00;10/05/2023;0:00:00;="541999";M001;DMM;Afname;8,000;kWh;Gevalideerd;test',
+      '9/05/2023;0:00:00;10/05/2023;0:00:00;="541999";M001;DMM;Injectie;6,100;kWh;Gevalideerd;test',
+    ].join('\n');
+    const result = extractCsvForStorage(csv);
+    expect(result.dailyCompact.afname).toHaveLength(2);
+    expect(result.dailyCompact.afname[0]).toBeCloseTo(10.5, 2);
+    expect(result.dailyCompact.injectie[0]).toBeCloseTo(4.2, 2);
+    expect(result.dailyCompact.afname[1]).toBeCloseTo(8.0, 2);
+    expect(result.dailyCompact.injectie[1]).toBeCloseTo(6.1, 2);
   });
 });
