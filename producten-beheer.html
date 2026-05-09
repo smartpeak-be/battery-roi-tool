@@ -746,8 +746,11 @@ function buildDetailFormHtml(product, mode) {
 
       <div class="alert alert-light border py-2 px-3 mb-3">
         <small class="text-muted">
-          <strong>Verkoopprijs:</strong> <span class="detail-preview-sp">—</span> &nbsp;|&nbsp;
-          <strong>2e eenheid:</strong> <span class="detail-preview-u2">—</span>
+          <strong>Verkoopprijs:</strong> <span class="detail-preview-sp">—</span>
+          <span class="detail-preview-sp-winst text-success"></span><br>
+          <strong>Kortingsprijs</strong> <span class="detail-preview-korting-label">(vanaf 2e)</span><strong>:</strong>
+          <span class="detail-preview-u2">—</span>
+          <span class="detail-preview-u2-winst text-success"></span>
         </small>
       </div>
 
@@ -872,16 +875,24 @@ function readProductFromForm(container) {
 
 function updatePricePreview(container) {
   const data = readProductFromForm(container);
+  const pp = data.purchasePrice || 0;
   const sp = sellPrice(data);
-  const u2 = unitPrice(data, 2);
+  const fromUnit = data.discountFromUnit || 2;
+  const kp = unitPrice(data, fromUnit);
 
   const previewSp = container.querySelector('.detail-preview-sp');
   const previewU2 = container.querySelector('.detail-preview-u2');
   const previewSellPrice = container.querySelector('.detail-preview-sell-price');
+  const previewSpWinst = container.querySelector('.detail-preview-sp-winst');
+  const previewU2Winst = container.querySelector('.detail-preview-u2-winst');
+  const kortingLabel = container.querySelector('.detail-preview-korting-label');
 
-  if (previewSp) previewSp.textContent = data.purchasePrice ? `€${sp.toFixed(2)}` : '—';
-  if (previewU2) previewU2.textContent = data.purchasePrice ? `€${u2.toFixed(2)}` : '—';
-  if (previewSellPrice) previewSellPrice.value = data.purchasePrice ? sp.toFixed(2) : '—';
+  if (previewSp) previewSp.textContent = pp ? `€${sp.toFixed(2)}` : '—';
+  if (previewU2) previewU2.textContent = pp ? `€${kp.toFixed(2)}` : '—';
+  if (previewSellPrice) previewSellPrice.value = pp ? sp.toFixed(2) : '—';
+  if (previewSpWinst) previewSpWinst.textContent = pp ? `(winst €${(sp - pp).toFixed(2)})` : '';
+  if (previewU2Winst) previewU2Winst.textContent = pp ? `(winst €${(kp - pp).toFixed(2)})` : '';
+  if (kortingLabel) kortingLabel.textContent = `(vanaf ${fromUnit}e)`;
 }
 
 async function saveProductFromForm(container, existingProduct) {

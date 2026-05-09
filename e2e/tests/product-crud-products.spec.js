@@ -123,9 +123,17 @@ test.describe('Product CRUD', () => {
     const previewSp = await page.locator('.detail-preview-sp').textContent();
     expect(previewSp).toContain('1300.00');
 
-    // Verify 2nd unit preview: 1300 * 0.90 = 1170.00
+    // Verify profit: 1300 - 1000 = 300
+    const previewWinst = await page.locator('.detail-preview-sp-winst').textContent();
+    expect(previewWinst).toContain('300.00');
+
+    // Verify korting price (from unit 2): 1300 * 0.90 = 1170.00
     const previewU2 = await page.locator('.detail-preview-u2').textContent();
     expect(previewU2).toContain('1170.00');
+
+    // Verify korting profit: 1170 - 1000 = 170
+    const previewU2Winst = await page.locator('.detail-preview-u2-winst').textContent();
+    expect(previewU2Winst).toContain('170.00');
 
     // Save
     await page.click('.detail-btn-save');
@@ -139,11 +147,11 @@ test.describe('Product CRUD', () => {
       { timeout: 10_000 },
     );
 
-    // Verify product appears in the list
-    await page.waitForSelector('.product-card', { timeout: 5000 });
-    const listText = await page.locator('#productList').textContent();
-    expect(listText).toContain('E2E_CreateTest');
-    expect(listText).toContain('Marstek');
+    // Verify product appears in the list (may take a moment after Firestore write)
+    const createdCard = page.locator('.product-card', { hasText: 'E2E_CreateTest' });
+    await createdCard.waitFor({ state: 'visible', timeout: 10_000 });
+    const cardText = await createdCard.textContent();
+    expect(cardText).toContain('Marstek');
   });
 
   test('edit product: change price, verify preview updates', async ({ page }) => {
