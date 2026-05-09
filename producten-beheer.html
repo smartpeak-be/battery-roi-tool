@@ -413,9 +413,10 @@ async function seedDefaultCategories() {
   const cats = await listProductCategories();
   if (cats.length > 0) return; // Already seeded
   const defaults = [
-    { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 0 },
-    { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 1 },
-    { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 2 },
+    { name: 'Thuisbatterij-systemen', slug: 'thuisbatterij-systemen', isDefault: false, sortOrder: 0 },
+    { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 1 },
+    { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 2 },
+    { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 3 },
   ];
   for (const cat of defaults) {
     await createProductCategory(cat);
