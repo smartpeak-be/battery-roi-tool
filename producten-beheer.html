@@ -491,7 +491,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnSignOutNW').addEventListener('click', () => signOut());
 
   // Listen for auth state changes
-  onAuthStateChanged(user => {
+  let _initialized = false;
+  onAuthStateChanged(async (user) => {
     if (!user) {
       showState('stateLoggedOut');
       return;
@@ -504,14 +505,31 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('userDisplayName').textContent = user.displayName || user.email;
     showState('stateAuthorized');
 
-    // Initialize page
-    wireSettingsCollapse();
-    wireToggleButtons();
-    wireSaveSettings();
-    wireCategoryModal();
+    // Only wire event handlers once
+    if (!_initialized) {
+      _initialized = true;
+      wireSettingsCollapse();
+      wireToggleButtons();
+      wireSaveSettings();
+      wireCategoryModal();
+    }
 
-    loadSettings();
-    seedDefaultCategories().then(() => loadCategories());
+    // Load data (await both to ensure form is populated before tests check)
+    try {
+      await loadSettings();
+    } catch (e) {
+      console.error('loadSettings error:', e);
+    }
+
+    try {
+      await seedDefaultCategories();
+      await loadCategories();
+    } catch (e) {
+      console.error('seedDefaultCategories/loadCategories error:', e);
+    }
+
+    // Signal that initialization is complete (used by E2E tests)
+    document.getElementById('stateAuthorized').dataset.ready = 'true';
   });
 });
 

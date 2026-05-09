@@ -4,6 +4,39 @@ import { test, expect } from '../helpers/auth-fixture.js';
 import { firebaseSignIn } from '../helpers/auth-fixture.js';
 import { getAdminFirestore } from '../helpers/project-helpers.js';
 
+/**
+ * Helper: navigate to producten-beheer.html, authenticate, and wait until
+ * the page is fully initialized (settings loaded + categories rendered).
+ */
+async function navigateAndWaitReady(page) {
+  await page.goto('/producten-beheer.html');
+  await firebaseSignIn(page);
+
+  // Wait for auth-gated UI
+  await page.waitForSelector('#stateAuthorized', {
+    state: 'visible',
+    timeout: 15_000,
+  });
+
+  // Wait for the page to signal that all async init is done
+  await page.waitForFunction(
+    () => document.getElementById('stateAuthorized')?.dataset.ready === 'true',
+    { timeout: 15_000 },
+  );
+}
+
+/**
+ * Helper: open settings card if collapsed.
+ */
+async function openSettingsCard(page) {
+  const settingsBody = page.locator('#settingsBody');
+  const isHidden = await settingsBody.evaluate(el => el.style.display === 'none');
+  if (isHidden) {
+    await page.click('#settingsToggle');
+    await settingsBody.waitFor({ state: 'visible', timeout: 5000 });
+  }
+}
+
 test.describe('Product settings and categories', () => {
   test.afterAll(async () => {
     const db = getAdminFirestore();
@@ -25,26 +58,8 @@ test.describe('Product settings and categories', () => {
   });
 
   test('settings: save and reload persists values', async ({ page }) => {
-    // Navigate to product management page
-    await page.goto('/producten-beheer.html');
-
-    // Authenticate (Firebase SDK loads on this page)
-    await firebaseSignIn(page);
-
-    // Wait for auth-gated UI to appear
-    await page.waitForSelector('#stateAuthorized', {
-      state: 'visible',
-      timeout: 15_000,
-    });
-
-    // Open settings card (it starts collapsed)
-    const settingsToggle = page.locator('#settingsToggle');
-    const settingsBody = page.locator('#settingsBody');
-    const isHidden = await settingsBody.evaluate(el => el.style.display === 'none');
-    if (isHidden) {
-      await settingsToggle.click();
-      await settingsBody.waitFor({ state: 'visible', timeout: 5000 });
-    }
+    await navigateAndWaitReady(page);
+    await openSettingsCard(page);
 
     // Clear and fill all fields
     await page.fill('#settingsMarginValue', '25');
@@ -60,25 +75,10 @@ test.describe('Product settings and categories', () => {
     // Wait for toast to appear
     await page.waitForSelector('.toast', { state: 'visible', timeout: 5000 });
 
-    // Reload page
+    // Reload page and wait for full initialization
     await page.reload();
-
-    // Wait for auth-gated UI again
-    await page.waitForSelector('#stateAuthorized', {
-      state: 'visible',
-      timeout: 15_000,
-    });
-
-    // Wait for settings to load from Firestore
-    await page.waitForTimeout(1500);
-
-    // Open settings card again
-    const settingsBodyReload = page.locator('#settingsBody');
-    const isHiddenReload = await settingsBodyReload.evaluate(el => el.style.display === 'none');
-    if (isHiddenReload) {
-      await page.click('#settingsToggle');
-      await settingsBodyReload.waitFor({ state: 'visible', timeout: 5000 });
-    }
+    await navigateAndWaitReady(page);
+    await openSettingsCard(page);
 
     // Verify all values persisted
     await expect(page.locator('#settingsMarginValue')).toHaveValue('25');
@@ -90,21 +90,8 @@ test.describe('Product settings and categories', () => {
   });
 
   test('settings: toggle marge from % to fixed', async ({ page }) => {
-    // Navigate
-    await page.goto('/producten-beheer.html');
-    await firebaseSignIn(page);
-    await page.waitForSelector('#stateAuthorized', {
-      state: 'visible',
-      timeout: 15_000,
-    });
-
-    // Open settings card
-    const settingsBody = page.locator('#settingsBody');
-    const isHidden = await settingsBody.evaluate(el => el.style.display === 'none');
-    if (isHidden) {
-      await page.click('#settingsToggle');
-      await settingsBody.waitFor({ state: 'visible', timeout: 5000 });
-    }
+    await navigateAndWaitReady(page);
+    await openSettingsCard(page);
 
     // Click the "€" button to switch to fixed margin
     await page.click('#marginTypeToggle button[data-val="fixed"]');
@@ -120,23 +107,10 @@ test.describe('Product settings and categories', () => {
     await page.click('#btnSaveSettings');
     await page.waitForSelector('.toast', { state: 'visible', timeout: 5000 });
 
-    // Reload page
+    // Reload page and wait for full initialization
     await page.reload();
-    await page.waitForSelector('#stateAuthorized', {
-      state: 'visible',
-      timeout: 15_000,
-    });
-
-    // Wait for settings to load
-    await page.waitForTimeout(1500);
-
-    // Open settings card
-    const settingsBodyReload = page.locator('#settingsBody');
-    const isHiddenReload = await settingsBodyReload.evaluate(el => el.style.display === 'none');
-    if (isHiddenReload) {
-      await page.click('#settingsToggle');
-      await settingsBodyReload.waitFor({ state: 'visible', timeout: 5000 });
-    }
+    await navigateAndWaitReady(page);
+    await openSettingsCard(page);
 
     // Verify toggle persisted
     const dataTypeAfterReload = await page.locator('#marginTypeToggle').getAttribute('data-type');
@@ -144,19 +118,10 @@ test.describe('Product settings and categories', () => {
   });
 
   test('categories: default categories are seeded', async ({ page }) => {
-    // Navigate
-    await page.goto('/producten-beheer.html');
-    await firebaseSignIn(page);
-    await page.waitForSelector('#stateAuthorized', {
-      state: 'visible',
-      timeout: 15_000,
-    });
+    await navigateAndWaitReady(page);
 
-    // Wait for category tabs to render
-    await page.waitForSelector('#categoryTabs', { state: 'visible', timeout: 10_000 });
-
-    // Wait a moment for categories to load
-    await page.waitForTimeout(1000);
+    // Wait for category tab buttons to appear (at least "Alle" + defaults)
+    await page.waitForSelector('#categoryTabs button', { state: 'visible', timeout: 10_000 });
 
     // Get tab button texts
     const tabs = page.locator('#categoryTabs button');
@@ -172,17 +137,10 @@ test.describe('Product settings and categories', () => {
   });
 
   test('categories: create new category appears as tab', async ({ page }) => {
-    // Navigate
-    await page.goto('/producten-beheer.html');
-    await firebaseSignIn(page);
-    await page.waitForSelector('#stateAuthorized', {
-      state: 'visible',
-      timeout: 15_000,
-    });
+    await navigateAndWaitReady(page);
 
-    // Wait for category tabs to load
-    await page.waitForSelector('#categoryTabs', { state: 'visible', timeout: 10_000 });
-    await page.waitForTimeout(1000);
+    // Wait for category tab buttons to appear
+    await page.waitForSelector('#categoryTabs button', { state: 'visible', timeout: 10_000 });
 
     // Click "Manage Categories" button
     await page.click('#btnManageCategories');
@@ -207,8 +165,9 @@ test.describe('Product settings and categories', () => {
     // Wait for modal to hide
     await page.waitForSelector('#categoryModal', { state: 'hidden', timeout: 5000 });
 
-    // Wait for tabs to re-render
-    await page.waitForTimeout(1000);
+    // Wait for tabs to re-render (data-ready resets and re-sets)
+    await page.waitForSelector('#categoryTabs button', { state: 'visible', timeout: 10_000 });
+    await page.waitForTimeout(500);
 
     // Verify new category appears in tabs
     const tabs = page.locator('#categoryTabs button');
@@ -217,17 +176,10 @@ test.describe('Product settings and categories', () => {
   });
 
   test('categories: cannot delete default category', async ({ page }) => {
-    // Navigate
-    await page.goto('/producten-beheer.html');
-    await firebaseSignIn(page);
-    await page.waitForSelector('#stateAuthorized', {
-      state: 'visible',
-      timeout: 15_000,
-    });
+    await navigateAndWaitReady(page);
 
-    // Wait for category tabs
-    await page.waitForSelector('#categoryTabs', { state: 'visible', timeout: 10_000 });
-    await page.waitForTimeout(1000);
+    // Wait for category tab buttons to appear
+    await page.waitForSelector('#categoryTabs button', { state: 'visible', timeout: 10_000 });
 
     // Open category modal
     await page.click('#btnManageCategories');
