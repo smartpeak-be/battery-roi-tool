@@ -1123,8 +1123,91 @@ async function convertLeadToProject(lead, opts = {}) {
   return ref.id;
 }
 
+// ─── SETTINGS ────────────────────────────────────────────────────────────────
+
+async function getSettings() {
+  const snap = await getDb().collection('config').doc('settings').get();
+  return snap.exists ? snap.data() : {};
+}
+
+async function saveSettings(data) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  await getDb().collection('config').doc('settings').set({
+    ...data,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: email,
+  }, { merge: true });
+}
+
+// ─── PRODUCT CATEGORIES ──────────────────────────────────────────────────────
+
+function categoriesCol() { return getDb().collection('productCategories'); }
+
+async function listProductCategories() {
+  const snap = await categoriesCol().orderBy('sortOrder').get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+async function createProductCategory(data) {
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const ref = await categoriesCol().add({
+    name: data.name,
+    slug: data.slug || data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    isDefault: data.isDefault || false,
+    sortOrder: data.sortOrder ?? 999,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return ref.id;
+}
+
+async function updateProductCategory(id, data) {
+  await categoriesCol().doc(id).update({
+    ...data,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function deleteProductCategory(id) {
+  // Find the default category
+  const allCats = await listProductCategories();
+  const defaultCat = allCats.find(c => c.isDefault);
+  if (!defaultCat) throw new Error('Geen default categorie gevonden');
+  if (defaultCat.id === id) throw new Error('De default categorie kan niet verwijderd worden');
+
+  // Move orphaned products to default category
+  const orphans = await getDb().collection('products')
+    .where('categoryId', '==', id).get();
+  if (!orphans.empty) {
+    const batch = getDb().batch();
+    orphans.docs.forEach(doc => {
+      batch.update(doc.ref, {
+        categoryId: defaultCat.id,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch.commit();
+  }
+
+  // Delete the category
+  await categoriesCol().doc(id).delete();
+}
+
+async function getDefaultCategory() {
+  const snap = await categoriesCol().where('isDefault', '==', true).limit(1).get();
+  return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
 // ─── EXPOSE HELPERS ON WINDOW ────────────────────────────────────────────────
 window.isMarstekConfig = isMarstekConfig;
 window.isZendureConfig = isZendureConfig;
 window.isSupportedConfig = isSupportedConfig;
 window.isManualConfig = isManualConfig;
+window.getSettings = getSettings;
+window.saveSettings = saveSettings;
+window.listProductCategories = listProductCategories;
+window.createProductCategory = createProductCategory;
+window.updateProductCategory = updateProductCategory;
+window.deleteProductCategory = deleteProductCategory;
+window.getDefaultCategory = getDefaultCategory;

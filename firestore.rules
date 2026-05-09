@@ -29,13 +29,13 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // ─── Config (read-only) ──────────────────────────────────────
-    // `products` is the Google-Sheet CSV pointer used by both the
-    // (whitelisted) calculator and the (public) lead wizard, so it is
-    // openly readable. Other config docs stay whitelisted-only.
+    // ─── Config ──────────────────────────────────────────────
+    // 'products' is publicly readable (lead wizard needs it).
+    // 'settings' is writable by whitelisted users.
+    // All other config docs are read-only for whitelisted users.
     match /config/{docId} {
       allow read:  if docId == 'products' || isWhitelisted();
-      allow write: if false;
+      allow write: if docId == 'settings' && isWhitelisted();
     }
 
     // ─── Leads (public create, public read by ID, whitelisted list) ─
@@ -51,6 +51,27 @@ service cloud.firestore {
     match /mail/{mailId} {
       allow create: if true;
       allow read, update, delete: if false;
+    }
+
+    // ─── Product categories ────────────────────────────────────
+    match /productCategories/{catId} {
+      allow read:   if isWhitelisted();
+      allow write:  if isWhitelisted();
+    }
+
+    // ─── Products ──────────────────────────────────────────────
+    match /products/{productId} {
+      allow read:   if isWhitelisted();
+      allow write:  if isWhitelisted();
+
+      match /photos/{photoId} {
+        allow read:   if isWhitelisted();
+        allow write:  if isWhitelisted();
+      }
+      match /datasheets/{dsId} {
+        allow read:   if isWhitelisted();
+        allow write:  if isWhitelisted();
+      }
     }
   }
 }

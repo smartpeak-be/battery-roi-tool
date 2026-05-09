@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" integrity="sha512-jnSuA4Ss2PkkikSOLtYs8BlYIeeIK1h99ty4YfvRPAlzr377vr3CXDb7sb7eEEBYjDtcYj+AjBH3FLv5uSJuXg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="assets/css/smartpeak.css" />
+  <title>SmartPeak — Producten</title>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
+  <script src="assets/js/firebase-init.js"></script>
+  <style>
+    /* Page-specific overrides — keep minimal */
+    .cat-row {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 0.5rem;
+    }
+    .cat-row.is-default {
+      background: #e7f3ff;
+    }
+  </style>
+</head>
+<body>
+
+<!-- State 1: not logged in -->
+<div class="card mx-auto mt-5 hide" id="stateLoggedOut" style="max-width:480px">
+  <div class="card-body text-center p-4">
+    <h1 class="h4 mb-2"><i class="fa-solid fa-bolt text-primary"></i> SmartPeak — Producten</h1>
+    <p class="text-muted mb-3">Alleen voor Bloxit medewerkers.</p>
+    <button type="button" class="btn btn-primary" id="btnSignIn">Log in met Google</button>
+    <p id="signInError" class="alert alert-danger mt-3 hide"></p>
+  </div>
+</div>
+
+<!-- State 2: logged in but not whitelisted -->
+<div class="card mx-auto mt-5 hide" id="stateNotWhitelisted" style="max-width:480px">
+  <div class="card-body text-center p-4">
+    <h1 class="h4 mb-2"><i class="fa-solid fa-triangle-exclamation icon-danger"></i> Geen toegang</h1>
+    <p class="text-muted mb-3">Je bent ingelogd als <strong id="notWhitelistedEmail">…</strong> maar dit account heeft geen toegang tot SmartPeak Producten.</p>
+    <button type="button" class="btn btn-outline-secondary" id="btnSignOutNW">Uitloggen</button>
+  </div>
+</div>
+
+<!-- State 3: logged in + whitelisted -->
+<div class="hide" id="stateAuthorized">
+  <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+    <div class="container-fluid">
+      <span class="navbar-brand mb-0 h1"><i class="fa-solid fa-bolt text-primary"></i> SmartPeak — Producten</span>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="Menu">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarContent">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-2">
+          <li class="nav-item">
+            <a href="dashboard.html" class="btn btn-outline-primary btn-sm"><i class="fa-solid fa-arrow-left me-1"></i> Dashboard</a>
+          </li>
+          <li class="nav-item">Hallo, <strong id="userDisplayName">…</strong></li>
+          <li class="nav-item">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSignOut">Uitloggen</button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4">
+    <!-- Settings Card -->
+    <div class="card mb-3" id="settingsCard">
+      <div class="card-header d-flex align-items-center justify-content-between" role="button" id="settingsToggle" style="cursor:pointer;">
+        <h6 class="mb-0"><i class="fa-solid fa-gear me-2"></i>Instellingen</h6>
+        <i class="fa-solid fa-chevron-down" id="settingsChevron"></i>
+      </div>
+      <div class="card-body" id="settingsBody" style="display:none;">
+        <!-- Form fields -->
+        <div class="row g-3">
+
+          <!-- Default winstmarge -->
+          <div class="col-md-6 col-lg-4">
+            <label class="form-label">Standaard winstmarge</label>
+            <div class="input-group">
+              <div class="btn-group" role="group" data-type="percent" id="marginTypeToggle">
+                <button type="button" class="btn btn-outline-secondary btn-sm active" data-val="percent">%</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-val="fixed">€</button>
+              </div>
+              <input type="number" class="form-control" id="settingsMarginValue" min="0" step="1" value="30">
+            </div>
+          </div>
+
+          <!-- Default korting -->
+          <div class="col-md-6 col-lg-4">
+            <label class="form-label">Standaard korting</label>
+            <div class="input-group">
+              <div class="btn-group" role="group" data-type="percent" id="discountTypeToggle">
+                <button type="button" class="btn btn-outline-secondary btn-sm active" data-val="percent">%</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-val="fixed">€</button>
+              </div>
+              <input type="number" class="form-control" id="settingsDiscountValue" min="0" step="1" value="10">
+            </div>
+          </div>
+
+          <!-- Korting vanaf eenheid -->
+          <div class="col-md-6 col-lg-4">
+            <label class="form-label">Korting vanaf eenheid</label>
+            <input type="number" class="form-control" id="settingsDiscountFromUnit" min="1" step="1" value="2">
+          </div>
+
+          <!-- Standaard installatiekost -->
+          <div class="col-md-6 col-lg-4">
+            <label class="form-label">Standaard installatiekost</label>
+            <div class="input-group">
+              <span class="input-group-text">€</span>
+              <input type="number" class="form-control" id="settingsInstallCost" min="0" step="10" value="250">
+            </div>
+          </div>
+
+          <!-- Standaard keuringskost -->
+          <div class="col-md-6 col-lg-4">
+            <label class="form-label">Standaard keuringskost</label>
+            <div class="input-group">
+              <span class="input-group-text">€</span>
+              <input type="number" class="form-control" id="settingsInspectCost" min="0" step="10" value="250">
+            </div>
+          </div>
+
+          <!-- Bebat prijs/kg -->
+          <div class="col-md-6 col-lg-4">
+            <label class="form-label">Bebat prijs/kg</label>
+            <div class="input-group">
+              <span class="input-group-text">€</span>
+              <input type="number" class="form-control" id="settingsBebatPerKg" min="0" step="0.01" value="0.50">
+            </div>
+          </div>
+
+          <!-- BTW Bebat (readonly) -->
+          <div class="col-md-6 col-lg-4">
+            <label class="form-label">BTW Bebat</label>
+            <input type="text" class="form-control" value="21%" disabled readonly>
+          </div>
+
+          <!-- Voorschot (disabled/future) -->
+          <div class="col-md-6 col-lg-4">
+            <label class="form-label text-muted">Voorschot <small>(toekomstig)</small></label>
+            <div class="input-group">
+              <div class="btn-group" role="group" data-type="percent" id="depositTypeToggle">
+                <button type="button" class="btn btn-outline-secondary btn-sm active" data-val="percent" disabled>%</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-val="fixed" disabled>€</button>
+              </div>
+              <input type="number" class="form-control" id="settingsDepositValue" min="0" step="1" value="30" disabled>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-3 text-end">
+          <button class="btn btn-primary" id="btnSaveSettings">
+            <i class="fa-solid fa-floppy-disk me-1"></i> Opslaan
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category Tabs + Gear Button -->
+    <div class="d-flex align-items-center gap-2 mb-3" id="categoryTabsWrapper">
+      <div class="d-flex gap-1 flex-wrap flex-grow-1" id="categoryTabs">
+        <!-- JS renders tab buttons here -->
+      </div>
+      <button class="btn btn-outline-secondary btn-sm" id="btnManageCategories" title="Categorieën beheren">
+        <i class="fa-solid fa-gear"></i>
+      </button>
+    </div>
+
+    <!-- Product List Area -->
+    <div class="card" id="productListArea">
+      <div class="card-body">
+        <p class="text-muted text-center py-4">(hier komen de producten)</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Category Modal -->
+<div class="modal fade" id="categoryModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Categorieën beheren</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="categoryList">
+          <!-- JS renders category rows here -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" id="btnAddCategory">
+          <i class="fa-solid fa-plus me-1"></i> Toevoegen
+        </button>
+        <button class="btn btn-primary" id="btnSaveCategories">
+          <i class="fa-solid fa-floppy-disk me-1"></i> Opslaan
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index:1090"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js" integrity="sha512-7Pi/otdlbbCR+LnW+F7PwFcSDJOuUJB3OxtEHbg4vSMvzvJjde4Po1v4BR9Gdc9aXNUNFVUY+SK51wWT8WF0Gg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script type="module">
+import { sellPrice, unitPrice } from './assets/js/product-pricing.js';
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+function showToast(message, variant = 'primary') {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const id = 'toast-' + Date.now();
+  container.insertAdjacentHTML('beforeend', `
+    <div id="${id}" class="toast align-items-center text-bg-${variant} border-0" role="alert">
+      <div class="d-flex">
+        <div class="toast-body">${escapeHtml(message)}</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>`);
+  const toastEl = document.getElementById(id);
+  bootstrap.Toast.getOrCreateInstance(toastEl, { delay: 3000 }).show();
+  toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+}
+
+function showState(which) {
+  ['stateLoggedOut', 'stateNotWhitelisted', 'stateAuthorized'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hide', id !== which);
+  });
+}
+
+// ─── TOGGLE BUTTONS (% / €) ──────────────────────────────────────────────
+
+function readToggle(groupId) {
+  const group = document.getElementById(groupId);
+  return group ? group.dataset.type : 'percent';
+}
+
+function setToggle(groupId, value) {
+  const group = document.getElementById(groupId);
+  if (!group) return;
+  group.dataset.type = value;
+  group.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === value);
+  });
+}
+
+function wireToggleButtons() {
+  document.querySelectorAll('[data-type]').forEach(group => {
+    group.querySelectorAll('button:not([disabled])').forEach(btn => {
+      btn.addEventListener('click', () => {
+        group.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        group.dataset.type = btn.dataset.val;
+      });
+    });
+  });
+}
+
+// ─── SETTINGS ────────────────────────────────────────────────────────────
+
+async function loadSettings() {
+  try {
+    const s = await getSettings();
+    if (s.defaultMarginType) setToggle('marginTypeToggle', s.defaultMarginType);
+    if (s.defaultMarginValue != null) document.getElementById('settingsMarginValue').value = s.defaultMarginValue;
+    if (s.defaultDiscountType) setToggle('discountTypeToggle', s.defaultDiscountType);
+    if (s.defaultDiscountValue != null) document.getElementById('settingsDiscountValue').value = s.defaultDiscountValue;
+    if (s.defaultDiscountFromUnit != null) document.getElementById('settingsDiscountFromUnit').value = s.defaultDiscountFromUnit;
+    if (s.defaultInstallCost != null) document.getElementById('settingsInstallCost').value = s.defaultInstallCost;
+    if (s.defaultInspectCost != null) document.getElementById('settingsInspectCost').value = s.defaultInspectCost;
+    if (s.bebatPricePerKg != null) document.getElementById('settingsBebatPerKg').value = s.bebatPricePerKg;
+  } catch (e) {
+    console.warn('loadSettings failed:', e);
+  }
+}
+
+function wireSaveSettings() {
+  document.getElementById('btnSaveSettings').addEventListener('click', async () => {
+    try {
+      await saveSettings({
+        defaultMarginType:      readToggle('marginTypeToggle'),
+        defaultMarginValue:     parseFloat(document.getElementById('settingsMarginValue').value) || 0,
+        defaultDiscountType:    readToggle('discountTypeToggle'),
+        defaultDiscountValue:   parseFloat(document.getElementById('settingsDiscountValue').value) || 0,
+        defaultDiscountFromUnit: parseInt(document.getElementById('settingsDiscountFromUnit').value) || 2,
+        defaultInstallCost:     parseFloat(document.getElementById('settingsInstallCost').value) || 0,
+        defaultInspectCost:     parseFloat(document.getElementById('settingsInspectCost').value) || 0,
+        bebatPricePerKg:        parseFloat(document.getElementById('settingsBebatPerKg').value) || 0,
+      });
+      showToast('Instellingen opgeslagen', 'success');
+    } catch (e) {
+      showToast('Fout: ' + e.message, 'danger');
+    }
+  });
+}
+
+// ─── SETTINGS COLLAPSE TOGGLE ────────────────────────────────────────────
+
+function wireSettingsCollapse() {
+  const settingsToggle = document.getElementById('settingsToggle');
+  const settingsBody = document.getElementById('settingsBody');
+  const settingsChevron = document.getElementById('settingsChevron');
+
+  // Restore collapse state from localStorage
+  const collapsed = localStorage.getItem('smartpeak.settingsCollapsed') !== 'false';
+  settingsBody.style.display = collapsed ? 'none' : 'block';
+  settingsChevron.classList.toggle('fa-chevron-up', !collapsed);
+  settingsChevron.classList.toggle('fa-chevron-down', collapsed);
+
+  settingsToggle.addEventListener('click', () => {
+    const isHidden = settingsBody.style.display === 'none';
+    settingsBody.style.display = isHidden ? 'block' : 'none';
+    settingsChevron.classList.toggle('fa-chevron-up', isHidden);
+    settingsChevron.classList.toggle('fa-chevron-down', !isHidden);
+    localStorage.setItem('smartpeak.settingsCollapsed', !isHidden);
+  });
+}
+
+// ─── CATEGORY TABS ───────────────────────────────────────────────────────
+
+let _categories = [];
+let _activeCategory = null;
+
+async function seedDefaultCategories() {
+  const cats = await listProductCategories();
+  if (cats.length > 0) return; // Already seeded
+  const defaults = [
+    { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 0 },
+    { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 1 },
+    { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 2 },
+  ];
+  for (const cat of defaults) {
+    await createProductCategory(cat);
+  }
+}
+
+async function loadCategories() {
+  try {
+    _categories = await listProductCategories();
+    renderCategoryTabs();
+  } catch (e) {
+    console.warn('loadCategories failed:', e);
+    showToast('Kon categorieën niet laden: ' + e.message, 'danger');
+  }
+}
+
+function renderCategoryTabs() {
+  const container = document.getElementById('categoryTabs');
+  let html = `<button class="btn btn-sm ${!_activeCategory ? 'btn-primary' : 'btn-outline-secondary'}" data-cat="">Alle</button>`;
+  _categories.forEach(c => {
+    const active = _activeCategory === c.id;
+    html += `<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}" data-cat="${c.id}">${escapeHtml(c.name)}</button>`;
+  });
+  container.innerHTML = html;
+
+  container.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _activeCategory = btn.dataset.cat || null;
+      renderCategoryTabs();
+      // Future: filter products by category
+    });
+  });
+}
+
+// ─── CATEGORY MODAL ──────────────────────────────────────────────────────
+
+function wireCategoryModal() {
+  document.getElementById('btnManageCategories').addEventListener('click', () => {
+    renderCategoryModal();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('categoryModal')).show();
+  });
+
+  document.getElementById('btnAddCategory').addEventListener('click', () => {
+    const container = document.getElementById('categoryList');
+    const html = `
+      <div class="cat-row d-flex align-items-center gap-2 mb-2" data-id="">
+        <i class="fa-solid fa-grip-vertical text-muted" style="cursor:grab;"></i>
+        <input type="text" class="form-control cat-name-input" value="" placeholder="Nieuwe categorie">
+        <button class="btn btn-outline-danger btn-sm btn-delete-cat" title="Verwijderen">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </div>`;
+    container.insertAdjacentHTML('beforeend', html);
+    const newInput = container.querySelector('.cat-row:last-child .cat-name-input');
+    newInput.focus();
+    // Wire delete
+    container.querySelector('.cat-row:last-child .btn-delete-cat').addEventListener('click', (e) => {
+      e.target.closest('.cat-row').remove();
+    });
+  });
+
+  document.getElementById('btnSaveCategories').addEventListener('click', async () => {
+    try {
+      const rows = document.querySelectorAll('#categoryList .cat-row');
+      const existing = new Set(_categories.map(c => c.id));
+      const kept = new Set();
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const id = row.dataset.id;
+        const name = row.querySelector('.cat-name-input').value.trim();
+        if (!name) continue;
+
+        if (id) {
+          // Existing category — update name + sortOrder
+          kept.add(id);
+          const cat = _categories.find(c => c.id === id);
+          if (cat && (cat.name !== name || cat.sortOrder !== i)) {
+            await updateProductCategory(id, { name, sortOrder: i });
+          }
+        } else {
+          // New category
+          await createProductCategory({ name, sortOrder: i });
+        }
+      }
+
+      // Delete removed categories (those in existing but not in kept)
+      for (const id of existing) {
+        if (!kept.has(id)) {
+          await deleteProductCategory(id);
+        }
+      }
+
+      await loadCategories();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('categoryModal')).hide();
+      showToast('Categorieën bijgewerkt', 'success');
+    } catch (e) {
+      showToast('Fout: ' + e.message, 'danger');
+    }
+  });
+}
+
+function renderCategoryModal() {
+  const container = document.getElementById('categoryList');
+  let html = '';
+  _categories.forEach((c, i) => {
+    const isDefault = c.isDefault;
+    html += `
+      <div class="cat-row d-flex align-items-center gap-2 mb-2 ${isDefault ? 'is-default' : ''}" data-id="${c.id}">
+        <i class="fa-solid fa-grip-vertical text-muted" style="cursor:grab;"></i>
+        <input type="text" class="form-control cat-name-input" value="${escapeHtml(c.name)}">
+        ${isDefault ? '<span class="badge text-bg-secondary">Default</span>' : ''}
+        <button class="btn btn-outline-danger btn-sm btn-delete-cat" ${isDefault ? 'disabled' : ''} title="Verwijderen">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </div>`;
+  });
+  container.innerHTML = html;
+
+  // Wire delete buttons
+  container.querySelectorAll('.btn-delete-cat').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const row = btn.closest('.cat-row');
+      row.remove();
+    });
+  });
+}
+
+// ─── AUTH STATE HANDLING ─────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Wire sign-in button
+  document.getElementById('btnSignIn').addEventListener('click', async () => {
+    const errEl = document.getElementById('signInError');
+    errEl.classList.add('hide');
+    try {
+      await signInWithGoogle();
+    } catch (e) {
+      errEl.textContent = 'Aanmelden mislukt: ' + (e && e.message ? e.message : e);
+      errEl.classList.remove('hide');
+    }
+  });
+
+  document.getElementById('btnSignOut').addEventListener('click', () => signOut());
+  document.getElementById('btnSignOutNW').addEventListener('click', () => signOut());
+
+  // Listen for auth state changes
+  let _initialized = false;
+  onAuthStateChanged(async (user) => {
+    if (!user) {
+      showState('stateLoggedOut');
+      return;
+    }
+    if (!isWhitelisted(user)) {
+      document.getElementById('notWhitelistedEmail').textContent = user.email || '(onbekend)';
+      showState('stateNotWhitelisted');
+      return;
+    }
+    document.getElementById('userDisplayName').textContent = user.displayName || user.email;
+    showState('stateAuthorized');
+
+    // Only wire event handlers once
+    if (!_initialized) {
+      _initialized = true;
+      wireSettingsCollapse();
+      wireToggleButtons();
+      wireSaveSettings();
+      wireCategoryModal();
+    }
+
+    // Load data (await both to ensure form is populated before tests check)
+    try {
+      await loadSettings();
+    } catch (e) {
+      console.error('loadSettings error:', e);
+    }
+
+    try {
+      await seedDefaultCategories();
+      await loadCategories();
+    } catch (e) {
+      console.error('seedDefaultCategories/loadCategories error:', e);
+    }
+
+    // Signal that initialization is complete (used by E2E tests)
+    document.getElementById('stateAuthorized').dataset.ready = 'true';
+  });
+});
+
+</script>
+
+</body>
+</html>
