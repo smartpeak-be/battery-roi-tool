@@ -1199,6 +1199,104 @@ async function getDefaultCategory() {
   return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
+// ─── PRODUCTS ────────────────────────────────────────────────────────────────
+
+function productsCol() { return getDb().collection('products'); }
+
+async function listProducts(filters) {
+  // Fetch all products and filter/sort client-side to avoid composite indexes
+  const snap = await productsCol().get();
+  let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (filters && filters.categoryId) {
+    list = list.filter(p => p.categoryId === filters.categoryId);
+  }
+  if (filters && typeof filters.isActive === 'boolean') {
+    list = list.filter(p => p.isActive === filters.isActive);
+  }
+  list.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || (a.brand || '').localeCompare(b.brand || ''));
+  return list;
+}
+
+async function getProduct(id) {
+  const snap = await productsCol().doc(id).get();
+  return snap.exists ? { id: snap.id, ...snap.data() } : null;
+}
+
+async function createProduct(data) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const doc = {
+    categoryId:      data.categoryId,
+    brand:           data.brand || '',
+    model:           data.model || '',
+    description:     data.description || '',
+    purchasePrice:   data.purchasePrice || 0,
+    marginType:      data.marginType || 'percent',
+    marginValue:     data.marginValue ?? 30,
+    discountType:    data.discountType || 'percent',
+    discountValue:   data.discountValue ?? 10,
+    discountFromUnit: data.discountFromUnit ?? 2,
+    specs:           data.specs || {},
+    isActive:        true,
+    sortOrder:       data.sortOrder ?? 0,
+    createdAt:       now,
+    updatedAt:       now,
+    createdBy:       email,
+    updatedBy:       email,
+  };
+  const ref = await productsCol().add(doc);
+  return ref.id;
+}
+
+async function updateProduct(id, data) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  await productsCol().doc(id).update({
+    ...data,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: email,
+  });
+}
+
+async function deleteProduct(id) {
+  // Cascade: delete photos subcollection
+  const photosSnap = await productsCol().doc(id).collection('photos').get();
+  if (!photosSnap.empty) {
+    const batch = getDb().batch();
+    for (const doc of photosSnap.docs) {
+      try {
+        const data = doc.data();
+        if (data.storagePath) await getStorage().ref(data.storagePath).delete();
+        if (data.thumbStoragePath) await getStorage().ref(data.thumbStoragePath).delete();
+      } catch (e) { console.warn('Storage cleanup failed:', e.message); }
+      batch.delete(doc.ref);
+    }
+    await batch.commit();
+  }
+
+  // Cascade: delete datasheets subcollection
+  const dsSnap = await productsCol().doc(id).collection('datasheets').get();
+  if (!dsSnap.empty) {
+    const batch = getDb().batch();
+    for (const doc of dsSnap.docs) {
+      try {
+        const data = doc.data();
+        if (data.storagePath) await getStorage().ref(data.storagePath).delete();
+      } catch (e) { console.warn('Storage cleanup failed:', e.message); }
+      batch.delete(doc.ref);
+    }
+    await batch.commit();
+  }
+
+  // Delete the product document
+  await productsCol().doc(id).delete();
+}
+
+async function toggleProductActive(id, isActive) {
+  await updateProduct(id, { isActive });
+}
+
 // ─── EXPOSE HELPERS ON WINDOW ────────────────────────────────────────────────
 window.isMarstekConfig = isMarstekConfig;
 window.isZendureConfig = isZendureConfig;
@@ -1211,3 +1309,9 @@ window.createProductCategory = createProductCategory;
 window.updateProductCategory = updateProductCategory;
 window.deleteProductCategory = deleteProductCategory;
 window.getDefaultCategory = getDefaultCategory;
+window.listProducts = listProducts;
+window.getProduct = getProduct;
+window.createProduct = createProduct;
+window.updateProduct = updateProduct;
+window.deleteProduct = deleteProduct;
+window.toggleProductActive = toggleProductActive;

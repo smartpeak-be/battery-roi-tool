@@ -22,6 +22,11 @@
     .cat-row.is-default {
       background: #e7f3ff;
     }
+    .product-card { cursor: pointer; transition: border-color 0.15s; }
+    .product-card:hover { border-color: var(--bs-primary); }
+    .product-card.active { border-color: var(--bs-primary); border-width: 2px; }
+    .product-card.inactive { opacity: 0.5; }
+    #productDetailCard { position: sticky; top: 80px; }
   </style>
 </head>
 <body>
@@ -172,10 +177,35 @@
       </button>
     </div>
 
-    <!-- Product List Area -->
-    <div class="card" id="productListArea">
-      <div class="card-body">
-        <p class="text-muted text-center py-4">(hier komen de producten)</p>
+    <!-- Master-detail layout -->
+    <div class="row g-3" id="productLayout">
+      <!-- Left: product list -->
+      <div class="col-12 col-lg-5" id="productListCol">
+        <div class="d-flex gap-2 mb-2">
+          <div class="input-group flex-grow-1">
+            <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+            <input type="search" class="form-control" id="productSearch" placeholder="Zoek merk, model...">
+          </div>
+          <button class="btn btn-primary text-nowrap" id="btnNewProduct">
+            <i class="fa-solid fa-plus me-1"></i> Nieuw product
+          </button>
+        </div>
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="toggleShowInactive">
+          <label class="form-check-label" for="toggleShowInactive">Toon inactieve</label>
+        </div>
+        <div id="productList">
+          <p class="text-muted text-center py-4">Laden...</p>
+        </div>
+      </div>
+
+      <!-- Right: detail panel (desktop only) -->
+      <div class="col-lg-7 d-none d-lg-block" id="productDetailCol">
+        <div class="card" id="productDetailCard">
+          <div class="card-body" id="productDetailBody">
+            <p class="text-muted text-center py-4">Selecteer een product of maak een nieuw product aan.</p>
+          </div>
+        </div>
       </div>
     </div>
   </main>
@@ -204,6 +234,15 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- Product detail drawer (mobile) -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="productDrawer" style="width:100%;max-width:500px;">
+  <div class="offcanvas-header">
+    <h5 class="offcanvas-title" id="productDrawerTitle">Product</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body" id="productDrawerBody"></div>
 </div>
 
 <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index:1090"></div>
@@ -373,7 +412,7 @@ function renderCategoryTabs() {
     btn.addEventListener('click', () => {
       _activeCategory = btn.dataset.cat || null;
       renderCategoryTabs();
-      // Future: filter products by category
+      renderProductList();
     });
   });
 }
@@ -472,6 +511,431 @@ function renderCategoryModal() {
   });
 }
 
+// ─── PRODUCT MANAGEMENT ──────────────────────────────────────────────────
+
+const BRAND_OPTIONS = {
+  'Plug & Play': ['Marstek', 'Zendure', 'Growatt', 'EcoFlow', 'Anker Solix', 'Hoymiles', 'Sunpura', 'Bluetti'],
+  'Installatie': ['Huawei', 'BYD', 'Dyness', 'Sigenergy', 'Enphase', 'Tesla', 'Sonnen', 'LG', 'Solarwatt', 'Pylontech', 'Alpha ESS', 'SAJ', 'Sungrow', 'Sessy'],
+};
+const ALL_BRANDS = Object.values(BRAND_OPTIONS).flat();
+
+let _allProducts = [];
+let _selectedProductId = null;
+
+async function loadProducts() {
+  try {
+    _allProducts = await listProducts();
+    renderProductList();
+  } catch (e) {
+    console.error('loadProducts error:', e);
+    showToast('Kon producten niet laden: ' + e.message, 'danger');
+  }
+}
+
+function renderProductList() {
+  const list = document.getElementById('productList');
+  const search = (document.getElementById('productSearch').value || '').toLowerCase();
+  const showInactive = document.getElementById('toggleShowInactive').checked;
+
+  let filtered = _allProducts;
+  if (_activeCategory) {
+    filtered = filtered.filter(p => p.categoryId === _activeCategory);
+  }
+  if (!showInactive) {
+    filtered = filtered.filter(p => p.isActive !== false);
+  }
+  if (search) {
+    filtered = filtered.filter(p =>
+      (p.brand || '').toLowerCase().includes(search) ||
+      (p.model || '').toLowerCase().includes(search) ||
+      (p.description || '').toLowerCase().includes(search)
+    );
+  }
+
+  if (!filtered.length) {
+    list.innerHTML = '<p class="text-muted text-center py-4">Geen producten gevonden.</p>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(p => {
+    const sp = sellPrice(p);
+    const inactiveClass = p.isActive === false ? 'inactive' : '';
+    const activeClass = _selectedProductId === p.id ? 'active' : '';
+    const badge = p.isActive === false ? '<span class="badge text-bg-secondary ms-2">Inactief</span>' : '';
+    const catName = _categories.find(c => c.id === p.categoryId)?.name || '';
+    return `
+      <div class="card mb-2 product-card ${inactiveClass} ${activeClass}" data-id="${p.id}">
+        <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
+          <div class="flex-grow-1">
+            <strong>${escapeHtml(p.brand)} ${escapeHtml(p.model)}</strong>${badge}
+            <div class="text-muted small">${escapeHtml(catName)}${p.description ? ' · ' + escapeHtml(p.description) : ''}</div>
+          </div>
+          <div class="text-end text-nowrap">
+            <strong>&euro;${sp.toFixed(2)}</strong>
+            <div class="text-muted small">ex BTW</div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Wire click handlers
+  list.querySelectorAll('.product-card').forEach(card => {
+    card.addEventListener('click', () => openProductDetail(card.dataset.id));
+  });
+}
+
+function openProductDetail(productId) {
+  _selectedProductId = productId;
+  const product = _allProducts.find(p => p.id === productId);
+  if (!product) return;
+
+  renderProductList(); // re-render to show active state
+
+  const html = buildDetailFormHtml(product, 'edit');
+
+  // Decide which container to render in based on viewport
+  if (window.innerWidth >= 992) {
+    // Desktop: render in side panel only
+    const desktopBody = document.getElementById('productDetailBody');
+    desktopBody.innerHTML = html;
+    wireDetailForm(desktopBody, product);
+  } else {
+    // Mobile: render in drawer only
+    const drawerBody = document.getElementById('productDrawerBody');
+    drawerBody.innerHTML = html;
+    wireDetailForm(drawerBody, product);
+    document.getElementById('productDrawerTitle').textContent = `${product.brand} ${product.model}`;
+    bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('productDrawer')).show();
+  }
+}
+
+function openNewProduct() {
+  _selectedProductId = null;
+  renderProductList();
+
+  const html = buildDetailFormHtml(null, 'create');
+
+  if (window.innerWidth >= 992) {
+    // Desktop: render in side panel only
+    const desktopBody = document.getElementById('productDetailBody');
+    desktopBody.innerHTML = html;
+    wireDetailForm(desktopBody, null);
+  } else {
+    // Mobile: render in drawer only
+    const drawerBody = document.getElementById('productDrawerBody');
+    drawerBody.innerHTML = html;
+    wireDetailForm(drawerBody, null);
+    document.getElementById('productDrawerTitle').textContent = 'Nieuw product';
+    bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('productDrawer')).show();
+  }
+}
+
+function buildBrandOptions(selectedBrand) {
+  let html = '<option value="">— Kies merk —</option>';
+  for (const [group, brands] of Object.entries(BRAND_OPTIONS)) {
+    html += `<optgroup label="${group}">`;
+    brands.forEach(b => {
+      html += `<option value="${b}" ${b === selectedBrand ? 'selected' : ''}>${b}</option>`;
+    });
+    html += '</optgroup>';
+  }
+  const isCustom = selectedBrand && !ALL_BRANDS.includes(selectedBrand);
+  html += `<option value="__other__" ${isCustom ? 'selected' : ''}>Andere…</option>`;
+  return html;
+}
+
+function buildDetailFormHtml(product, mode) {
+  const p = product || {};
+  const isCreate = mode === 'create';
+
+  // Get pricing defaults from settings for new products
+  const marginType = p.marginType || 'percent';
+  const marginValue = p.marginValue ?? 30;
+  const discountType = p.discountType || 'percent';
+  const discountValue = p.discountValue ?? 10;
+  const discountFromUnit = p.discountFromUnit ?? 2;
+
+  const isCustomBrand = p.brand && !ALL_BRANDS.includes(p.brand);
+
+  return `
+    <div class="product-detail-form">
+      <!-- Blok A: Basis -->
+      <h6 class="text-muted mb-3"><i class="fa-solid fa-box me-1"></i> Basis</h6>
+
+      <div class="mb-3">
+        <label class="form-label">Categorie <span class="text-danger">*</span></label>
+        <select class="form-select detail-category">
+          <option value="">— Kies categorie —</option>
+          ${_categories.map(c => `<option value="${c.id}" ${p.categoryId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <label class="form-label">Merk <span class="text-danger">*</span></label>
+          <select class="form-select detail-brand-select">
+            ${buildBrandOptions(p.brand || '')}
+          </select>
+        </div>
+        <div class="col-6 ${isCustomBrand ? '' : 'd-none'}" data-custom-brand-group>
+          <label class="form-label">Merk (vrij)</label>
+          <input type="text" class="form-control detail-custom-brand" value="${isCustomBrand ? escapeHtml(p.brand) : ''}" placeholder="Voer merk in">
+        </div>
+        <div class="col-6">
+          <label class="form-label">Model <span class="text-danger">*</span></label>
+          <input type="text" class="form-control detail-model" value="${escapeHtml(p.model || '')}">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Omschrijving</label>
+        <textarea class="form-control detail-description" rows="2">${escapeHtml(p.description || '')}</textarea>
+      </div>
+
+      <hr>
+
+      <!-- Blok B: Prijzen -->
+      <h6 class="text-muted mb-3"><i class="fa-solid fa-euro-sign me-1"></i> Prijzen</h6>
+
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <label class="form-label">Aankoopprijs (ex BTW) <span class="text-danger">*</span></label>
+          <div class="input-group">
+            <span class="input-group-text">&euro;</span>
+            <input type="number" class="form-control detail-purchase-price" min="0" step="0.01" value="${p.purchasePrice || ''}">
+          </div>
+        </div>
+        <div class="col-6">
+          <label class="form-label">Verkoopprijs</label>
+          <div class="input-group">
+            <span class="input-group-text">&euro;</span>
+            <input type="text" class="form-control detail-preview-sell-price" readonly disabled value="—">
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col-8">
+          <label class="form-label">Winstmarge</label>
+          <div class="input-group">
+            <div class="btn-group detail-margin-type" role="group" data-type="${marginType}">
+              <button type="button" class="btn btn-outline-secondary btn-sm ${marginType === 'percent' ? 'active' : ''}" data-val="percent">%</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm ${marginType === 'fixed' ? 'active' : ''}" data-val="fixed">&euro;</button>
+            </div>
+            <input type="number" class="form-control detail-margin-value" min="0" step="1" value="${marginValue}">
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col-8">
+          <label class="form-label">Korting</label>
+          <div class="input-group">
+            <div class="btn-group detail-discount-type" role="group" data-type="${discountType}">
+              <button type="button" class="btn btn-outline-secondary btn-sm ${discountType === 'percent' ? 'active' : ''}" data-val="percent">%</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm ${discountType === 'fixed' ? 'active' : ''}" data-val="fixed">&euro;</button>
+            </div>
+            <input type="number" class="form-control detail-discount-value" min="0" step="1" value="${discountValue}">
+          </div>
+        </div>
+        <div class="col-4">
+          <label class="form-label">Vanaf eenheid</label>
+          <input type="number" class="form-control detail-discount-from-unit" min="1" step="1" value="${discountFromUnit}">
+        </div>
+      </div>
+
+      <div class="alert alert-light border py-2 px-3 mb-3">
+        <small class="text-muted">
+          <strong>Verkoopprijs:</strong> <span class="detail-preview-sp">—</span>
+          <span class="detail-preview-sp-winst text-success"></span><br>
+          <strong>Kortingsprijs</strong> <span class="detail-preview-korting-label">(vanaf 2e)</span><strong>:</strong>
+          <span class="detail-preview-u2">—</span>
+          <span class="detail-preview-u2-winst text-success"></span>
+        </small>
+      </div>
+
+      <hr>
+
+      <!-- Actions -->
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-primary detail-btn-save">
+          <i class="fa-solid fa-floppy-disk me-1"></i> ${isCreate ? 'Aanmaken' : 'Opslaan'}
+        </button>
+        ${!isCreate ? `
+          <button class="btn btn-outline-warning detail-btn-toggle-active">
+            <i class="fa-solid fa-${p.isActive === false ? 'eye' : 'eye-slash'} me-1"></i> ${p.isActive === false ? 'Heractiveren' : 'Deactiveren'}
+          </button>
+          <button class="btn btn-outline-danger ms-auto detail-btn-delete">
+            <i class="fa-solid fa-trash me-1"></i> Verwijderen
+          </button>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function wireDetailForm(container, product) {
+  const isCreate = !product;
+
+  // Wire brand "Andere" toggle
+  const brandSelect = container.querySelector('.detail-brand-select');
+  const customBrandGroup = container.querySelector('[data-custom-brand-group]');
+  if (brandSelect) {
+    brandSelect.addEventListener('change', () => {
+      customBrandGroup.classList.toggle('d-none', brandSelect.value !== '__other__');
+    });
+  }
+
+  // Wire toggle buttons inside the detail form
+  container.querySelectorAll('.product-detail-form [data-type]').forEach(group => {
+    group.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        group.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        group.dataset.type = btn.dataset.val;
+        updatePricePreview(container);
+      });
+    });
+  });
+
+  // Wire live price preview
+  ['detail-purchase-price', 'detail-margin-value', 'detail-discount-value', 'detail-discount-from-unit'].forEach(className => {
+    const el = container.querySelector('.' + className);
+    if (el) el.addEventListener('input', () => updatePricePreview(container));
+  });
+
+  // Initial price preview
+  updatePricePreview(container);
+
+  // Wire save button
+  const saveBtn = container.querySelector('.detail-btn-save');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => saveProductFromForm(container, product));
+  }
+
+  // Wire toggle active button
+  const toggleBtn = container.querySelector('.detail-btn-toggle-active');
+  if (toggleBtn && product) {
+    toggleBtn.addEventListener('click', async () => {
+      try {
+        const newActive = product.isActive === false;
+        await toggleProductActive(product.id, newActive);
+        showToast(newActive ? 'Product geheractiveerd' : 'Product gedeactiveerd', 'success');
+        await loadProducts();
+        if (newActive) {
+          openProductDetail(product.id);
+        } else {
+          resetDetailPanel();
+        }
+      } catch (e) {
+        showToast('Fout: ' + e.message, 'danger');
+      }
+    });
+  }
+
+  // Wire delete button
+  const deleteBtn = container.querySelector('.detail-btn-delete');
+  if (deleteBtn && product) {
+    deleteBtn.addEventListener('click', async () => {
+      if (!confirm(`Weet je zeker dat je "${product.brand} ${product.model}" wilt verwijderen? Dit kan niet ongedaan worden.`)) return;
+      try {
+        await deleteProduct(product.id);
+        showToast('Product verwijderd', 'success');
+        await loadProducts();
+        resetDetailPanel();
+        // Close drawer on mobile
+        try { bootstrap.Offcanvas.getInstance(document.getElementById('productDrawer'))?.hide(); } catch {}
+      } catch (e) {
+        showToast('Fout: ' + e.message, 'danger');
+      }
+    });
+  }
+}
+
+function readProductFromForm(container) {
+  const brandSelect = container.querySelector('.detail-brand-select');
+  let brand = brandSelect.value;
+  if (brand === '__other__') {
+    brand = container.querySelector('.detail-custom-brand').value.trim();
+  }
+
+  return {
+    categoryId: container.querySelector('.detail-category').value,
+    brand,
+    model: container.querySelector('.detail-model').value.trim(),
+    description: container.querySelector('.detail-description').value.trim(),
+    purchasePrice: parseFloat(container.querySelector('.detail-purchase-price').value) || 0,
+    marginType: container.querySelector('.detail-margin-type')?.dataset.type || 'percent',
+    marginValue: parseFloat(container.querySelector('.detail-margin-value').value) || 0,
+    discountType: container.querySelector('.detail-discount-type')?.dataset.type || 'percent',
+    discountValue: parseFloat(container.querySelector('.detail-discount-value').value) || 0,
+    discountFromUnit: parseInt(container.querySelector('.detail-discount-from-unit').value) || 2,
+  };
+}
+
+function updatePricePreview(container) {
+  const data = readProductFromForm(container);
+  const pp = data.purchasePrice || 0;
+  const sp = sellPrice(data);
+  const fromUnit = data.discountFromUnit || 2;
+  const kp = unitPrice(data, fromUnit);
+
+  const previewSp = container.querySelector('.detail-preview-sp');
+  const previewU2 = container.querySelector('.detail-preview-u2');
+  const previewSellPrice = container.querySelector('.detail-preview-sell-price');
+  const previewSpWinst = container.querySelector('.detail-preview-sp-winst');
+  const previewU2Winst = container.querySelector('.detail-preview-u2-winst');
+  const kortingLabel = container.querySelector('.detail-preview-korting-label');
+
+  if (previewSp) previewSp.textContent = pp ? `€${sp.toFixed(2)}` : '—';
+  if (previewU2) previewU2.textContent = pp ? `€${kp.toFixed(2)}` : '—';
+  if (previewSellPrice) previewSellPrice.value = pp ? sp.toFixed(2) : '—';
+  if (previewSpWinst) previewSpWinst.textContent = pp ? `(winst €${(sp - pp).toFixed(2)})` : '';
+  if (previewU2Winst) previewU2Winst.textContent = pp ? `(winst €${(kp - pp).toFixed(2)})` : '';
+  if (kortingLabel) kortingLabel.textContent = `(vanaf ${fromUnit}e)`;
+}
+
+async function saveProductFromForm(container, existingProduct) {
+  const data = readProductFromForm(container);
+
+  // Validate
+  if (!data.categoryId) { showToast('Kies een categorie', 'danger'); return; }
+  if (!data.brand) { showToast('Vul een merk in', 'danger'); return; }
+  if (!data.model) { showToast('Vul een model in', 'danger'); return; }
+  if (!data.purchasePrice || data.purchasePrice <= 0) { showToast('Vul een aankoopprijs in', 'danger'); return; }
+
+  try {
+    if (existingProduct) {
+      await updateProduct(existingProduct.id, data);
+      showToast('Product bijgewerkt', 'success');
+      await loadProducts();
+      openProductDetail(existingProduct.id);
+    } else {
+      const newId = await createProduct(data);
+      showToast('Product aangemaakt', 'success');
+      await loadProducts();
+      openProductDetail(newId);
+      // Close drawer on mobile (will reopen with new product)
+      try { bootstrap.Offcanvas.getInstance(document.getElementById('productDrawer'))?.hide(); } catch {}
+    }
+  } catch (e) {
+    showToast('Fout: ' + e.message, 'danger');
+  }
+}
+
+function resetDetailPanel() {
+  _selectedProductId = null;
+  renderProductList();
+  document.getElementById('productDetailBody').innerHTML = '<p class="text-muted text-center py-4">Selecteer een product of maak een nieuw product aan.</p>';
+  document.getElementById('productDrawerBody').innerHTML = '';
+}
+
+function wireProductInteractions() {
+  document.getElementById('btnNewProduct').addEventListener('click', () => openNewProduct());
+  document.getElementById('productSearch').addEventListener('input', () => renderProductList());
+  document.getElementById('toggleShowInactive').addEventListener('change', () => renderProductList());
+}
+
 // ─── AUTH STATE HANDLING ─────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -512,6 +976,7 @@ document.addEventListener('DOMContentLoaded', () => {
       wireToggleButtons();
       wireSaveSettings();
       wireCategoryModal();
+      wireProductInteractions();
     }
 
     // Load data (await both to ensure form is populated before tests check)
@@ -524,8 +989,9 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       await seedDefaultCategories();
       await loadCategories();
+      await loadProducts();
     } catch (e) {
-      console.error('seedDefaultCategories/loadCategories error:', e);
+      console.error('seedDefaultCategories/loadCategories/loadProducts error:', e);
     }
 
     // Signal that initialization is complete (used by E2E tests)
