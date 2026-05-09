@@ -251,6 +251,7 @@
 
 <script type="module">
 import { sellPrice, unitPrice } from './assets/js/product-pricing.js';
+import { specsForCategory } from './assets/js/product-specs.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
 
@@ -519,6 +520,11 @@ const BRAND_OPTIONS = {
 };
 const ALL_BRANDS = Object.values(BRAND_OPTIONS).flat();
 
+function getCategorySlug(categoryId) {
+  const cat = _categories.find(c => c.id === categoryId);
+  return cat ? (cat.slug || cat.name || '').toLowerCase() : '';
+}
+
 let _allProducts = [];
 let _selectedProductId = null;
 
@@ -756,6 +762,19 @@ function buildDetailFormHtml(product, mode) {
 
       <hr>
 
+      <!-- Blok C: Specificaties -->
+      <h6 class="text-muted mb-3"><i class="fa-solid fa-list-check me-1"></i> Specificaties</h6>
+      <div class="spec-fields-container"></div>
+      <div class="custom-specs-container mt-3">
+        <label class="form-label fw-bold small">Extra specificaties</label>
+        <div class="custom-specs-list"></div>
+        <button type="button" class="btn btn-outline-secondary btn-sm mt-1 btn-add-custom-spec">
+          <i class="fa-solid fa-plus me-1"></i> Toevoegen
+        </button>
+      </div>
+
+      <hr>
+
       <!-- Actions -->
       <div class="d-flex gap-2 flex-wrap">
         <button class="btn btn-primary detail-btn-save">
@@ -807,6 +826,23 @@ function wireDetailForm(container, product) {
   // Initial price preview
   updatePricePreview(container);
 
+  // Render spec fields for current category
+  const currentCatId = container.querySelector('.detail-category').value;
+  renderSpecFields(container, currentCatId, product?.specs || {});
+  renderCustomSpecs(container, product?.specs?.custom || {});
+
+  // Re-render specs on category change
+  const catSelect = container.querySelector('.detail-category');
+  catSelect.addEventListener('change', () => {
+    renderSpecFields(container, catSelect.value, {});
+  });
+
+  // Wire custom spec add button
+  const addCustomBtn = container.querySelector('.btn-add-custom-spec');
+  if (addCustomBtn) {
+    addCustomBtn.addEventListener('click', () => addCustomSpecRow(container));
+  }
+
   // Wire save button
   const saveBtn = container.querySelector('.detail-btn-save');
   if (saveBtn) {
@@ -852,12 +888,113 @@ function wireDetailForm(container, product) {
   }
 }
 
+function renderSpecFields(container, categoryId, existingSpecs) {
+  const slug = getCategorySlug(categoryId);
+  const fields = specsForCategory(slug);
+  const specsContainer = container.querySelector('.spec-fields-container');
+  if (!specsContainer) return;
+  const specs = existingSpecs || {};
+
+  if (!fields.length) {
+    specsContainer.innerHTML = '<p class="text-muted small mb-0">Kies een categorie om specificatievelden te zien.</p>';
+    return;
+  }
+
+  let html = '<div class="row g-2">';
+  fields.forEach(f => {
+    const val = specs[f.key];
+    html += '<div class="col-6 col-md-4">';
+    html += `<label class="form-label small mb-1">${escapeHtml(f.label)}${f.unit ? ' <span class="text-muted">(' + escapeHtml(f.unit) + ')</span>' : ''}</label>`;
+
+    if (f.type === 'number') {
+      html += `<input type="number" class="form-control form-control-sm spec-field" data-spec-key="${f.key}" step="any" value="${val != null ? val : ''}">`;
+    } else if (f.type === 'text') {
+      html += `<input type="text" class="form-control form-control-sm spec-field" data-spec-key="${f.key}" value="${val != null ? escapeHtml(String(val)) : ''}">`;
+    } else if (f.type === 'select') {
+      html += `<select class="form-select form-select-sm spec-field" data-spec-key="${f.key}">`;
+      html += '<option value="">—</option>';
+      (f.options || []).forEach(opt => {
+        html += `<option value="${escapeHtml(String(opt))}" ${String(val) === String(opt) ? 'selected' : ''}>${escapeHtml(String(opt))}</option>`;
+      });
+      html += '</select>';
+    } else if (f.type === 'boolean') {
+      html += `<div class="form-check mt-1"><input type="checkbox" class="form-check-input spec-field" data-spec-key="${f.key}" ${val ? 'checked' : ''}><label class="form-check-label small">Ja</label></div>`;
+    }
+
+    html += '</div>';
+  });
+  html += '</div>';
+  specsContainer.innerHTML = html;
+}
+
+function renderCustomSpecs(container, customSpecs) {
+  const list = container.querySelector('.custom-specs-list');
+  if (!list) return;
+  const entries = Object.entries(customSpecs || {});
+
+  if (!entries.length) {
+    list.innerHTML = '';
+    return;
+  }
+
+  list.innerHTML = entries.map(([key, value]) => `
+    <div class="d-flex gap-2 mb-2 custom-spec-row">
+      <input type="text" class="form-control form-control-sm custom-spec-key" value="${escapeHtml(key)}" placeholder="Naam">
+      <input type="text" class="form-control form-control-sm custom-spec-value" value="${escapeHtml(String(value))}" placeholder="Waarde">
+      <button type="button" class="btn btn-outline-danger btn-sm btn-delete-custom-spec"><i class="fa-solid fa-trash"></i></button>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.btn-delete-custom-spec').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('.custom-spec-row').remove());
+  });
+}
+
+function addCustomSpecRow(container) {
+  const list = container.querySelector('.custom-specs-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'd-flex gap-2 mb-2 custom-spec-row';
+  row.innerHTML = `
+    <input type="text" class="form-control form-control-sm custom-spec-key" placeholder="Naam">
+    <input type="text" class="form-control form-control-sm custom-spec-value" placeholder="Waarde">
+    <button type="button" class="btn btn-outline-danger btn-sm btn-delete-custom-spec"><i class="fa-solid fa-trash"></i></button>
+  `;
+  list.appendChild(row);
+  row.querySelector('.btn-delete-custom-spec').addEventListener('click', () => row.remove());
+  row.querySelector('.custom-spec-key').focus();
+}
+
 function readProductFromForm(container) {
   const brandSelect = container.querySelector('.detail-brand-select');
   let brand = brandSelect.value;
   if (brand === '__other__') {
     brand = container.querySelector('.detail-custom-brand').value.trim();
   }
+
+  // Read typed specs
+  const specs = {};
+  container.querySelectorAll('.spec-field').forEach(el => {
+    const key = el.dataset.specKey;
+    if (!key) return;
+    if (el.type === 'checkbox') {
+      specs[key] = el.checked;
+    } else if (el.type === 'number') {
+      const v = parseFloat(el.value);
+      if (!isNaN(v)) specs[key] = v;
+    } else if (el.value && el.value.trim()) {
+      specs[key] = el.value.trim();
+    }
+  });
+
+  // Read custom specs
+  const custom = {};
+  container.querySelectorAll('.custom-spec-row').forEach(row => {
+    const k = row.querySelector('.custom-spec-key').value.trim();
+    const v = row.querySelector('.custom-spec-value').value.trim();
+    if (k && v) custom[k] = v;
+  });
+  if (Object.keys(custom).length) specs.custom = custom;
 
   return {
     categoryId: container.querySelector('.detail-category').value,
@@ -870,6 +1007,7 @@ function readProductFromForm(container) {
     discountType: container.querySelector('.detail-discount-type')?.dataset.type || 'percent',
     discountValue: parseFloat(container.querySelector('.detail-discount-value').value) || 0,
     discountFromUnit: parseInt(container.querySelector('.detail-discount-from-unit').value) || 2,
+    specs,
   };
 }
 
