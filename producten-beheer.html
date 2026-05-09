@@ -337,6 +337,19 @@ function wireSettingsCollapse() {
 let _categories = [];
 let _activeCategory = null;
 
+async function seedDefaultCategories() {
+  const cats = await listProductCategories();
+  if (cats.length > 0) return; // Already seeded
+  const defaults = [
+    { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 0 },
+    { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 1 },
+    { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 2 },
+  ];
+  for (const cat of defaults) {
+    await createProductCategory(cat);
+  }
+}
+
 async function loadCategories() {
   try {
     _categories = await listProductCategories();
@@ -498,7 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
     wireCategoryModal();
 
     loadSettings();
-    loadCategories();
+    seedDefaultCategories().then(() => loadCategories());
   });
 });
 
