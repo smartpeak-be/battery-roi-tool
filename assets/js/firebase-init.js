@@ -1204,15 +1204,17 @@ async function getDefaultCategory() {
 function productsCol() { return getDb().collection('products'); }
 
 async function listProducts(filters) {
-  let query = productsCol();
+  // Fetch all products and filter/sort client-side to avoid composite indexes
+  const snap = await productsCol().get();
+  let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (filters && filters.categoryId) {
-    query = query.where('categoryId', '==', filters.categoryId);
+    list = list.filter(p => p.categoryId === filters.categoryId);
   }
   if (filters && typeof filters.isActive === 'boolean') {
-    query = query.where('isActive', '==', filters.isActive);
+    list = list.filter(p => p.isActive === filters.isActive);
   }
-  const snap = await query.orderBy('sortOrder').orderBy('brand').get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  list.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || (a.brand || '').localeCompare(b.brand || ''));
+  return list;
 }
 
 async function getProduct(id) {
