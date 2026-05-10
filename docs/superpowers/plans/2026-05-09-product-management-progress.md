@@ -65,41 +65,33 @@
   - 1 manually created by user: "Marstek Venus e V3" (may be duplicate of seeded Venus E V03)
 - Default DB and named DB (`smartpeak-battery-roi-be`) are THE SAME database — confirmed empirically
 
-## BUG: Specs not rendering for Thuisbatterij-systemen
+## BUG: Specs not rendering for Thuisbatterij-systemen — RESOLVED (2026-05-10)
 
 ### Symptom
-When clicking a product in the "Thuisbatterij-systemen" category, the spec fields section shows:
+When clicking a product in the "Thuisbatterij-systemen" category, the spec fields section showed:
 > "Kies een categorie om specificatievelden te zien."
 
-instead of the spec input fields.
+### Root Causes (TWO)
 
-### What we know
-- The message comes from `producten-beheer.html:1170-1172` — the `renderSpecFields()` fallback when `fields.length === 0`
-- `renderSpecFields(container, categoryId, specs)` calls `getCategorySlug(categoryId)` which looks up the category in `_categories` by ID
-- `specsForCategory(slug)` in `product-specs.js` now includes `'thuisbatterij-systemen'` — this part is fixed
-- The `_categories` array is loaded from Firestore via `listProductCategories()` and should contain the thuisbatterij-systemen category with its correct slug
+**Root cause 1 — Missing slug in SPEC_FIELDS (code bug)**
+`product-specs.js` SPEC_FIELDS entries did not include `'thuisbatterij-systemen'` in their `categories` arrays. So `specsForCategory('thuisbatterij-systemen')` returned 0 fields, triggering the fallback message.
 
-### What to debug next session
-1. Open browser console on producten-beheer.html
-2. Click a thuisbatterij-systemen product (e.g. 2400 AC+)
-3. Add a `console.log` or breakpoint in `renderSpecFields()` at line 1163:
-   ```js
-   console.log('renderSpecFields', { categoryId, slug, fieldsCount: fields.length, _categories });
-   ```
-4. Check:
-   - Is `categoryId` correct (matches the Firestore category doc ID)?
-   - Does `getCategorySlug(categoryId)` return `'thuisbatterij-systemen'`?
-   - Does `specsForCategory('thuisbatterij-systemen')` return 19 fields (not 0)?
-   - Is `_categories` populated at that point? (timing issue?)
-5. If `getCategorySlug` returns empty string, the category ID on the product doesn't match any ID in `_categories` — possibly the category was recreated with a different doc ID after seeding
+**Fix:** Added `'thuisbatterij-systemen'` to all relevant SPEC_FIELDS entries (battery specs, inverter specs except PV-only ones, and shared specs). Now returns 23 fields.
 
-### Likely root cause hypotheses
-- **H1**: The Firestore category document ID stored on the product (`categoryId`) doesn't match the ID of the category in `_categories` — could happen if categories were deleted and recreated (different auto-generated IDs)
-- **H2**: Timing — `_categories` not yet loaded when `renderSpecFields` is called
-- **H3**: The category select dropdown in the product detail form has the wrong value
+**Root cause 2 — Empty specs in Firestore (data corruption)**
+While root cause 1 was active, saving a product through the UI caused `saveProductFromForm()` to overwrite `specs` with `{}` (empty object) because no spec fields were rendered — there were no inputs to read values from. All 3 seeded products had their specs wiped this way.
+
+**Fix:** Created `scripts/reseed-specs.js` which matches products by brand+model and restores spec values from the seed data. Run result:
+- Zendure Solarflow 2400 AC+: restored 22 spec fields
+- Zendure AB3000L: already had 7 keys (batterijen category was unaffected)
+- Marstek Venus E V03: restored 11 spec fields
+
+### Verification
+E2E test confirmed:
+- `specsForCategory('thuisbatterij-systemen')` returns 23 fields
+- 22 of 23 spec inputs filled with correct values (only `noiseLevel` empty — not in seed data)
 
 ## Next Steps
 
-1. Fix the specs rendering bug (see debug plan above)
-2. Merge PR #28 (Feature 4: Product Media)
-3. Continue with remaining product management features from the plan
+1. Merge PR #28 (Feature 4: Product Media)
+2. Continue with remaining product management features from the plan
