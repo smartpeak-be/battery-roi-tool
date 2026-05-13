@@ -1045,8 +1045,8 @@ function _serializeState() {
       priceNight: (d.dualTariff && !isNaN(d.priceNight)) ? d.priceNight : null,
       selectedConfigTypes: d.configResults.map(cr => cr.cfg.type),
     },
-    manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : undefined,
-    meerkostMap: (() => { const m = {}; d.configResults.forEach(cr => { if (cr.cfg.meerkost > 0) m[cr.cfg.type] = cr.cfg.meerkost; }); return Object.keys(m).length > 0 ? m : undefined; })(),
+    manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
+    meerkostMap: (() => { const m = {}; d.configResults.forEach(cr => { if (cr.cfg.meerkost > 0) m[cr.cfg.type] = cr.cfg.meerkost; }); return Object.keys(m).length > 0 ? m : null; })(),
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
