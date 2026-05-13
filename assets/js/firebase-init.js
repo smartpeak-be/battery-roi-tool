@@ -23,7 +23,7 @@ const WHITELISTED_EMAILS = [
 ];
 
 // ─── STATUS ENUM ─────────────────────────────────────────────────────────────
-// 16 status values, free transitions allowed. Order = logical lifecycle order for the
+// Status values, free transitions allowed. Order = logical lifecycle order for the
 // dropdown UI. Color hex values follow the spec's color column.
 const PROJECT_STATUSES = [
   { key: 'nieuw_contact',         label: 'Nieuw contact',                 color: '#9aa3b2' }, // grijs
@@ -37,6 +37,7 @@ const PROJECT_STATUSES = [
   { key: 'akkoord',               label: 'Akkoord (go)',                  color: '#00b478' }, // groen
   { key: 'installatie_gepland',   label: 'Installatie gepland',           color: '#00b478' }, // groen
   { key: 'in_uitvoering',         label: 'In uitvoering',                 color: '#00b478' }, // groen
+  { key: 'klaar_voor_inplannen_keuring', label: 'Klaar voor inplannen keuring', color: '#00b478' }, // groen
   { key: 'keuring_aangevraagd',   label: 'Keuring aangevraagd',           color: '#00b478' }, // groen
   { key: 'keuring_gepland',       label: 'Keuring gepland',               color: '#00b478' }, // groen
   { key: 'keuring_gedaan',        label: 'Keuring gedaan',                color: '#00b478' }, // groen
@@ -54,7 +55,7 @@ const PROJECT_PHASES = [
   { key: 'nieuw',      label: 'Nieuw',       color: '#9aa3b2', statuses: ['nieuw_contact', 'wachten_op_data'] },
   { key: 'bezoek',     label: 'Bezoek',      color: '#7eb6e8', statuses: ['klaar_voor_bezoek', 'bezoek_gepland', 'bezoek_gedaan'] },
   { key: 'offerte',    label: 'Offerte',     color: '#f6a623', statuses: ['klaar_voor_offerte', 'offerte_uit', 'wacht_op_beslissing'] },
-  { key: 'uitvoering', label: 'Uitvoering',  color: '#00b478', statuses: ['akkoord', 'installatie_gepland', 'in_uitvoering', 'keuring_aangevraagd', 'keuring_gepland', 'keuring_gedaan'] },
+  { key: 'uitvoering', label: 'Uitvoering',  color: '#00b478', statuses: ['akkoord', 'installatie_gepland', 'in_uitvoering', 'klaar_voor_inplannen_keuring', 'keuring_aangevraagd', 'keuring_gepland', 'keuring_gedaan'] },
   { key: 'afgesloten', label: 'Afgesloten',  color: '#0a6e4a', statuses: ['facturatie', 'afgesloten', 'niet_akkoord'] },
 ];
 
