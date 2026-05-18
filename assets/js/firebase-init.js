@@ -569,9 +569,17 @@ async function _heicToJpegIfNeeded(file, onStep) {
   return Array.isArray(out) ? out[0] : out;
 }
 
+// Resize-down + re-encode a Blob to a "medium" JPEG meant for full-screen
+// viewing. Output is capped at 2000px longest side, JPEG q=0.85 — typically
+// ~500-900 KB for a 12MP source. Keeps full uploads in the simple-upload
+// path (under the 5MB resumable threshold) which avoids new-bucket CORS
+// gotchas on the resumable protocol.
+async function makeFullSizedJpeg(source) {
+  return _resizeToJpeg(source, 2000, 0.85);
+}
+
 // Accepts a File/Blob (new upload) or HTMLImageElement (backfill).
-// Returns { blob: Blob, width: number, height: number } where width/height
-// are the NATURAL dimensions of the source image.
+// Returns { blob: Blob, width: number, height: number }.
 //
 // Decode strategy:
 //   - Blob source → createImageBitmap (handles JPEG/PNG/WEBP/GIF reliably;
@@ -579,8 +587,10 @@ async function _heicToJpegIfNeeded(file, onStep) {
 //     which sometimes emit JPEGs <img> refuses to parse).
 //   - HTMLImageElement source → keep the <img>.decode() path (legacy backfill).
 async function makeThumbnail(source) {
-  const MAX_SIDE = 400;
-  const QUALITY  = 0.82;
+  return _resizeToJpeg(source, 400, 0.82);
+}
+
+async function _resizeToJpeg(source, MAX_SIDE, QUALITY) {
 
   if (source instanceof Blob) source = await _heicToJpegIfNeeded(source);
 
@@ -672,6 +682,21 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   const MAX_BYTES = 15 * 1024 * 1024;
   if (workFile.size > MAX_BYTES) throw new Error('Te groot (max 15 MB).');
   const tag = opts.tag === 'serial' ? 'serial' : 'situatie';
+  console.log('[upload] post-conversion size:', workFile.size, 'bytes', '(type:', workType + ')');
+
+  // ── Step 2a — resize full file (max 2000px longest, q=0.85) ─────────────
+  // Site-survey photos don't need source-resolution detail; 2000px is already
+  // larger than the lightbox display. Resizing here keeps full uploads under
+  // ~1MB so they go via the simple-upload path (avoids resumable-protocol
+  // CORS quirks on new Storage buckets) and finish in seconds on mobile.
+  onStep('Foto verkleinen…');
+  let fullForUpload, fullDims;
+  try {
+    const r = await makeFullSizedJpeg(workFile);
+    fullForUpload = r.blob;
+    fullDims      = { width: r.width, height: r.height };
+  } catch (e) { throw new Error('Stap 2a (verkleinen) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
+  console.log('[upload] full resized:', fullDims.width, 'x', fullDims.height, '/', fullForUpload.size, 'bytes');
 
   const safeName     = workName.replace(/[^\w.-]+/g, '_').slice(0, 80);
   const safeStripped = safeName.replace(/\.[^.]+$/, '') || 'photo';
@@ -679,11 +704,11 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   const fullPath     = `projects/${projectId}/${ts}_${safeName}`;
   const thumbPath    = `projects/${projectId}/${ts}_${safeStripped}_thumb.jpg`;
 
-  // ── Step 2 — thumbnail (400px max, JPEG q=0.82) ─────────────────────────
+  // ── Step 2b — thumbnail (400px max, JPEG q=0.82) ────────────────────────
   onStep('Thumbnail genereren…');
   let thumb;
-  try { thumb = await makeThumbnail(workFile); }
-  catch (e) { throw new Error('Stap 2 (thumbnail) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
+  try { thumb = await makeThumbnail(fullForUpload); }
+  catch (e) { throw new Error('Stap 2b (thumbnail) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
   console.log('[upload] thumb created:', thumb.width, 'x', thumb.height, '/', thumb.blob.size, 'bytes');
 
   // ── Step 3 — parallel storage upload with combined progress + timeout ──
@@ -713,10 +738,9 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   });
   try {
     await Promise.all([
-      // 180s for the full file (5-10MB post-HEIC on mobile 4G ≈ 1-3 min).
-      putWithProgress(fullPath,  workFile,    workType,      'full',  180_000),
-      // 30s for the thumb is more than generous (~20 KB).
-      putWithProgress(thumbPath, thumb.blob,  'image/jpeg',  'thumb',  30_000),
+      // Both are now small JPEGs (full ≤ ~1MB, thumb ~20KB). 60s is plenty.
+      putWithProgress(fullPath,  fullForUpload, 'image/jpeg', 'full',  60_000),
+      putWithProgress(thumbPath, thumb.blob,    'image/jpeg', 'thumb', 30_000),
     ]);
   } catch (e) {
     // best-effort cleanup of whichever blob(s) landed
@@ -734,10 +758,10 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
       storagePath:      fullPath,
       thumbStoragePath: thumbPath,
       name:             workName,
-      contentType:      workType,
-      sizeBytes:        workFile.size,
-      width:            thumb.width,
-      height:           thumb.height,
+      contentType:      'image/jpeg',
+      sizeBytes:        fullForUpload.size,
+      width:            fullDims.width,
+      height:           fullDims.height,
       tag,
       uploadedAt:       firebase.firestore.FieldValue.serverTimestamp(),
       uploadedBy:       email,
