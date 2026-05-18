@@ -537,12 +537,30 @@ function needsGroundFaultCheck(project) { return groundFaultStatus(project) !== 
 // ─── PHOTOS (Firebase Storage + Firestore metadata) ──────────────────────────
 
 // ─── Client-side thumbnail generation ──
+// HEIC/HEIF support: <img> can't decode these on Android Chrome or iOS Safari,
+// so we route through heic2any (loaded via CDN in dashboard.html + project-edit.html)
+// before handing off to the canvas pipeline.
+async function _heicToJpegIfNeeded(file) {
+  if (!(file instanceof Blob)) return file;
+  const type = (file.type || '').toLowerCase();
+  const name = (file.name || '').toLowerCase();
+  const isHeic = /heic|heif/.test(type) || /\.(heic|heif)$/i.test(name);
+  if (!isHeic) return file;
+  if (typeof window === 'undefined' || typeof window.heic2any !== 'function') {
+    throw new Error('HEIC/HEIF foto gedetecteerd, maar heic2any is niet geladen.');
+  }
+  const out = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+  return Array.isArray(out) ? out[0] : out;
+}
+
 // Accepts a File/Blob (new upload) or HTMLImageElement (backfill).
 // Returns { blob: Blob, width: number, height: number } where width/height
 // are the NATURAL dimensions of the source image.
 async function makeThumbnail(source) {
   const MAX_SIDE = 400;
   const QUALITY  = 0.82;
+
+  if (source instanceof Blob) source = await _heicToJpegIfNeeded(source);
 
   let img, cleanup = () => {};
   if (source instanceof HTMLImageElement) {
@@ -598,12 +616,32 @@ function getStorage() {
 async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd');
-  if (!file || !file.type.startsWith('image/')) throw new Error('Alleen afbeeldingen.');
+  if (!file) throw new Error('Geen bestand.');
+
+  // Convert HEIC/HEIF up-front (Samsung "Hoge efficiëntie" + iOS Photos default).
+  // We do it once here so BOTH the full-size upload and the thumbnail are JPEG —
+  // otherwise the lightbox + grid can't render the original on Android/iOS Chrome.
+  let workFile = file;
+  let workName = file.name || 'photo';
+  let workType = file.type || '';
+  try {
+    const converted = await _heicToJpegIfNeeded(file);
+    if (converted !== file) {
+      workFile = converted;
+      workName = workName.replace(/\.(heic|heif)$/i, '.jpg');
+      if (!/\.jpe?g$/i.test(workName)) workName += '.jpg';
+      workType = 'image/jpeg';
+    }
+  } catch (e) {
+    throw new Error('HEIC/HEIF conversie mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+  }
+
+  if (!workType.startsWith('image/')) throw new Error('Alleen afbeeldingen.');
   const MAX_BYTES = 15 * 1024 * 1024;
-  if (file.size > MAX_BYTES) throw new Error('Te groot (max 15 MB).');
+  if (workFile.size > MAX_BYTES) throw new Error('Te groot (max 15 MB).');
   const tag = opts.tag === 'serial' ? 'serial' : 'situatie';
 
-  const safeName     = file.name.replace(/[^\w.-]+/g, '_').slice(0, 80);
+  const safeName     = workName.replace(/[^\w.-]+/g, '_').slice(0, 80);
   const safeStripped = safeName.replace(/\.[^.]+$/, '') || 'photo';
   const ts           = Date.now();
   const fullPath     = `projects/${projectId}/${ts}_${safeName}`;
@@ -611,14 +649,14 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
 
   // Step A — generate thumb
   let thumb;
-  try { thumb = await makeThumbnail(file); }
+  try { thumb = await makeThumbnail(workFile); }
   catch (e) { throw new Error('Thumbnail genereren mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
 
   // Step B — parallel storage upload
   const storage = getStorage();
   try {
     await Promise.all([
-      storage.ref(fullPath).put(file,       { contentType: file.type }),
+      storage.ref(fullPath).put(workFile,    { contentType: workType }),
       storage.ref(thumbPath).put(thumb.blob, { contentType: 'image/jpeg' }),
     ]);
   } catch (e) {
@@ -634,9 +672,9 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
     ref = await projectDoc(projectId).collection('photos').add({
       storagePath:      fullPath,
       thumbStoragePath: thumbPath,
-      name:             file.name,
-      contentType:      file.type,
-      sizeBytes:        file.size,
+      name:             workName,
+      contentType:      workType,
+      sizeBytes:        workFile.size,
       width:            thumb.width,
       height:           thumb.height,
       tag,
