@@ -686,13 +686,29 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   catch (e) { throw new Error('Stap 2 (thumbnail) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
   console.log('[upload] thumb created:', thumb.width, 'x', thumb.height, '/', thumb.blob.size, 'bytes');
 
-  // ── Step 3 — parallel storage upload ────────────────────────────────────
+  // ── Step 3 — parallel storage upload with progress + timeout ───────────
   onStep('Foto uploaden…');
   const storage = getStorage();
+  const UPLOAD_TIMEOUT_MS = 60_000;
+  const putWithProgress = (path, blob, contentType, label) => new Promise((resolve, reject) => {
+    const task = storage.ref(path).put(blob, { contentType });
+    const timeout = setTimeout(() => {
+      task.cancel();
+      reject(new Error(`Storage upload ${label} timeout na ${UPLOAD_TIMEOUT_MS / 1000}s.`));
+    }, UPLOAD_TIMEOUT_MS);
+    task.on('state_changed',
+      (snap) => {
+        const pct = snap.totalBytes > 0 ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
+        onStep(`Foto uploaden (${label} ${pct}%)…`);
+      },
+      (err) => { clearTimeout(timeout); reject(err); },
+      ()    => { clearTimeout(timeout); resolve(); },
+    );
+  });
   try {
     await Promise.all([
-      storage.ref(fullPath).put(workFile,    { contentType: workType }),
-      storage.ref(thumbPath).put(thumb.blob, { contentType: 'image/jpeg' }),
+      putWithProgress(fullPath,  workFile,    workType,      'full'),
+      putWithProgress(thumbPath, thumb.blob,  'image/jpeg',  'thumb'),
     ]);
   } catch (e) {
     // best-effort cleanup of whichever blob(s) landed
