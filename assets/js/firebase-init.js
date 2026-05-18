@@ -538,18 +538,51 @@ function needsGroundFaultCheck(project) { return groundFaultStatus(project) !== 
 
 // ─── Client-side thumbnail generation ──
 // HEIC/HEIF support: <img> can't decode these on Android Chrome or iOS Safari,
-// so we route through heic2any (loaded via CDN in dashboard.html + project-edit.html)
-// before handing off to the canvas pipeline.
+// so we run a two-step decoder:
+//   1) Try createImageBitmap — uses OS-native decoder where available (Android 12+,
+//      iOS 17+ Safari). Fast and reliable when supported.
+//   2) Fallback to heic2any (libheif WASM, ~150kb). Wrapped in a 90s timeout
+//      because some Samsung HEIF variants can hang the decoder indefinitely.
 async function _heicToJpegIfNeeded(file) {
   if (!(file instanceof Blob)) return file;
   const type = (file.type || '').toLowerCase();
   const name = (file.name || '').toLowerCase();
   const isHeic = /heic|heif/.test(type) || /\.(heic|heif)$/i.test(name);
   if (!isHeic) return file;
-  if (typeof window === 'undefined' || typeof window.heic2any !== 'function') {
-    throw new Error('HEIC/HEIF foto gedetecteerd, maar heic2any is niet geladen.');
+  console.log('[heic] detected:', { name: file.name, type: file.type, size: file.size });
+
+  // Path 1 — native via createImageBitmap.
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement('canvas');
+      canvas.width  = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0);
+      if (typeof bitmap.close === 'function') bitmap.close();
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
+      if (blob) {
+        console.log('[heic] native decoder succeeded');
+        return blob;
+      }
+    } catch (e) {
+      console.warn('[heic] native decoder failed:', e.message);
+    }
   }
-  const out = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+
+  // Path 2 — heic2any WASM fallback with timeout.
+  if (typeof window === 'undefined' || typeof window.heic2any !== 'function') {
+    throw new Error('HEIC/HEIF foto gedetecteerd, maar geen decoder beschikbaar.');
+  }
+  console.log('[heic] falling back to heic2any...');
+  const TIMEOUT_MS = 90_000;
+  const conversion = window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+  const timeout = new Promise((_, rej) => setTimeout(
+    () => rej(new Error(`heic2any timeout na ${TIMEOUT_MS / 1000}s — bestand mogelijk te groot of niet-ondersteunde HEIC variant.`)),
+    TIMEOUT_MS,
+  ));
+  const out = await Promise.race([conversion, timeout]);
+  console.log('[heic] heic2any done');
   return Array.isArray(out) ? out[0] : out;
 }
 
@@ -696,7 +729,9 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
     console.warn('updatedAt update mislukt (niet fataal):', e);
   }
 
-  return ref.id;
+  // Return the doc-id plus the thumb blob so callers can reuse it for a local
+  // preview without re-running the (expensive) HEIC→JPEG conversion.
+  return { id: ref.id, thumbBlob: thumb.blob, displayName: workName };
 }
 
 // Lazily generates + uploads a thumbnail for a legacy photo that only has

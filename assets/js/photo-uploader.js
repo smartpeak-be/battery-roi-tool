@@ -304,7 +304,14 @@ import { escapeHtml } from './shared-helpers.js';
           _toast('Sla het project eerst op.', 'warning');
           return;
         }
-        const files = Array.from(fileList || []).filter(f => f && f.type.startsWith('image/'));
+        // Accept anything that looks like an image: MIME type OR filename suffix.
+        // Some Android Chrome variants serve HEIC files with an empty file.type,
+        // so falling back to the extension lets those through.
+        const files = Array.from(fileList || []).filter(f => {
+          if (!f) return false;
+          if (f.type && f.type.startsWith('image/')) return true;
+          return /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(f.name || '');
+        });
         if (files.length === 0) return;
         _setErr('');
 
@@ -318,10 +325,12 @@ import { escapeHtml } from './shared-helpers.js';
           const file = files[i];
           _setProgress(i, files.length, file.name);
           try {
-            const docId = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: 'situatie' });
-            uploadedIds.push(docId);
-            const previewThumb = await makeThumbnail(file);
-            localThumbs.push({ id: docId, blobUrl: URL.createObjectURL(previewThumb.blob), name: file.name });
+            // uploadProjectPhotoWithThumb returns { id, thumbBlob, displayName } —
+            // reuse the thumbBlob for the local preview so we don't decode the
+            // (possibly HEIC) source twice.
+            const res = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: 'situatie' });
+            uploadedIds.push(res.id);
+            localThumbs.push({ id: res.id, blobUrl: URL.createObjectURL(res.thumbBlob), name: res.displayName || file.name });
             updateSpinner({ current: i + 1, total: files.length });
           } catch (e) {
             hideSpinner();
