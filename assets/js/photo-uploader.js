@@ -281,7 +281,7 @@ import { escapeHtml } from './shared-helpers.js';
       else      { el.textContent = '';  el.classList.add('d-none');    }
     }
 
-    function _setProgress(done, total, filename) {
+    function _setProgress(done, total, filename, step) {
       const wrap = containerEl.querySelector('[data-pu-progress]');
       if (!wrap) return;
       if (total <= 0) { wrap.classList.add('d-none'); return; }
@@ -290,7 +290,9 @@ import { escapeHtml } from './shared-helpers.js';
       const bar  = wrap.querySelector('.progress-bar');
       const lbl  = wrap.querySelector('[data-pu-count]');
       if (bar) bar.style.width = pct + '%';
-      if (lbl) lbl.textContent = `${done}/${total}` + (filename ? ` — ${filename}` : '');
+      const fileLabel = filename ? ` — ${filename}` : '';
+      const stepLabel = step ? ` · ${step}` : '';
+      if (lbl) lbl.textContent = `${done}/${total}${fileLabel}${stepLabel}`;
     }
 
     async function _handleFiles(fileList) {
@@ -325,10 +327,18 @@ import { escapeHtml } from './shared-helpers.js';
           const file = files[i];
           _setProgress(i, files.length, file.name);
           try {
+            // Surface each upload phase in the progress label so the user can
+            // see what's happening (HEIC conversion can take 5-15s).
+            const reportStep = (step) => {
+              _setProgress(i, files.length, file.name, step);
+              if (typeof updateSpinner === 'function') {
+                updateSpinner({ current: i, total: files.length, message: `${file.name} · ${step}` });
+              }
+            };
             // uploadProjectPhotoWithThumb returns { id, thumbBlob, displayName } —
             // reuse the thumbBlob for the local preview so we don't decode the
             // (possibly HEIC) source twice.
-            const res = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: 'situatie' });
+            const res = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: 'situatie', onStep: reportStep });
             uploadedIds.push(res.id);
             localThumbs.push({ id: res.id, blobUrl: URL.createObjectURL(res.thumbBlob), name: res.displayName || file.name });
             updateSpinner({ current: i + 1, total: files.length });

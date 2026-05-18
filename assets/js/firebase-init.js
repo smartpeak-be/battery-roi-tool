@@ -538,51 +538,34 @@ function needsGroundFaultCheck(project) { return groundFaultStatus(project) !== 
 
 // ─── Client-side thumbnail generation ──
 // HEIC/HEIF support: <img> can't decode these on Android Chrome or iOS Safari,
-// so we run a two-step decoder:
-//   1) Try createImageBitmap — uses OS-native decoder where available (Android 12+,
-//      iOS 17+ Safari). Fast and reliable when supported.
-//   2) Fallback to heic2any (libheif WASM, ~150kb). Wrapped in a 90s timeout
-//      because some Samsung HEIF variants can hang the decoder indefinitely.
-async function _heicToJpegIfNeeded(file) {
+// so we convert via heic2any (libheif WASM, loaded from cdnjs in dashboard.html
+// and project-edit.html). Wrapped in a 90s timeout because some Samsung HEIF
+// variants can hang the decoder indefinitely.
+//
+// `onStep` is an optional progress callback so callers can surface what's
+// happening to the user (the conversion can take ~5-15s for a 6MP HEIC).
+async function _heicToJpegIfNeeded(file, onStep) {
   if (!(file instanceof Blob)) return file;
   const type = (file.type || '').toLowerCase();
   const name = (file.name || '').toLowerCase();
   const isHeic = /heic|heif/.test(type) || /\.(heic|heif)$/i.test(name);
   if (!isHeic) return file;
   console.log('[heic] detected:', { name: file.name, type: file.type, size: file.size });
+  if (typeof onStep === 'function') onStep('Foto converteren (HEIC → JPEG)…');
 
-  // Path 1 — native via createImageBitmap.
-  if (typeof createImageBitmap === 'function') {
-    try {
-      const bitmap = await createImageBitmap(file);
-      const canvas = document.createElement('canvas');
-      canvas.width  = bitmap.width;
-      canvas.height = bitmap.height;
-      canvas.getContext('2d').drawImage(bitmap, 0, 0);
-      if (typeof bitmap.close === 'function') bitmap.close();
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
-      if (blob) {
-        console.log('[heic] native decoder succeeded');
-        return blob;
-      }
-    } catch (e) {
-      console.warn('[heic] native decoder failed:', e.message);
-    }
-  }
-
-  // Path 2 — heic2any WASM fallback with timeout.
   if (typeof window === 'undefined' || typeof window.heic2any !== 'function') {
-    throw new Error('HEIC/HEIF foto gedetecteerd, maar geen decoder beschikbaar.');
+    throw new Error('HEIC/HEIF foto gedetecteerd, maar heic2any is niet geladen.');
   }
-  console.log('[heic] falling back to heic2any...');
+
   const TIMEOUT_MS = 90_000;
+  const startedAt = Date.now();
   const conversion = window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
   const timeout = new Promise((_, rej) => setTimeout(
-    () => rej(new Error(`heic2any timeout na ${TIMEOUT_MS / 1000}s — bestand mogelijk te groot of niet-ondersteunde HEIC variant.`)),
+    () => rej(new Error(`HEIC conversie timeout na ${TIMEOUT_MS / 1000}s — bestand mogelijk te groot of niet-ondersteunde variant.`)),
     TIMEOUT_MS,
   ));
   const out = await Promise.race([conversion, timeout]);
-  console.log('[heic] heic2any done');
+  console.log('[heic] heic2any done in', Date.now() - startedAt, 'ms');
   return Array.isArray(out) ? out[0] : out;
 }
 
@@ -650,23 +633,25 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd');
   if (!file) throw new Error('Geen bestand.');
+  const onStep = typeof opts.onStep === 'function' ? opts.onStep : () => {};
 
-  // Convert HEIC/HEIF up-front (Samsung "Hoge efficiëntie" + iOS Photos default).
-  // We do it once here so BOTH the full-size upload and the thumbnail are JPEG —
-  // otherwise the lightbox + grid can't render the original on Android/iOS Chrome.
+  console.log('[upload] start', { name: file.name, type: file.type, size: file.size });
+
+  // ── Step 1 — HEIC/HEIF → JPEG conversion (no-op for already-JPEG/PNG/etc.) ─
   let workFile = file;
   let workName = file.name || 'photo';
-  let workType = file.type || '';
+  let workType = file.type || 'image/jpeg';
   try {
-    const converted = await _heicToJpegIfNeeded(file);
+    const converted = await _heicToJpegIfNeeded(file, onStep);
     if (converted !== file) {
       workFile = converted;
       workName = workName.replace(/\.(heic|heif)$/i, '.jpg');
       if (!/\.jpe?g$/i.test(workName)) workName += '.jpg';
       workType = 'image/jpeg';
+      console.log('[upload] converted to JPEG:', workFile.size, 'bytes');
     }
   } catch (e) {
-    throw new Error('HEIC/HEIF conversie mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+    throw new Error('Stap 1 (HEIC conversie) mislukt: ' + (e && e.message ? e.message : e), { cause: e });
   }
 
   if (!workType.startsWith('image/')) throw new Error('Alleen afbeeldingen.');
@@ -680,12 +665,15 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   const fullPath     = `projects/${projectId}/${ts}_${safeName}`;
   const thumbPath    = `projects/${projectId}/${ts}_${safeStripped}_thumb.jpg`;
 
-  // Step A — generate thumb
+  // ── Step 2 — thumbnail (400px max, JPEG q=0.82) ─────────────────────────
+  onStep('Thumbnail genereren…');
   let thumb;
   try { thumb = await makeThumbnail(workFile); }
-  catch (e) { throw new Error('Thumbnail genereren mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
+  catch (e) { throw new Error('Stap 2 (thumbnail) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
+  console.log('[upload] thumb created:', thumb.width, 'x', thumb.height, '/', thumb.blob.size, 'bytes');
 
-  // Step B — parallel storage upload
+  // ── Step 3 — parallel storage upload ────────────────────────────────────
+  onStep('Foto uploaden…');
   const storage = getStorage();
   try {
     await Promise.all([
@@ -696,8 +684,10 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
     // best-effort cleanup of whichever blob(s) landed
     try { await storage.ref(fullPath).delete();  } catch (_) { /* best-effort */ }
     try { await storage.ref(thumbPath).delete(); } catch (_) { /* best-effort */ }
-    throw new Error('Storage upload mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+    throw new Error('Stap 3 (Storage upload) mislukt: ' + (e && e.message ? e.message : e), { cause: e });
   }
+  console.log('[upload] storage done');
+  onStep('Metadata opslaan…');
 
   // Step C — Firestore metadata
   let ref;
