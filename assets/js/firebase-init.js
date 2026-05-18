@@ -572,32 +572,46 @@ async function _heicToJpegIfNeeded(file, onStep) {
 // Accepts a File/Blob (new upload) or HTMLImageElement (backfill).
 // Returns { blob: Blob, width: number, height: number } where width/height
 // are the NATURAL dimensions of the source image.
+//
+// Decode strategy:
+//   - Blob source → createImageBitmap (handles JPEG/PNG/WEBP/GIF reliably;
+//     more forgiving than <img>.decode() for outputs from libheif/heic2any
+//     which sometimes emit JPEGs <img> refuses to parse).
+//   - HTMLImageElement source → keep the <img>.decode() path (legacy backfill).
 async function makeThumbnail(source) {
   const MAX_SIDE = 400;
   const QUALITY  = 0.82;
 
   if (source instanceof Blob) source = await _heicToJpegIfNeeded(source);
 
-  let img, cleanup = () => {};
+  let drawable;             // ImageBitmap or HTMLImageElement
+  let naturalWidth, naturalHeight;
+  let cleanup = () => {};
+
   if (source instanceof HTMLImageElement) {
-    img = source;
-    if (!img.complete || img.naturalWidth === 0) {
-      try { await img.decode(); }
+    if (!source.complete || source.naturalWidth === 0) {
+      try { await source.decode(); }
       catch (e) { throw new Error('Afbeelding kon niet geladen worden: ' + (e && e.message ? e.message : e), { cause: e }); }
     }
+    drawable = source;
+    naturalWidth  = source.naturalWidth;
+    naturalHeight = source.naturalHeight;
   } else if (source instanceof Blob) {
-    img = new Image();
-    const url = URL.createObjectURL(source);
-    cleanup = () => URL.revokeObjectURL(url);
-    img.src = url;
-    try { await img.decode(); }
-    catch (e) { cleanup(); throw new Error('Kan afbeelding niet decoderen: ' + (e && e.message ? e.message : e), { cause: e }); }
+    if (source.size === 0) throw new Error('Decoder-output is leeg (0 bytes).');
+    if (typeof createImageBitmap !== 'function') {
+      throw new Error('createImageBitmap niet ondersteund in deze browser.');
+    }
+    let bitmap;
+    try { bitmap = await createImageBitmap(source); }
+    catch (e) { throw new Error('Kan afbeelding niet decoderen: ' + (e && e.message ? e.message : e), { cause: e }); }
+    drawable = bitmap;
+    naturalWidth  = bitmap.width;
+    naturalHeight = bitmap.height;
+    cleanup = () => { if (typeof bitmap.close === 'function') bitmap.close(); };
   } else {
     throw new Error('makeThumbnail: source moet File/Blob of HTMLImageElement zijn');
   }
 
-  const naturalWidth  = img.naturalWidth;
-  const naturalHeight = img.naturalHeight;
   if (!naturalWidth || !naturalHeight) {
     cleanup();
     throw new Error('Afbeelding heeft geen geldige afmetingen');
@@ -610,7 +624,7 @@ async function makeThumbnail(source) {
   canvas.height = Math.max(1, Math.round(naturalHeight * scale));
   const ctx = canvas.getContext('2d');
   if (!ctx) { cleanup(); throw new Error('Canvas 2D context niet beschikbaar'); }
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(drawable, 0, 0, canvas.width, canvas.height);
 
   const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', QUALITY));
   cleanup();
