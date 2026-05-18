@@ -202,12 +202,13 @@ enkel een tekstveld + delete. De oude `uploadProjectPhoto` is ook verwijderd.
   (not in repo) and a local HTTP server on port 8000. Test files live in
   `e2e/tests/`. Run a single test with
   `npx playwright test e2e/tests/<name>.spec.js --config=e2e/playwright.config.js`.
-- **Firestore rules deployment:** `firebase deploy --only firestore:rules`
-  (CLI v15) silently does NOT deploy to the named database
-  (`smartpeak-battery-roi-be`). Use `node e2e/deploy-rules-default.cjs` instead
-  — it deploys `firestore.rules` to BOTH the default and named database releases
-  via the REST API. The compat SDK evaluates rules from the default database
-  release even when connecting to a named database, so both must stay in sync.
+- **Firestore rules deployment:** `firebase deploy --only firestore:rules` works
+  directly now that the project uses the default DB on `smartpeak-projects`.
+  Alternative: `node scripts/deploy-rules-smartpeak-projects.cjs` (REST API,
+  deploys both Firestore + Storage rules in one shot — does not depend on the
+  Firebase CLI's project context). The old `e2e/deploy-rules-default.cjs`
+  targets the retired `smartpeak-roi`/`smartpeak-battery-roi-be` project and
+  is left for historical reference only.
 - **Manual verification:** load the page, upload a real Fluvius CSV, and walk
   the full flow (load configs → calculate → check results, share link,
   JSON save/load).
@@ -257,7 +258,7 @@ spec na deze iteratie.
 4. **Leads** — publiek aanmaken (`allow create: if true`), publiek lezen per ID
    (`allow get: if true`), lijst/update/delete alleen voor whitelisted users.
    Firestore rules in `firestore.rules`, gedeployed via
-   `e2e/deploy-rules-default.cjs`.
+   `scripts/deploy-rules-smartpeak-projects.cjs`.
 
 **Save / share state** — same v:5 mechanism powers BOTH the legacy `?data=<b64>` share-links AND the Firestore project-mode storage. In project-mode, `csvUpload.dailyCompact` lives at the top level of the project doc (not inside `results`) to avoid duplicating per-day arrays. The restore-path in `index.html` (`buildSavedFromProject`) reassembles a v:5-shaped object from the project document so the existing `_applyLoadedState` flow can hydrate the UI unchanged. `_serializeState` produces a versioned (`v: 5`) JSON of inputs + computed results (NOT the raw CSV). v:5 adds a `dailyCompact` field (6 parallel arrays — `afname`, `injectie`, `afnamedag`, `afnamenacht`, `injectiedag`, `injectienacht` — plus a `startDate`) so per-day data is preserved across share-links — needed by the energy chart's Dag-view. `copyShareLink` base64-encodes it into `?data=...`; `downloadSave` writes it as a JSON file. `_applyLoadedState` accepts `v: 1, 2, 3, 4, 5` and degrades older versions gracefully (e.g. v:1-4 saves have no per-day data → the energy chart's Dag-view is disabled with a tooltip and Jaar/Maand are derived from `monthMap`). **When you change the shape of `_saved`/`renderResults` input**, bump the version and handle the old version in `_applyLoadedState`, or shared links and downloaded JSONs from before will silently break.
 

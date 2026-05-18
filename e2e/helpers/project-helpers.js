@@ -116,7 +116,7 @@ function _getAdminApp() {
     const sa = require(join(__dirname, '..', 'service-account-key.json'));
     return admin.initializeApp({
       credential: admin.credential.cert(sa),
-      storageBucket: 'smartpeak-roi.firebasestorage.app',
+      storageBucket: 'smartpeak-projects.firebasestorage.app',
     }, APP_NAME);
   }
 }
@@ -136,7 +136,7 @@ function _getAdminApp() {
  */
 export function getAdminFirestore() {
   const admin = require('firebase-admin');
-  return admin.firestore(_getAdminApp(), 'smartpeak-battery-roi-be');
+  return admin.firestore(_getAdminApp());
 }
 
 /**
@@ -149,7 +149,7 @@ export function getAdminStorage() {
 export async function cleanupProject(projectId) {
   const admin = require('firebase-admin');
   const app = _getAdminApp();
-  const db = admin.firestore(app, 'smartpeak-battery-roi-be');
+  const db = admin.firestore(app);
   const bucket = app.storage().bucket();
 
   console.log(`[cleanup] Hard-deleting project ${projectId} via Admin SDK`);

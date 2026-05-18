@@ -3,5 +3,7 @@ node_modules/
 e2e/auth-state.json
 e2e/auth-token.json
 e2e/service-account-key.json
+scripts/sa-source.json
+scripts/sa-dest.json
 test-results/
 playwright-report/

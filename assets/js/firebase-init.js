@@ -6,13 +6,12 @@
 // (security rules enforce access — see Firestore rules in the spec).
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBogV2vRpxD-Pw2XK5vJMOl-nEUywTgToE",
-  authDomain: "smartpeak-roi.firebaseapp.com",
-  projectId: "smartpeak-roi",
-  storageBucket: "smartpeak-roi.firebasestorage.app",
-  messagingSenderId: "1097741372897",
-  appId: "1:1097741372897:web:b666db1329de5e03a296a0",
-  measurementId: "G-CXYBY5503V"
+  apiKey: "AIzaSyAIyAk9Zgv5wraOBR9sdTUkyz92otxRklw",
+  authDomain: "smartpeak-projects.firebaseapp.com",
+  projectId: "smartpeak-projects",
+  storageBucket: "smartpeak-projects.firebasestorage.app",
+  messagingSenderId: "566291826812",
+  appId: "1:566291826812:web:e7947bd33384e9ca8fa1f9"
 };
 
 // Whitelist of emails allowed to access projects. Must match the Firestore security rules
@@ -181,7 +180,7 @@ function initFirebase() {
     throw new Error('Firebase SDK niet geladen. Controleer of de <script src="https://www.gstatic.com/firebasejs/...firebase-app-compat.js"> tags aanwezig zijn.');
   }
   _firebaseApp  = firebase.initializeApp(FIREBASE_CONFIG);
-  _firebaseDb   = _firebaseApp.firestore('smartpeak-battery-roi-be');
+  _firebaseDb   = _firebaseApp.firestore();
   // Auth SDK is optional — not loaded on public pages (lead.html, lead-result.html)
   if (typeof firebase.auth === 'function') {
     _firebaseAuth = firebase.auth();
