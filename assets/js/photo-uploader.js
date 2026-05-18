@@ -74,7 +74,7 @@ import { escapeHtml } from './shared-helpers.js';
             ${canFile ? `
               <label class="btn btn-outline-secondary mb-0" data-pu-gallery-label>
                 <i class="fa-solid fa-folder-open me-1"></i> Uit galerij kiezen
-                <input type="file" accept="image/*" multiple class="d-none" data-pu-gallery />
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple class="d-none" data-pu-gallery />
               </label>` : ''}
           </div>
         `}
