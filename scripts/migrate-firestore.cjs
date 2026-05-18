@@ -28,7 +28,9 @@ const SOURCE_KEY_PATH = path.join(__dirname, 'sa-source.json');
 const DEST_KEY_PATH   = path.join(__dirname, 'sa-dest.json');
 
 const SOURCE_PROJECT_ID = 'smartpeak-roi';
-const SOURCE_DATABASE   = 'smartpeak-battery-roi-be';
+// Production data lives in the (default) DB on the source project; the named
+// "smartpeak-battery-roi-be" DB held an older/test snapshot that we don't want.
+const SOURCE_DATABASE   = '(default)';
 const DEST_PROJECT_ID   = 'smartpeak-projects';
 
 const DRY_RUN = process.env.DRY_RUN === '1';
@@ -64,9 +66,10 @@ const dstApp = admin.initializeApp({
   projectId:  DEST_PROJECT_ID,
 }, 'dest');
 
-// Named DB on source, default DB on destination.
 const srcDb = srcApp.firestore();
-srcDb.settings({ databaseId: SOURCE_DATABASE, ignoreUndefinedProperties: true });
+const srcSettings = { ignoreUndefinedProperties: true };
+if (SOURCE_DATABASE && SOURCE_DATABASE !== '(default)') srcSettings.databaseId = SOURCE_DATABASE;
+srcDb.settings(srcSettings);
 const dstDb = dstApp.firestore();
 dstDb.settings({ ignoreUndefinedProperties: true });
 
