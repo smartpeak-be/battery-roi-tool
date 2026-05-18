@@ -686,29 +686,37 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   catch (e) { throw new Error('Stap 2 (thumbnail) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
   console.log('[upload] thumb created:', thumb.width, 'x', thumb.height, '/', thumb.blob.size, 'bytes');
 
-  // ── Step 3 — parallel storage upload with progress + timeout ───────────
+  // ── Step 3 — parallel storage upload with combined progress + timeout ──
   onStep('Foto uploaden…');
   const storage = getStorage();
-  const UPLOAD_TIMEOUT_MS = 60_000;
-  const putWithProgress = (path, blob, contentType, label) => new Promise((resolve, reject) => {
+  // Track both uploads' percentages so the label always reflects both, not
+  // just whichever finished most recently (thumb completes ~instantly while
+  // full can take a minute on mobile 4G).
+  const pcts = { full: 0, thumb: 0 };
+  const renderProgress = () => onStep(`Foto uploaden (full ${pcts.full}% · thumb ${pcts.thumb}%)…`);
+  const putWithProgress = (path, blob, contentType, label, timeoutMs) => new Promise((resolve, reject) => {
     const task = storage.ref(path).put(blob, { contentType });
     const timeout = setTimeout(() => {
       task.cancel();
-      reject(new Error(`Storage upload ${label} timeout na ${UPLOAD_TIMEOUT_MS / 1000}s.`));
-    }, UPLOAD_TIMEOUT_MS);
+      reject(new Error(`Storage upload ${label} timeout na ${timeoutMs / 1000}s (op ${pcts[label]}%).`));
+    }, timeoutMs);
     task.on('state_changed',
       (snap) => {
         const pct = snap.totalBytes > 0 ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
-        onStep(`Foto uploaden (${label} ${pct}%)…`);
+        pcts[label] = pct;
+        renderProgress();
+        console.log(`[upload] ${label} ${pct}% (${snap.bytesTransferred}/${snap.totalBytes})`);
       },
       (err) => { clearTimeout(timeout); reject(err); },
-      ()    => { clearTimeout(timeout); resolve(); },
+      ()    => { clearTimeout(timeout); pcts[label] = 100; renderProgress(); resolve(); },
     );
   });
   try {
     await Promise.all([
-      putWithProgress(fullPath,  workFile,    workType,      'full'),
-      putWithProgress(thumbPath, thumb.blob,  'image/jpeg',  'thumb'),
+      // 180s for the full file (5-10MB post-HEIC on mobile 4G ≈ 1-3 min).
+      putWithProgress(fullPath,  workFile,    workType,      'full',  180_000),
+      // 30s for the thumb is more than generous (~20 KB).
+      putWithProgress(thumbPath, thumb.blob,  'image/jpeg',  'thumb',  30_000),
     ]);
   } catch (e) {
     // best-effort cleanup of whichever blob(s) landed
