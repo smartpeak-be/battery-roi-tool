@@ -74,7 +74,7 @@ import { escapeHtml } from './shared-helpers.js';
             ${canFile ? `
               <label class="btn btn-outline-secondary mb-0" data-pu-gallery-label>
                 <i class="fa-solid fa-folder-open me-1"></i> Uit galerij kiezen
-                <input type="file" accept="image/*" multiple class="d-none" data-pu-gallery />
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple class="d-none" data-pu-gallery />
               </label>` : ''}
           </div>
         `}
@@ -281,7 +281,7 @@ import { escapeHtml } from './shared-helpers.js';
       else      { el.textContent = '';  el.classList.add('d-none');    }
     }
 
-    function _setProgress(done, total, filename) {
+    function _setProgress(done, total, filename, step) {
       const wrap = containerEl.querySelector('[data-pu-progress]');
       if (!wrap) return;
       if (total <= 0) { wrap.classList.add('d-none'); return; }
@@ -290,7 +290,9 @@ import { escapeHtml } from './shared-helpers.js';
       const bar  = wrap.querySelector('.progress-bar');
       const lbl  = wrap.querySelector('[data-pu-count]');
       if (bar) bar.style.width = pct + '%';
-      if (lbl) lbl.textContent = `${done}/${total}` + (filename ? ` — ${filename}` : '');
+      const fileLabel = filename ? ` — ${filename}` : '';
+      const stepLabel = step ? ` · ${step}` : '';
+      if (lbl) lbl.textContent = `${done}/${total}${fileLabel}${stepLabel}`;
     }
 
     async function _handleFiles(fileList) {
@@ -304,7 +306,14 @@ import { escapeHtml } from './shared-helpers.js';
           _toast('Sla het project eerst op.', 'warning');
           return;
         }
-        const files = Array.from(fileList || []).filter(f => f && f.type.startsWith('image/'));
+        // Accept anything that looks like an image: MIME type OR filename suffix.
+        // Some Android Chrome variants serve HEIC files with an empty file.type,
+        // so falling back to the extension lets those through.
+        const files = Array.from(fileList || []).filter(f => {
+          if (!f) return false;
+          if (f.type && f.type.startsWith('image/')) return true;
+          return /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(f.name || '');
+        });
         if (files.length === 0) return;
         _setErr('');
 
@@ -318,10 +327,20 @@ import { escapeHtml } from './shared-helpers.js';
           const file = files[i];
           _setProgress(i, files.length, file.name);
           try {
-            const docId = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: 'situatie' });
-            uploadedIds.push(docId);
-            const previewThumb = await makeThumbnail(file);
-            localThumbs.push({ id: docId, blobUrl: URL.createObjectURL(previewThumb.blob), name: file.name });
+            // Surface each upload phase in the progress label so the user can
+            // see what's happening (HEIC conversion can take 5-15s).
+            const reportStep = (step) => {
+              _setProgress(i, files.length, file.name, step);
+              if (typeof updateSpinner === 'function') {
+                updateSpinner({ current: i, total: files.length, message: `${file.name} · ${step}` });
+              }
+            };
+            // uploadProjectPhotoWithThumb returns { id, thumbBlob, displayName } —
+            // reuse the thumbBlob for the local preview so we don't decode the
+            // (possibly HEIC) source twice.
+            const res = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: 'situatie', onStep: reportStep });
+            uploadedIds.push(res.id);
+            localThumbs.push({ id: res.id, blobUrl: URL.createObjectURL(res.thumbBlob), name: res.displayName || file.name });
             updateSpinner({ current: i + 1, total: files.length });
           } catch (e) {
             hideSpinner();

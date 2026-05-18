@@ -537,33 +537,91 @@ function needsGroundFaultCheck(project) { return groundFaultStatus(project) !== 
 // ─── PHOTOS (Firebase Storage + Firestore metadata) ──────────────────────────
 
 // ─── Client-side thumbnail generation ──
-// Accepts a File/Blob (new upload) or HTMLImageElement (backfill).
-// Returns { blob: Blob, width: number, height: number } where width/height
-// are the NATURAL dimensions of the source image.
-async function makeThumbnail(source) {
-  const MAX_SIDE = 400;
-  const QUALITY  = 0.82;
+// HEIC/HEIF support: <img> can't decode these on Android Chrome or iOS Safari,
+// so we convert via heic2any (libheif WASM, loaded from cdnjs in dashboard.html
+// and project-edit.html). Wrapped in a 90s timeout because some Samsung HEIF
+// variants can hang the decoder indefinitely.
+//
+// `onStep` is an optional progress callback so callers can surface what's
+// happening to the user (the conversion can take ~5-15s for a 6MP HEIC).
+async function _heicToJpegIfNeeded(file, onStep) {
+  if (!(file instanceof Blob)) return file;
+  const type = (file.type || '').toLowerCase();
+  const name = (file.name || '').toLowerCase();
+  const isHeic = /heic|heif/.test(type) || /\.(heic|heif)$/i.test(name);
+  if (!isHeic) return file;
+  console.log('[heic] detected:', { name: file.name, type: file.type, size: file.size });
+  if (typeof onStep === 'function') onStep('Foto converteren (HEIC → JPEG)…');
 
-  let img, cleanup = () => {};
+  if (typeof window === 'undefined' || typeof window.heic2any !== 'function') {
+    throw new Error('HEIC/HEIF foto gedetecteerd, maar heic2any is niet geladen.');
+  }
+
+  const TIMEOUT_MS = 90_000;
+  const startedAt = Date.now();
+  const conversion = window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+  const timeout = new Promise((_, rej) => setTimeout(
+    () => rej(new Error(`HEIC conversie timeout na ${TIMEOUT_MS / 1000}s — bestand mogelijk te groot of niet-ondersteunde variant.`)),
+    TIMEOUT_MS,
+  ));
+  const out = await Promise.race([conversion, timeout]);
+  console.log('[heic] heic2any done in', Date.now() - startedAt, 'ms');
+  return Array.isArray(out) ? out[0] : out;
+}
+
+// Resize-down + re-encode a Blob to a "medium" JPEG meant for full-screen
+// viewing. Output is capped at 2000px longest side, JPEG q=0.85 — typically
+// ~500-900 KB for a 12MP source. Keeps full uploads in the simple-upload
+// path (under the 5MB resumable threshold) which avoids new-bucket CORS
+// gotchas on the resumable protocol.
+async function makeFullSizedJpeg(source) {
+  return _resizeToJpeg(source, 2000, 0.85);
+}
+
+// Accepts a File/Blob (new upload) or HTMLImageElement (backfill).
+// Returns { blob: Blob, width: number, height: number }.
+//
+// Decode strategy:
+//   - Blob source → createImageBitmap (handles JPEG/PNG/WEBP/GIF reliably;
+//     more forgiving than <img>.decode() for outputs from libheif/heic2any
+//     which sometimes emit JPEGs <img> refuses to parse).
+//   - HTMLImageElement source → keep the <img>.decode() path (legacy backfill).
+async function makeThumbnail(source) {
+  return _resizeToJpeg(source, 400, 0.82);
+}
+
+async function _resizeToJpeg(source, MAX_SIDE, QUALITY) {
+
+  if (source instanceof Blob) source = await _heicToJpegIfNeeded(source);
+
+  let drawable;             // ImageBitmap or HTMLImageElement
+  let naturalWidth, naturalHeight;
+  let cleanup = () => {};
+
   if (source instanceof HTMLImageElement) {
-    img = source;
-    if (!img.complete || img.naturalWidth === 0) {
-      try { await img.decode(); }
+    if (!source.complete || source.naturalWidth === 0) {
+      try { await source.decode(); }
       catch (e) { throw new Error('Afbeelding kon niet geladen worden: ' + (e && e.message ? e.message : e), { cause: e }); }
     }
+    drawable = source;
+    naturalWidth  = source.naturalWidth;
+    naturalHeight = source.naturalHeight;
   } else if (source instanceof Blob) {
-    img = new Image();
-    const url = URL.createObjectURL(source);
-    cleanup = () => URL.revokeObjectURL(url);
-    img.src = url;
-    try { await img.decode(); }
-    catch (e) { cleanup(); throw new Error('Kan afbeelding niet decoderen: ' + (e && e.message ? e.message : e), { cause: e }); }
+    if (source.size === 0) throw new Error('Decoder-output is leeg (0 bytes).');
+    if (typeof createImageBitmap !== 'function') {
+      throw new Error('createImageBitmap niet ondersteund in deze browser.');
+    }
+    let bitmap;
+    try { bitmap = await createImageBitmap(source); }
+    catch (e) { throw new Error('Kan afbeelding niet decoderen: ' + (e && e.message ? e.message : e), { cause: e }); }
+    drawable = bitmap;
+    naturalWidth  = bitmap.width;
+    naturalHeight = bitmap.height;
+    cleanup = () => { if (typeof bitmap.close === 'function') bitmap.close(); };
   } else {
     throw new Error('makeThumbnail: source moet File/Blob of HTMLImageElement zijn');
   }
 
-  const naturalWidth  = img.naturalWidth;
-  const naturalHeight = img.naturalHeight;
   if (!naturalWidth || !naturalHeight) {
     cleanup();
     throw new Error('Afbeelding heeft geen geldige afmetingen');
@@ -576,7 +634,7 @@ async function makeThumbnail(source) {
   canvas.height = Math.max(1, Math.round(naturalHeight * scale));
   const ctx = canvas.getContext('2d');
   if (!ctx) { cleanup(); throw new Error('Canvas 2D context niet beschikbaar'); }
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(drawable, 0, 0, canvas.width, canvas.height);
 
   const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', QUALITY));
   cleanup();
@@ -598,35 +656,100 @@ function getStorage() {
 async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd');
-  if (!file || !file.type.startsWith('image/')) throw new Error('Alleen afbeeldingen.');
-  const MAX_BYTES = 15 * 1024 * 1024;
-  if (file.size > MAX_BYTES) throw new Error('Te groot (max 15 MB).');
-  const tag = opts.tag === 'serial' ? 'serial' : 'situatie';
+  if (!file) throw new Error('Geen bestand.');
+  const onStep = typeof opts.onStep === 'function' ? opts.onStep : () => {};
 
-  const safeName     = file.name.replace(/[^\w.-]+/g, '_').slice(0, 80);
+  console.log('[upload] start', { name: file.name, type: file.type, size: file.size });
+
+  // ── Step 1 — HEIC/HEIF → JPEG conversion (no-op for already-JPEG/PNG/etc.) ─
+  let workFile = file;
+  let workName = file.name || 'photo';
+  let workType = file.type || 'image/jpeg';
+  try {
+    const converted = await _heicToJpegIfNeeded(file, onStep);
+    if (converted !== file) {
+      workFile = converted;
+      workName = workName.replace(/\.(heic|heif)$/i, '.jpg');
+      if (!/\.jpe?g$/i.test(workName)) workName += '.jpg';
+      workType = 'image/jpeg';
+      console.log('[upload] converted to JPEG:', workFile.size, 'bytes');
+    }
+  } catch (e) {
+    throw new Error('Stap 1 (HEIC conversie) mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+  }
+
+  if (!workType.startsWith('image/')) throw new Error('Alleen afbeeldingen.');
+  const MAX_BYTES = 15 * 1024 * 1024;
+  if (workFile.size > MAX_BYTES) throw new Error('Te groot (max 15 MB).');
+  const tag = opts.tag === 'serial' ? 'serial' : 'situatie';
+  console.log('[upload] post-conversion size:', workFile.size, 'bytes', '(type:', workType + ')');
+
+  // ── Step 2a — resize full file (max 2000px longest, q=0.85) ─────────────
+  // Site-survey photos don't need source-resolution detail; 2000px is already
+  // larger than the lightbox display. Resizing here keeps full uploads under
+  // ~1MB so they go via the simple-upload path (avoids resumable-protocol
+  // CORS quirks on new Storage buckets) and finish in seconds on mobile.
+  onStep('Foto verkleinen…');
+  let fullForUpload, fullDims;
+  try {
+    const r = await makeFullSizedJpeg(workFile);
+    fullForUpload = r.blob;
+    fullDims      = { width: r.width, height: r.height };
+  } catch (e) { throw new Error('Stap 2a (verkleinen) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
+  console.log('[upload] full resized:', fullDims.width, 'x', fullDims.height, '/', fullForUpload.size, 'bytes');
+
+  const safeName     = workName.replace(/[^\w.-]+/g, '_').slice(0, 80);
   const safeStripped = safeName.replace(/\.[^.]+$/, '') || 'photo';
   const ts           = Date.now();
   const fullPath     = `projects/${projectId}/${ts}_${safeName}`;
   const thumbPath    = `projects/${projectId}/${ts}_${safeStripped}_thumb.jpg`;
 
-  // Step A — generate thumb
+  // ── Step 2b — thumbnail (400px max, JPEG q=0.82) ────────────────────────
+  onStep('Thumbnail genereren…');
   let thumb;
-  try { thumb = await makeThumbnail(file); }
-  catch (e) { throw new Error('Thumbnail genereren mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
+  try { thumb = await makeThumbnail(fullForUpload); }
+  catch (e) { throw new Error('Stap 2b (thumbnail) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
+  console.log('[upload] thumb created:', thumb.width, 'x', thumb.height, '/', thumb.blob.size, 'bytes');
 
-  // Step B — parallel storage upload
+  // ── Step 3 — parallel storage upload with combined progress + timeout ──
+  onStep('Foto uploaden…');
   const storage = getStorage();
+  // Track both uploads' percentages so the label always reflects both, not
+  // just whichever finished most recently (thumb completes ~instantly while
+  // full can take a minute on mobile 4G).
+  const pcts = { full: 0, thumb: 0 };
+  const renderProgress = () => onStep(`Foto uploaden (full ${pcts.full}% · thumb ${pcts.thumb}%)…`);
+  const putWithProgress = (path, blob, contentType, label, timeoutMs) => new Promise((resolve, reject) => {
+    const task = storage.ref(path).put(blob, { contentType });
+    const timeout = setTimeout(() => {
+      task.cancel();
+      reject(new Error(`Storage upload ${label} timeout na ${timeoutMs / 1000}s (op ${pcts[label]}%).`));
+    }, timeoutMs);
+    task.on('state_changed',
+      (snap) => {
+        const pct = snap.totalBytes > 0 ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
+        pcts[label] = pct;
+        renderProgress();
+        console.log(`[upload] ${label} ${pct}% (${snap.bytesTransferred}/${snap.totalBytes})`);
+      },
+      (err) => { clearTimeout(timeout); reject(err); },
+      ()    => { clearTimeout(timeout); pcts[label] = 100; renderProgress(); resolve(); },
+    );
+  });
   try {
     await Promise.all([
-      storage.ref(fullPath).put(file,       { contentType: file.type }),
-      storage.ref(thumbPath).put(thumb.blob, { contentType: 'image/jpeg' }),
+      // Both are now small JPEGs (full ≤ ~1MB, thumb ~20KB). 60s is plenty.
+      putWithProgress(fullPath,  fullForUpload, 'image/jpeg', 'full',  60_000),
+      putWithProgress(thumbPath, thumb.blob,    'image/jpeg', 'thumb', 30_000),
     ]);
   } catch (e) {
     // best-effort cleanup of whichever blob(s) landed
     try { await storage.ref(fullPath).delete();  } catch (_) { /* best-effort */ }
     try { await storage.ref(thumbPath).delete(); } catch (_) { /* best-effort */ }
-    throw new Error('Storage upload mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+    throw new Error('Stap 3 (Storage upload) mislukt: ' + (e && e.message ? e.message : e), { cause: e });
   }
+  console.log('[upload] storage done');
+  onStep('Metadata opslaan…');
 
   // Step C — Firestore metadata
   let ref;
@@ -634,11 +757,11 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
     ref = await projectDoc(projectId).collection('photos').add({
       storagePath:      fullPath,
       thumbStoragePath: thumbPath,
-      name:             file.name,
-      contentType:      file.type,
-      sizeBytes:        file.size,
-      width:            thumb.width,
-      height:           thumb.height,
+      name:             workName,
+      contentType:      'image/jpeg',
+      sizeBytes:        fullForUpload.size,
+      width:            fullDims.width,
+      height:           fullDims.height,
       tag,
       uploadedAt:       firebase.firestore.FieldValue.serverTimestamp(),
       uploadedBy:       email,
@@ -658,7 +781,9 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
     console.warn('updatedAt update mislukt (niet fataal):', e);
   }
 
-  return ref.id;
+  // Return the doc-id plus the thumb blob so callers can reuse it for a local
+  // preview without re-running the (expensive) HEIC→JPEG conversion.
+  return { id: ref.id, thumbBlob: thumb.blob, displayName: workName };
 }
 
 // Lazily generates + uploads a thumbnail for a legacy photo that only has
