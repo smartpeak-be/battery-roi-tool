@@ -37,7 +37,7 @@ import { escapeHtml } from './shared-helpers.js';
                 <i class="fa-solid fa-camera me-1"></i> Alles → Situatie
               </button>
               <button type="button" class="btn btn-sm btn-outline-primary" data-pu-bulk="serial">
-                <i class="fa-solid fa-barcode me-1"></i> Alles → Serieel
+                <i class="fa-solid fa-barcode me-1"></i> Alles → Serieel · Batterij
               </button>
             </div>
             <div data-pu-modal-list></div>
@@ -381,15 +381,39 @@ import { escapeHtml } from './shared-helpers.js';
             <img src="${escapeHtml(t.blobUrl)}" alt="${escapeHtml(t.name)}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;" />
             <div class="flex-grow-1">
               <div class="small text-muted text-truncate" style="max-width:200px;">${escapeHtml(t.name)}</div>
-              <div class="btn-group btn-group-sm mt-1" role="group">
-                <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-s" value="situatie" checked />
-                <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-s"><i class="fa-solid fa-camera me-1"></i>Situatie</label>
-                <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-r" value="serial" />
-                <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-r"><i class="fa-solid fa-barcode me-1"></i>Serieel</label>
+              <div class="d-flex flex-wrap gap-2 mt-1">
+                <div class="btn-group btn-group-sm" role="group">
+                  <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-s" value="situatie" checked />
+                  <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-s"><i class="fa-solid fa-camera me-1"></i>Situatie</label>
+                  <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-r" value="serial" />
+                  <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-r"><i class="fa-solid fa-barcode me-1"></i>Serieel</label>
+                </div>
+                <div class="btn-group btn-group-sm pu-serial-cat" role="group" data-pu-cat-row="${escapeHtml(id)}" style="display:none;">
+                  <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-b" value="batterij" checked />
+                  <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-b">Batterij</label>
+                  <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-o" value="omvormer" />
+                  <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-o">Omvormer</label>
+                  <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-c" value="omvormer_batterij" />
+                  <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-c">Omvormer+Batterij</label>
+                </div>
               </div>
             </div>
           </div>`;
       }).join('');
+
+      // Show category row only when this photo is tagged as serial.
+      list.querySelectorAll('[data-pu-modal-row]').forEach(row => {
+        const id = row.getAttribute('data-photo-id');
+        if (!id) return;
+        ['s', 'r'].forEach(suffix => {
+          const radio = row.querySelector(`#tag-${CSS.escape(id)}-${suffix}`);
+          if (!radio) return;
+          radio.addEventListener('change', () => {
+            const catRow = row.querySelector(`[data-pu-cat-row="${CSS.escape(id)}"]`);
+            if (catRow) catRow.style.display = (suffix === 'r') ? '' : 'none';
+          });
+        });
+      });
 
       // Bulk handlers
       el.querySelectorAll('[data-pu-bulk]').forEach(btn => {
@@ -400,6 +424,19 @@ import { escapeHtml } from './shared-helpers.js';
             const radio = row.querySelector(`input[name="tag-${CSS.escape(id)}"][value="${target}"]`);
             if (radio) radio.checked = true;
           });
+          // When bulk-tagging as serial, also reveal the category row and reset
+          // each one to the default Batterij selection.
+          if (target === 'serial') {
+            list.querySelectorAll(`[data-pu-cat-row]`).forEach(catRow => {
+              catRow.style.display = '';
+              const def = catRow.querySelector(`input[value="batterij"]`);
+              if (def) def.checked = true;
+            });
+          } else {
+            list.querySelectorAll(`[data-pu-cat-row]`).forEach(catRow => {
+              catRow.style.display = 'none';
+            });
+          }
         };
       });
 
@@ -415,13 +452,20 @@ import { escapeHtml } from './shared-helpers.js';
           const batch = db.batch();
           let patches = 0;
           uploadedIds.forEach(id => {
-            const checked = list.querySelector(`input[name="tag-${CSS.escape(id)}"]:checked`);
-            const tag = checked && checked.value === 'serial' ? 'serial' : 'situatie';
-            if (tag !== 'situatie') {
-              const ref = db.collection('projects').doc(options.projectId).collection('photos').doc(id);
-              batch.update(ref, { tag });
+            const tagChecked = list.querySelector(`input[name="tag-${CSS.escape(id)}"]:checked`);
+            const isSerial = tagChecked && tagChecked.value === 'serial';
+            const ref = db.collection('projects').doc(options.projectId).collection('photos').doc(id);
+            if (isSerial) {
+              const catChecked = list.querySelector(`input[name="cat-${CSS.escape(id)}"]:checked`);
+              const category = (catChecked && catChecked.value) || 'batterij';
+              batch.update(ref, {
+                tag: 'serial',
+                serialCategory: category,
+                ocrStatus: 'pending',
+              });
               patches++;
             }
+            // No write needed when situatie (default) — saves Firestore quota.
           });
           if (patches > 0) await batch.commit();
           bootstrap.Modal.getOrCreateInstance(el).hide();
