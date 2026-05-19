@@ -30,7 +30,7 @@ const PHOTO_PATH = resolve(__dirname, '../fixtures/serial-photo.jpg');
 const require = createRequire(import.meta.url);
 const admin = require('firebase-admin');
 
-test.describe('Serial-OCR happy-path', () => {
+test.describe.serial('Serial-OCR happy-path', () => {
   let projectId;
 
   test.beforeAll(async ({ browser }) => {
@@ -134,5 +134,52 @@ test.describe('Serial-OCR happy-path', () => {
     await expect(newRow).toBeVisible({ timeout: 15_000 });
     await expect(newRow.locator('input.serial-value')).toHaveValue('OCRTEST12345', { timeout: 5_000 });
     await expect(newRow.locator('.serial-cat-batterij')).toBeVisible();
+  });
+
+  test('failed OCR shows re-run knop → click resets to pending', async ({ page }) => {
+    // Pre-seed a serial-tagged photo + failed entry directly via Admin.
+    const db = getAdminFirestore();
+    const photoRef = db.collection('projects').doc(projectId).collection('photos').doc('photo_failed');
+    await photoRef.set({
+      tag: 'serial',
+      serialCategory: 'omvormer',
+      ocrStatus: 'failed',
+      storagePath: `projects/${projectId}/test_fake.jpg`,
+      serialEntryId: 'sn_fail1',
+      ocrError: 'no-text-detected',
+      ocrCandidates: [],
+      uploadedBy: 'test',
+      uploadedAt: admin.firestore.Timestamp.now(),
+    });
+    await db.collection('projects').doc(projectId).update({
+      serialNumbers: [{
+        id: 'sn_fail1',
+        value: '',
+        category: 'omvormer',
+        source: 'ocr',
+        photoId: 'photo_failed',
+        ocrStatus: 'failed',
+        uploadedAt: admin.firestore.Timestamp.now(),
+        uploadedBy: 'test',
+      }],
+    });
+
+    // Open project-edit and find the failed row.
+    await page.goto(`/project-edit.html?project=${projectId}`);
+    const row = page.locator('#peSerialList .serial-row[data-serial-id="sn_fail1"]');
+    await expect(row).toBeVisible({ timeout: 10_000 });
+
+    // The re-run knop must be visible (only on isOcr && isFailed rows).
+    const rerunBtn = row.locator('.serial-rerun-btn');
+    await expect(rerunBtn).toBeVisible();
+
+    // Click it.
+    await rerunBtn.click();
+
+    // Poll the photo-doc: ocrStatus should now be null (re-run requested).
+    await expect.poll(async () => {
+      const snap = await photoRef.get();
+      return snap.exists ? snap.data().ocrStatus : 'missing';
+    }, { timeout: 5_000 }).toBe(null);
   });
 });
