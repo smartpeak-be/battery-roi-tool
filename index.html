@@ -1909,7 +1909,7 @@ function renderSummaryCard(d) {
 }
 
 /** Build HTML for a single scenario card (Worst Case or Realistisch). */
-function makeScenCard(d, title, badge, badgeClass, cssClass, scen, installPrice, extraInfo, mainColorOverride, scenAvg) {
+function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, extraInfo, mainColorOverride, scenAvg) {
   const fkw  = n => fmt2(n) + ' kWh';
   const fday = n => Math.round(n) + ' d';
   const feur = n => fmtEur(n) + ' / jaar';
@@ -1951,7 +1951,25 @@ function makeScenCard(d, title, badge, badgeClass, cssClass, scen, installPrice,
     <div class="scenario-sub">${extraInfo}${priceLine}</div>
     <div class="stat-row"><span class="stat-label">Totale opgeslagen energie</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${fkw(totalCharged)}${avgChargedLine}</span></div>
     <div class="stat-row"><span class="stat-label">Totale jaarlijkse besparing</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${feur(scen.annualSaving)}${avgSavingLine}</span></div>
-    <div class="stat-row"><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></div>
+    ${(() => {
+  const installPrice = cfg.price;
+  const lines = Array.isArray(cfg.meerkostLines) ? cfg.meerkostLines : [];
+  if (lines.length === 0) {
+    return `<div class="stat-row"><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></div>`;
+  }
+  const lineRows = lines.map((ln, i) => {
+    const label = (ln.description && ln.description.trim() !== '') ? escapeHtml(ln.description) : `Meerkost #${i+1}`;
+    return `<div class="breakdown-row"><span>${label}</span><span>${fmtEur(ln.amountInclBtw)}</span></div>`;
+  }).join('');
+  return `
+    <details class="installprice-details">
+      <summary><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></summary>
+      <div class="breakdown-row"><span>Basis configuratie</span><span>${fmtEur(cfg.basePrice)}</span></div>
+      ${lineRows}
+      <div class="breakdown-row totaal"><span>Totaal installatie</span><span>${fmtEur(installPrice)}</span></div>
+    </details>
+  `;
+})()}
     <div class="stat-row"><span class="stat-label">Terugverdientijd</span><span class="stat-value big" style="color:var(--warning);display:flex;flex-direction:column;align-items:flex-end;">${paybackText}${avgPaybackLine}</span></div>
     <details class="scen-details">
       <summary>Details <span class="chev">▾</span></summary>
@@ -2037,7 +2055,7 @@ function renderScenarioGrid(d) {
       : `Verbruikscap toegepast — besparing begrensd door dagelijkse afname.`;
     gridHTML += makeScenCard(d,
       'Worst Case', '⚠️ Worst Case', 'badge-orange', 'worst-case',
-      scenWC, cfg.price, subWC, 'orange',
+      scenWC, cfg, subWC, 'orange',
       cr.scenWCAvg
     );
     if (scenOpt) {
@@ -2046,7 +2064,7 @@ function renderScenarioGrid(d) {
         : `Aanname: batterij laadt volledig en wordt elke dag volledig verbruikt.`;
       gridHTML += makeScenCard(d,
         'Realistisch', '✨ Realistisch', 'badge-blue', 'optimistic',
-        scenOpt, cfg.price, subOpt, 'blue',
+        scenOpt, cfg, subOpt, 'blue',
         cr.scenOptAvg
       );
     }
