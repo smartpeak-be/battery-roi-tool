@@ -698,9 +698,13 @@ async function openDrawer(projectId) {
         if (!snap.exists) return;
         // Stale guard: drawer may have switched to a different project.
         if (_drawerProjectId !== openId) return;
-        const fresh = mergeProjectMetadata({ id: snap.id, ...snap.data() });
-        _currentDrawerProject = fresh;
-        renderDrawerSerials(fresh);
+        // Preserve raw doc shape on _currentDrawerProject so top-level fields
+        // (id, projectName, customerName, lastCalcRun, offertes, etc.) survive —
+        // mergeProjectMetadata only returns the nested metadata sections and
+        // would strip them. Pass the merged shape only to the serial renderer.
+        const raw = { id: snap.id, ...snap.data() };
+        _currentDrawerProject = raw;
+        renderDrawerSerials(mergeProjectMetadata(raw));
       }, err => {
         console.warn('drawer serial onSnapshot error', err);
       });
