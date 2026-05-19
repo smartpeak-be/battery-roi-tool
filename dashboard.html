@@ -27,6 +27,21 @@
      * — only rules truly relevant for dashboard.html.
      */
 
+    /* Serial-list rows (drawer) — mirrors project-edit.html. */
+    .serial-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .serial-row .serial-cat-badge {
+      font-size: 11px; padding: 3px 8px; border-radius: 12px; color: #fff; font-weight: 500;
+      min-width: 96px; text-align: center;
+    }
+    .serial-row .serial-cat-batterij        { background: #2c7be5; }
+    .serial-row .serial-cat-omvormer        { background: #7e57c2; }
+    .serial-row .serial-cat-omvormer_batterij { background: #16a34a; }
+    .serial-row .serial-cat-null            { background: #9ca3af; }
+    .serial-row .serial-status-icon { width: 18px; text-align: center; }
+    .serial-row input.serial-value { flex: 1; }
+    .serial-row .serial-action-btn { background: none; border: 0; color: #64748b; padding: 4px 6px; cursor: pointer; }
+    .serial-row .serial-action-btn:hover { color: #1e293b; }
+
     /* Desktop: fill viewport, projects scroll, leads pinned at bottom */
     @media (min-width: 992px) {
       #stateAuthorized {
@@ -589,6 +604,10 @@ function wireBoard(el) {
 let _drawerProjectId    = null;
 let _currentDrawerProject = null;
 let _drawerPhotoUploader = null;
+// Firestore onSnapshot unsubscribe for the open drawer's project doc. Used to
+// live-update the serial-list (Task 10). Scoped to the drawer-open lifecycle:
+// subscribe in openDrawer, unsubscribe in closeDrawer + on hidden.bs.offcanvas.
+let _drawerSerialUnsub = null;
 
 // Offerte upload modal + config-row rendering + click delegation all live in
 // assets/js/offertes-ui.js — shared between dashboard.html and project-edit.html.
@@ -670,6 +689,20 @@ async function openDrawer(projectId) {
       });
       // Populate the count header once the initial refresh lands.
       refreshDrawerAfterChange();
+
+      // Live-update the serial-list while the drawer is open. The OCR-callable
+      // mutates serialNumbers[] from a backend Function, so a one-shot read
+      // would miss those updates. Scoped to the drawer-open lifecycle.
+      if (_drawerSerialUnsub) { try { _drawerSerialUnsub(); } catch {} _drawerSerialUnsub = null; }
+      _drawerSerialUnsub = firebase.firestore().collection('projects').doc(project.id).onSnapshot(snap => {
+        if (!snap.exists) return;
+        // Stale guard: drawer may have switched to a different project.
+        if (_drawerProjectId !== openId) return;
+        const fresh = mergeProjectMetadata({ id: snap.id, ...snap.data() });
+        renderDrawerSerials(fresh);
+      }, err => {
+        console.warn('drawer serial onSnapshot error', err);
+      });
       // Mark read (non-blocking). Refresh list so the pulse dot disappears.
       markCommentsRead(projectId).then(() => {
         setTimeout(refreshProjectList, 400);
@@ -685,6 +718,10 @@ function closeDrawer() {
   if (_drawerPhotoUploader) {
     try { _drawerPhotoUploader.destroy(); } catch {}
     _drawerPhotoUploader = null;
+  }
+  if (_drawerSerialUnsub) {
+    try { _drawerSerialUnsub(); } catch {}
+    _drawerSerialUnsub = null;
   }
   const el = document.getElementById('drawer');
   bootstrap.Offcanvas.getOrCreateInstance(el).hide();
@@ -707,6 +744,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (_drawerPhotoUploader) {
         try { _drawerPhotoUploader.destroy(); } catch {}
         _drawerPhotoUploader = null;
+      }
+      if (_drawerSerialUnsub) {
+        try { _drawerSerialUnsub(); } catch {}
+        _drawerSerialUnsub = null;
       }
       _drawerProjectId = null;
       _currentDrawerProject = null;
@@ -822,6 +863,14 @@ function renderDrawer(project) {
     </section>
   `);
 
+  // Serienummers (read-mostly; live-updated via onSnapshot while drawer is open)
+  sections.push(`
+    <section class="border-bottom pb-3 mb-3" id="drawerSerialsSection">
+      <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-barcode" aria-hidden="true"></i> Serienummers <span id="drawerSerialsCount" class="text-muted fw-normal"></span></h6>
+      <div id="drawerSerialsList" class="d-flex flex-column gap-1"></div>
+    </section>
+  `);
+
   // Comments placeholder (filled by renderComments)
   sections.push(`
     <section id="drawerCommentsSection">
@@ -836,6 +885,8 @@ function renderDrawer(project) {
   `);
 
   body.innerHTML = sections.join('');
+
+  renderDrawerSerials(project);
 
   // Wire delete button (soft-delete from drawer)
   const delBtn = document.getElementById('drawerDeleteBtn');
@@ -877,6 +928,84 @@ function renderDrawer(project) {
       }
     });
   });
+
+  // Serial re-run knop (Task 10) — delegated click handler on the serial-list.
+  const serialsList = document.getElementById('drawerSerialsList');
+  if (serialsList) {
+    serialsList.addEventListener('click', async (e) => {
+      const rerunBtn = e.target.closest('.serial-rerun-btn');
+      if (!rerunBtn) return;
+      const photoId = rerunBtn.getAttribute('data-photo-id');
+      if (!photoId) return;
+      rerunBtn.disabled = true;
+      try {
+        await window.requestPhotoOcrRerun(project.id, photoId);
+        showToast('OCR opnieuw gestart', 'primary');
+      } catch (err) {
+        showToast('Re-run mislukt: ' + (err && err.message ? err.message : err), 'danger');
+      } finally {
+        rerunBtn.disabled = false;
+      }
+    });
+  }
+}
+
+function _renderDrawerSerial(entry) {
+  // Drawer is read-mostly — no add-new row. Skip the _new branch entirely.
+  const cat = entry.category || 'null';
+  const catLabels = {
+    batterij: 'Batterij',
+    omvormer: 'Omvormer',
+    omvormer_batterij: 'Omvormer+Batterij',
+    'null': '?',
+  };
+  const status = entry.ocrStatus || 'ok';
+  const isPending = status === 'pending';
+  const isFailed  = status === 'failed';
+  const isOcr     = entry.source === 'ocr';
+  const placeholder = isPending
+    ? 'OCR bezig...'
+    : (isFailed ? 'OCR niet gelukt' : 'Serienummer');
+
+  const statusIconHtml = isPending
+    ? `<i class="fa-solid fa-spinner fa-spin serial-status-icon" title="OCR bezig"></i>`
+    : (isFailed
+        ? `<i class="fa-solid fa-triangle-exclamation serial-status-icon icon-warn" title="OCR niet gelukt"></i>`
+        : `<i class="fa-solid fa-circle-check serial-status-icon icon-ok" title="OK"></i>`);
+
+  const sourceIconHtml = isOcr
+    ? `<span class="serial-status-icon"><i class="fa-solid fa-image text-muted" title="Uit foto"></i></span>`
+    : `<span class="serial-status-icon"><i class="fa-solid fa-keyboard text-muted" title="Manueel ingevoerd"></i></span>`;
+
+  const rerunBtnHtml = (isOcr && isFailed)
+    ? `<button type="button" class="serial-action-btn serial-rerun-btn" data-photo-id="${escapeHtml(entry.photoId || '')}" title="OCR opnieuw proberen"><i class="fa-solid fa-rotate"></i></button>`
+    : '';
+
+  return `
+    <div class="serial-row" data-serial-id="${escapeHtml(entry.id)}">
+      <span class="serial-cat-badge serial-cat-${escapeHtml(cat)}">${escapeHtml(catLabels[cat])}</span>
+      ${statusIconHtml}
+      ${sourceIconHtml}
+      <input type="text" class="form-control form-control-sm serial-value"
+             value="${escapeHtml(entry.value || '')}"
+             placeholder="${escapeHtml(placeholder)}"
+             readonly />
+      ${rerunBtnHtml}
+    </div>
+  `;
+}
+
+function renderDrawerSerials(project) {
+  const list = document.getElementById('drawerSerialsList');
+  const count = document.getElementById('drawerSerialsCount');
+  if (!list) return;
+  const serials = (project && project.serialNumbers) || [];
+  if (count) count.textContent = serials.length > 0 ? `(${serials.length})` : '';
+  if (serials.length === 0) {
+    list.innerHTML = '<p class="sp-empty-state mb-0">Nog geen serienummers.</p>';
+    return;
+  }
+  list.innerHTML = serials.map(_renderDrawerSerial).join('');
 }
 
 function renderComments(project, comments) {
