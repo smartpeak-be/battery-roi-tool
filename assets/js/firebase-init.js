@@ -134,7 +134,11 @@ function mergeProjectMetadata(project) {
     calcDefaults: { ...empty.calcDefaults, ...(project.calcDefaults || {}) },
   };
   merged.offertes      = project.offertes || {};
-  merged.serialNumbers = Array.isArray(project.serialNumbers) ? project.serialNumbers : [];
+  merged.serialNumbers = (Array.isArray(project.serialNumbers) ? project.serialNumbers : []).map(e => ({
+    ...e,
+    category: (e && e.category != null) ? e.category : null,
+    source: (e && e.source) || 'manual',
+  }));
   merged.manualConfigs = project.manualConfigs || {};
   return merged;
 }
