@@ -2637,6 +2637,20 @@ async function loadProjectIntoUI(id) {
     if (proj.csvUpload && proj.lastCalcRun) {
       const restored = buildSavedFromProject(proj);
       _applyLoadedState(restored, /*showBanner*/ false);
+
+      // One-time write-migration: legacy meerkostMap → meerkostLines on first open
+      // in a post-v:6 build. Skipped if already migrated. Failure is non-blocking.
+      try {
+        const inputs = proj.lastCalcRun.inputs || {};
+        if (inputs.meerkostMap && !inputs.meerkostLines) {
+          const newLines = _migrateMeerkostMapToLines(inputs.meerkostMap);
+          await migrateMeerkostMapToLines(_projectId, newLines);
+          _projectDoc = await getProject(_projectId);
+        }
+      } catch (e) {
+        console.warn('meerkost write-migration failed (non-blocking)', e);
+      }
+
       // #results hash (set by dashboard's 💾 button) → scroll to results block.
       if (window.location.hash === '#results') {
         const firstResultCard = document.querySelector('#results .card');
