@@ -25,6 +25,19 @@
 
   <style>
     /* Page-specific rules only. Globals live in assets/css/smartpeak.css. */
+    .serial-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .serial-row .serial-cat-badge {
+      font-size: 11px; padding: 3px 8px; border-radius: 12px; color: #fff; font-weight: 500;
+      min-width: 96px; text-align: center;
+    }
+    .serial-row .serial-cat-batterij        { background: #2c7be5; }
+    .serial-row .serial-cat-omvormer        { background: #7e57c2; }
+    .serial-row .serial-cat-omvormer_batterij { background: #16a34a; }
+    .serial-row .serial-cat-null            { background: #9ca3af; }
+    .serial-row .serial-status-icon { width: 18px; text-align: center; }
+    .serial-row input.serial-value { flex: 1; }
+    .serial-row .serial-action-btn { background: none; border: 0; color: #64748b; padding: 4px 6px; cursor: pointer; }
+    .serial-row .serial-action-btn:hover { color: #1e293b; }
   </style>
 </head>
 <body>
@@ -820,14 +833,55 @@ function sectionBlokD() {
   `;
 }
 
-function _renderSerialRow(s) {
-  const isNew = s.id === '_new';
-  return `
-    <div class="serial-row" data-serial-id="${s.id}">
-      <input type="text" class="form-control" placeholder="Serienummer&hellip;" value="${escapeHtml(s.value || '')}" data-serial-field="value" />
-      <div class="serial-actions">
-        ${isNew ? '' : `<button type="button" class="btn btn-sm btn-outline-danger" title="Verwijderen" data-serial-delete="${s.id}"><i class="fa-solid fa-xmark"></i></button>`}
+function _renderSerialRow(entry) {
+  if (entry.id === '_new') {
+    return `
+      <div class="serial-row" data-serial-id="_new">
+        <input type="text" class="form-control serial-value" placeholder="Serienummer toevoegen&hellip;" value="" data-serial-field="value" />
       </div>
+    `;
+  }
+  const cat = entry.category || 'null';
+  const catLabels = {
+    batterij: 'Batterij',
+    omvormer: 'Omvormer',
+    omvormer_batterij: 'Omvormer+Batterij',
+    'null': '?',
+  };
+  const status = entry.ocrStatus || 'ok';
+  const isPending = status === 'pending';
+  const isFailed  = status === 'failed';
+  const isOcr     = entry.source === 'ocr';
+  const placeholder = isPending
+    ? 'OCR bezig...'
+    : (isFailed ? 'OCR niet gelukt, vul manueel in' : 'Serienummer');
+
+  const statusIconHtml = isPending
+    ? `<i class="fa-solid fa-spinner fa-spin serial-status-icon" title="OCR bezig"></i>`
+    : (isFailed
+        ? `<i class="fa-solid fa-triangle-exclamation serial-status-icon icon-warn" title="OCR niet gelukt"></i>`
+        : `<i class="fa-solid fa-circle-check serial-status-icon icon-ok" title="OK"></i>`);
+
+  const sourceIconHtml = isOcr
+    ? `<button type="button" class="serial-action-btn serial-photo-link" data-photo-id="${escapeHtml(entry.photoId || '')}" title="Toon bronfoto"><i class="fa-solid fa-image"></i></button>`
+    : `<span class="serial-status-icon"><i class="fa-solid fa-keyboard text-muted" title="Manueel ingevoerd"></i></span>`;
+
+  const rerunBtnHtml = (isOcr && isFailed)
+    ? `<button type="button" class="serial-action-btn serial-rerun-btn" data-photo-id="${escapeHtml(entry.photoId || '')}" title="OCR opnieuw proberen"><i class="fa-solid fa-rotate"></i></button>`
+    : '';
+
+  return `
+    <div class="serial-row" data-serial-id="${escapeHtml(entry.id)}">
+      <span class="serial-cat-badge serial-cat-${escapeHtml(cat)}">${escapeHtml(catLabels[cat])}</span>
+      ${statusIconHtml}
+      ${sourceIconHtml}
+      <input type="text" class="form-control form-control-sm serial-value"
+             value="${escapeHtml(entry.value || '')}"
+             placeholder="${escapeHtml(placeholder)}"
+             data-serial-field="value"
+             ${isPending ? 'readonly' : ''} />
+      ${rerunBtnHtml}
+      <button type="button" class="serial-action-btn serial-delete-btn" data-serial-delete="${escapeHtml(entry.id)}" title="Verwijderen"><i class="fa-solid fa-trash"></i></button>
     </div>
   `;
 }
@@ -904,6 +958,36 @@ function wireBlokD() {
       rerenderBlokD();
     });
   });
+
+  // Re-run knop + photo-link click delegation (Task 8).
+  const serialList = document.getElementById('peSerialList');
+  if (serialList) {
+    serialList.addEventListener('click', async (e) => {
+      const rerunBtn = e.target.closest('.serial-rerun-btn');
+      if (rerunBtn) {
+        const photoId = rerunBtn.getAttribute('data-photo-id');
+        if (!photoId || !PROJECT_ID) return;
+        rerunBtn.disabled = true;
+        try {
+          await window.requestPhotoOcrRerun(PROJECT_ID, photoId);
+          showToast('OCR opnieuw gestart', 'primary');
+        } catch (err) {
+          showToast('Re-run mislukt: ' + (err && err.message ? err.message : String(err)), 'danger');
+        } finally {
+          rerunBtn.disabled = false;
+        }
+        return;
+      }
+      const photoLink = e.target.closest('.serial-photo-link');
+      if (photoLink) {
+        const photoId = photoLink.getAttribute('data-photo-id');
+        // If the page has a lightbox helper, call it here; otherwise no-op.
+        if (photoId && typeof window.openPhotoLightbox === 'function') {
+          window.openPhotoLightbox(photoId);
+        }
+      }
+    });
+  }
 
 }
 
