@@ -191,10 +191,11 @@ describe('handleOcrSerial — failure paths', () => {
         { description: 'XYZ' },
       ], // none ≥ 6 alphanumeric
     }]);
+    const txnUpdateCalls = [];
     mockRunTransaction.mockImplementation(async (fn) => {
       const txn = {
         get: vi.fn().mockResolvedValue({ exists: true, data: () => ({ serialNumbers: [] }) }),
-        update: vi.fn(),
+        update: vi.fn((ref, payload) => txnUpdateCalls.push({ ref, payload })),
       };
       return fn(txn);
     });
@@ -206,8 +207,25 @@ describe('handleOcrSerial — failure paths', () => {
     await handleOcrSerial(event);
 
     // Transaction should have been called even with no detected serial,
-    // writing the placeholder failed-entry.
+    // writing the placeholder failed-entry on the project-doc AND the failure
+    // metadata on the photo-doc.
     expect(mockRunTransaction).toHaveBeenCalled();
+
+    const projectUpdate = txnUpdateCalls.find(c => Array.isArray(c.payload.serialNumbers));
+    expect(projectUpdate).toBeTruthy();
+    expect(projectUpdate.payload.serialNumbers).toHaveLength(1);
+    expect(projectUpdate.payload.serialNumbers[0]).toMatchObject({
+      value: '',
+      ocrStatus: 'failed',
+      category: 'batterij',
+      source: 'ocr',
+      photoId: 'PH',
+    });
+
+    const photoUpdate = txnUpdateCalls.find(c => c.payload.ocrCandidates !== undefined);
+    expect(photoUpdate).toBeTruthy();
+    expect(photoUpdate.payload.ocrStatus).toBe('failed');
+    expect(photoUpdate.payload.ocrError).toBe('no-text-detected');
   });
 });
 
