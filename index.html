@@ -1153,8 +1153,21 @@ function _migrateMeerkostMapToLines(map) {
 function _serializeState() {
   if (!_saved) return null;
   const d = _saved;
+  // Strip empty lines (no description AND zero amount) at serialize-time.
+  const meerkostLines = {};
+  (d.configResults || []).forEach(cr => {
+    if (!cr.cfg || !Array.isArray(cr.cfg.meerkostLines)) return;
+    const keep = cr.cfg.meerkostLines
+      .map(ln => ({
+        id: ln.id || _genMeerkostId(),
+        description: ln.description || '',
+        amount: Number(ln.amountExBtw != null ? ln.amountExBtw : ln.amount) || 0,
+      }))
+      .filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount > 0);
+    if (keep.length > 0) meerkostLines[cr.cfg.type] = keep;
+  });
   return {
-    v: 5,
+    v: 6,
     form: {
       pvInv:    d.pvInv,
       priceDay: d.priceDay,
@@ -1162,7 +1175,7 @@ function _serializeState() {
       selectedConfigTypes: d.configResults.map(cr => cr.cfg.type),
     },
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
-    meerkostMap: (() => { const m = {}; d.configResults.forEach(cr => { if (cr.cfg.meerkost > 0) m[cr.cfg.type] = cr.cfg.meerkost; }); return Object.keys(m).length > 0 ? m : null; })(),
+    meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
