@@ -699,6 +699,7 @@ async function openDrawer(projectId) {
         // Stale guard: drawer may have switched to a different project.
         if (_drawerProjectId !== openId) return;
         const fresh = mergeProjectMetadata({ id: snap.id, ...snap.data() });
+        _currentDrawerProject = fresh;
         renderDrawerSerials(fresh);
       }, err => {
         console.warn('drawer serial onSnapshot error', err);
