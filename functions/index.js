@@ -122,9 +122,38 @@ export async function handleOcrSerial(event) {
   } catch (err) {
     console.error('ocrSerial failed', { projectId, photoId, error: err.message });
     try {
-      await photoRef.update({
-        ocrStatus: 'failed',
-        ocrError: String(err.message || err).slice(0, 500),
+      await admin.firestore().runTransaction(async (txn) => {
+        const projectSnap = await txn.get(projectRef);
+        const list = projectSnap.exists && Array.isArray(projectSnap.data().serialNumbers)
+          ? projectSnap.data().serialNumbers
+          : [];
+        const existingIdx = list.findIndex(e => e && e.photoId === photoId);
+        const entryId = existingIdx >= 0 ? list[existingIdx].id : makeEntryId();
+        const newEntry = {
+          id: entryId,
+          value: '',
+          category: after.serialCategory || null,
+          source: 'ocr',
+          photoId,
+          ocrStatus: 'failed',
+          uploadedAt: admin.firestore.Timestamp.now(),
+          uploadedBy: after.uploadedBy || 'ocr',
+        };
+        let nextList;
+        if (existingIdx >= 0) {
+          nextList = list.slice();
+          nextList[existingIdx] = newEntry;
+        } else {
+          nextList = [...list, newEntry];
+        }
+        if (projectSnap.exists) {
+          txn.update(projectRef, { serialNumbers: nextList });
+        }
+        txn.update(photoRef, {
+          ocrStatus: 'failed',
+          ocrError: String(err.message || err).slice(0, 500),
+          serialEntryId: entryId,
+        });
       });
     } catch (innerErr) {
       console.error('ocrSerial cleanup-update failed', innerErr);

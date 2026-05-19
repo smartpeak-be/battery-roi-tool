@@ -165,21 +165,45 @@ describe('handleOcrSerial — failure paths', () => {
     mockPhotoDocUpdate.mockReset();
   });
 
-  it('writes ocrStatus=failed when Vision throws', async () => {
+  it('writes ocrStatus=failed when Vision throws AND inserts placeholder entry', async () => {
     mockDownload.mockResolvedValue([Buffer.from('x')]);
     mockTextDetection.mockRejectedValue(new Error('vision-down'));
 
+    const txnUpdateCalls = [];
+    mockRunTransaction.mockImplementation(async (fn) => {
+      const txn = {
+        get: vi.fn().mockResolvedValue({ exists: true, data: () => ({ serialNumbers: [] }) }),
+        update: vi.fn((ref, payload) => txnUpdateCalls.push({ ref, payload })),
+      };
+      return fn(txn);
+    });
+
     const event = makeEvent({
       before: null,
-      after: { tag: 'serial', serialCategory: 'batterij', ocrStatus: 'pending', storagePath: 'p.jpg' },
+      after: { tag: 'serial', serialCategory: 'omvormer_batterij', ocrStatus: 'pending', storagePath: 'p.jpg' },
     });
     await handleOcrSerial(event);
 
-    // Two photoDoc updates expected: 1) the "ensure pending" pre-write (skipped
-    // when already pending), 2) the catch-block failure write.
-    expect(mockPhotoDocUpdate).toHaveBeenCalledWith(expect.objectContaining({
+    // Project-doc must get a failed placeholder entry so the renderer shows a
+    // re-run knop instead of nothing.
+    const projectUpdate = txnUpdateCalls.find(c => Array.isArray(c.payload.serialNumbers));
+    expect(projectUpdate).toBeTruthy();
+    expect(projectUpdate.payload.serialNumbers).toHaveLength(1);
+    expect(projectUpdate.payload.serialNumbers[0]).toMatchObject({
+      value: '',
       ocrStatus: 'failed',
-    }));
+      category: 'omvormer_batterij',
+      source: 'ocr',
+      photoId: 'PH',
+    });
+
+    // Photo-doc must get ocrStatus=failed + ocrError + serialEntryId so
+    // cleanup-on-retag can find the placeholder later.
+    const photoUpdate = txnUpdateCalls.find(c => c.payload.ocrError !== undefined);
+    expect(photoUpdate).toBeTruthy();
+    expect(photoUpdate.payload.ocrStatus).toBe('failed');
+    expect(photoUpdate.payload.ocrError).toBe('vision-down');
+    expect(photoUpdate.payload.serialEntryId).toBe(projectUpdate.payload.serialNumbers[0].id);
   });
 
   it('writes failed when Vision returns no candidates', async () => {
