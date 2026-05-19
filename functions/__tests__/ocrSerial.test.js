@@ -47,7 +47,7 @@ vi.mock('firebase-admin', () => {
 });
 
 // Re-import after mocks are in place.
-const { handleOcrSerial } = await import('../index.js');
+const { handleOcrSerial, shouldRun, shouldCleanup } = await import('../index.js');
 
 function makeEvent({ before, after, projectId = 'P', photoId = 'PH' }) {
   return {
@@ -107,5 +107,146 @@ describe('handleOcrSerial — happy path', () => {
 
     expect(mockTextDetection).toHaveBeenCalled();
     expect(mockRunTransaction).toHaveBeenCalled();
+  });
+});
+
+describe('shouldRun / shouldCleanup guards', () => {
+  it('runs when fresh tag→serial', () => {
+    expect(shouldRun(null, { tag: 'serial', storagePath: 'x' })).toBe(true);
+    expect(shouldRun({ tag: 'situatie' }, { tag: 'serial', storagePath: 'x' })).toBe(true);
+  });
+
+  it('runs when category changes on already-serial photo', () => {
+    expect(shouldRun(
+      { tag: 'serial', serialCategory: 'batterij', ocrStatus: 'ok', storagePath: 'x' },
+      { tag: 'serial', serialCategory: 'omvormer', ocrStatus: 'ok', storagePath: 'x' },
+    )).toBe(true);
+  });
+
+  it('runs when ocrStatus transitions to null (re-run requested)', () => {
+    expect(shouldRun(
+      { tag: 'serial', ocrStatus: 'failed', storagePath: 'x' },
+      { tag: 'serial', ocrStatus: null, storagePath: 'x' },
+    )).toBe(true);
+  });
+
+  it('does not run on cosmetic update (same category, same status)', () => {
+    expect(shouldRun(
+      { tag: 'serial', serialCategory: 'batterij', ocrStatus: 'ok' },
+      { tag: 'serial', serialCategory: 'batterij', ocrStatus: 'ok' },
+    )).toBe(false);
+  });
+
+  it('does not run when after has no storagePath', () => {
+    expect(shouldRun(null, { tag: 'serial' })).toBe(false);
+  });
+
+  it('cleanup fires when retag serial→situatie', () => {
+    expect(shouldCleanup(
+      { tag: 'serial', serialEntryId: 'sn_1' },
+      { tag: 'situatie' },
+    )).toBe(true);
+  });
+
+  it('cleanup fires when serial photo is deleted', () => {
+    expect(shouldCleanup({ tag: 'serial', serialEntryId: 'sn_1' }, null)).toBe(true);
+  });
+
+  it('cleanup does not fire on first-time create', () => {
+    expect(shouldCleanup(null, { tag: 'serial' })).toBe(false);
+  });
+});
+
+describe('handleOcrSerial — failure paths', () => {
+  beforeEach(() => {
+    mockTextDetection.mockReset();
+    mockDownload.mockReset();
+    mockRunTransaction.mockReset();
+    mockPhotoDocUpdate.mockReset();
+  });
+
+  it('writes ocrStatus=failed when Vision throws', async () => {
+    mockDownload.mockResolvedValue([Buffer.from('x')]);
+    mockTextDetection.mockRejectedValue(new Error('vision-down'));
+
+    const event = makeEvent({
+      before: null,
+      after: { tag: 'serial', serialCategory: 'batterij', ocrStatus: 'pending', storagePath: 'p.jpg' },
+    });
+    await handleOcrSerial(event);
+
+    // Two photoDoc updates expected: 1) the "ensure pending" pre-write (skipped
+    // when already pending), 2) the catch-block failure write.
+    expect(mockPhotoDocUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      ocrStatus: 'failed',
+    }));
+  });
+
+  it('writes failed when Vision returns no candidates', async () => {
+    mockDownload.mockResolvedValue([Buffer.from('x')]);
+    mockTextDetection.mockResolvedValue([{
+      textAnnotations: [
+        { description: 'FULL\nABC\nXYZ' },
+        { description: 'ABC' },
+        { description: 'XYZ' },
+      ], // none ≥ 6 alphanumeric
+    }]);
+    mockRunTransaction.mockImplementation(async (fn) => {
+      const txn = {
+        get: vi.fn().mockResolvedValue({ exists: true, data: () => ({ serialNumbers: [] }) }),
+        update: vi.fn(),
+      };
+      return fn(txn);
+    });
+
+    const event = makeEvent({
+      before: null,
+      after: { tag: 'serial', serialCategory: 'batterij', ocrStatus: 'pending', storagePath: 'p.jpg' },
+    });
+    await handleOcrSerial(event);
+
+    // Transaction should have been called even with no detected serial,
+    // writing the placeholder failed-entry.
+    expect(mockRunTransaction).toHaveBeenCalled();
+  });
+});
+
+describe('handleOcrSerial — idempotency', () => {
+  it('updates existing serial entry when fired twice for same photoId', async () => {
+    mockDownload.mockResolvedValue([Buffer.from('x')]);
+    mockTextDetection.mockResolvedValue([{
+      textAnnotations: [
+        { description: 'FULL\nXYZ123456' },
+        { description: 'XYZ123456' },
+      ],
+    }]);
+    let txnUpdateCalls = [];
+    mockRunTransaction.mockImplementation(async (fn) => {
+      const txn = {
+        get: vi.fn().mockResolvedValue({
+          exists: true,
+          data: () => ({
+            serialNumbers: [
+              { id: 'sn_old', value: 'OLD', photoId: 'PH', source: 'ocr' },
+            ],
+          }),
+        }),
+        update: vi.fn((ref, payload) => txnUpdateCalls.push(payload)),
+      };
+      return fn(txn);
+    });
+
+    // Re-run scenario: client sets ocrStatus from 'failed' back to null to
+    // request a fresh OCR pass; an entry from the previous run already exists.
+    const event = makeEvent({
+      before: { tag: 'serial', serialCategory: 'batterij', ocrStatus: 'failed', storagePath: 'p.jpg' },
+      after: { tag: 'serial', serialCategory: 'batterij', ocrStatus: null, storagePath: 'p.jpg' },
+    });
+    await handleOcrSerial(event);
+
+    const projectUpdate = txnUpdateCalls.find(p => Array.isArray(p.serialNumbers));
+    expect(projectUpdate.serialNumbers).toHaveLength(1);
+    expect(projectUpdate.serialNumbers[0].id).toBe('sn_old');
+    expect(projectUpdate.serialNumbers[0].value).toBe('XYZ123456');
   });
 });
