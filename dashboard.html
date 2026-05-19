@@ -288,8 +288,8 @@ function rowHTML(p, isDeleted) {
        <button type="button" class="btn btn-sm btn-outline-danger permdelBtn"   data-id="${p.id}" data-name="${escapeHtml(getProjectLabel(p))}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
     : `<button type="button" class="btn btn-sm btn-outline-danger deleteBtn"    data-id="${p.id}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
   const email  = currentUserEmail();
-  const chat   = hasAnyComments(p)
-    ? `<span class="chat-indicator ${hasUnreadComments(p, email) ? 'unread' : ''}" role="img" aria-label="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en) van collega' : 'Opmerkingen aanwezig'}" title="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en) van collega' : 'Opmerkingen aanwezig'}"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i></span>`
+  const chat   = hasUnreadComments(p, email)
+    ? `<span class="chat-indicator unread" role="img" aria-label="Nieuwe opmerking(en) van collega" title="Nieuwe opmerking(en) van collega"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i></span>`
     : '';
   const gfStatus = groundFaultStatus(p);
   const warn   = gfStatus === 'unsupported'
@@ -478,8 +478,8 @@ function renderBoard(active, el) {
 
 function kanbanCardHTML(p) {
   const email = currentUserEmail();
-  const chat  = hasAnyComments(p)
-    ? `<span class="chat-indicator ${hasUnreadComments(p, email) ? 'unread' : ''}" role="img" aria-label="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en)' : 'Opmerkingen aanwezig'}" title="${hasUnreadComments(p, email) ? 'Nieuwe opmerking(en)' : 'Opmerkingen aanwezig'}"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i></span>`
+  const chat  = hasUnreadComments(p, email)
+    ? `<span class="chat-indicator unread" role="img" aria-label="Nieuwe opmerking(en)" title="Nieuwe opmerking(en)"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i></span>`
     : '';
   const gfSt  = groundFaultStatus(p);
   const warn  = gfSt === 'unsupported'
