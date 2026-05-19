@@ -1422,6 +1422,144 @@ async function toggleProductActive(id, isActive) {
   await updateProduct(id, { isActive });
 }
 
+// ─── PRODUCT PHOTOS ──────────────────────────────────────────────────────────
+
+async function uploadProductPhoto(productId, file) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  if (!file || !file.type.startsWith('image/')) throw new Error('Alleen afbeeldingen.');
+  const MAX_BYTES = 15 * 1024 * 1024;
+  if (file.size > MAX_BYTES) throw new Error('Te groot (max 15 MB).');
+
+  const safeName     = file.name.replace(/[^\w.-]+/g, '_').slice(0, 80);
+  const safeStripped = safeName.replace(/\.[^.]+$/, '') || 'photo';
+  const ts           = Date.now();
+  const fullPath     = `products/${productId}/${ts}_${safeName}`;
+  const thumbPath    = `products/${productId}/${ts}_${safeStripped}_thumb.jpg`;
+
+  // Generate thumbnail
+  let thumb;
+  try { thumb = await makeThumbnail(file); }
+  catch (e) { throw new Error('Thumbnail genereren mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
+
+  // Parallel storage upload
+  const storage = getStorage();
+  try {
+    await Promise.all([
+      storage.ref(fullPath).put(file,        { contentType: file.type }),
+      storage.ref(thumbPath).put(thumb.blob,  { contentType: 'image/jpeg' }),
+    ]);
+  } catch (e) {
+    try { await storage.ref(fullPath).delete();  } catch (_) { /* best-effort */ }
+    try { await storage.ref(thumbPath).delete(); } catch (_) { /* best-effort */ }
+    throw new Error('Storage upload mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+  }
+
+  // Firestore metadata in photos subcollection
+  let ref;
+  try {
+    ref = await productsCol().doc(productId).collection('photos').add({
+      storagePath:      fullPath,
+      thumbStoragePath: thumbPath,
+      name:             file.name,
+      contentType:      file.type,
+      sizeBytes:        file.size,
+      width:            thumb.width,
+      height:           thumb.height,
+      uploadedAt:       firebase.firestore.FieldValue.serverTimestamp(),
+      uploadedBy:       email,
+    });
+  } catch (e) {
+    try { await storage.ref(fullPath).delete();  } catch (_) { /* best-effort */ }
+    try { await storage.ref(thumbPath).delete(); } catch (_) { /* best-effort */ }
+    throw new Error('Firestore metadata schrijven mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+  }
+
+  return ref.id;
+}
+
+async function listProductPhotos(productId) {
+  const snap = await productsCol().doc(productId).collection('photos')
+    .orderBy('uploadedAt', 'desc').get();
+  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  await Promise.all(docs.map(async d => {
+    try { d.downloadUrl = await getStorage().ref(d.storagePath).getDownloadURL(); }
+    catch (e) { d.downloadUrl = null; d.fetchError = e && e.message ? e.message : String(e); }
+    if (d.thumbStoragePath) {
+      try { d.thumbUrl = await getStorage().ref(d.thumbStoragePath).getDownloadURL(); }
+      catch (e) { d.thumbUrl = null; }
+    } else {
+      d.thumbUrl = null;
+    }
+  }));
+  return docs;
+}
+
+async function deleteProductPhoto(productId, photoId, storagePath, thumbStoragePath) {
+  await productsCol().doc(productId).collection('photos').doc(photoId).delete();
+  try { await getStorage().ref(storagePath).delete(); }
+  catch (e) { console.warn('Storage full-blob verwijderen mislukt', e); }
+  if (thumbStoragePath) {
+    try { await getStorage().ref(thumbStoragePath).delete(); }
+    catch (e) { console.warn('Storage thumb-blob verwijderen mislukt', e); }
+  }
+}
+
+// ─── PRODUCT DATASHEETS ──────────────────────────────────────────────────────
+
+async function uploadProductDatasheet(productId, file) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  if (!file) throw new Error('Geen bestand opgegeven');
+  if (file.type !== 'application/pdf') throw new Error('Enkel PDF-bestanden worden aanvaard');
+  if (file.size > 10 * 1024 * 1024) throw new Error('PDF is groter dan 10 MB');
+
+  const safeName = file.name.replace(/[^\w.-]+/g, '_').slice(0, 80);
+  const ts       = Date.now();
+  const path     = `products/${productId}/datasheets/${ts}_${safeName}`;
+
+  const storage = getStorage();
+  try {
+    await storage.ref(path).put(file, { contentType: 'application/pdf' });
+  } catch (e) {
+    throw new Error('Storage upload mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+  }
+
+  let ref;
+  try {
+    ref = await productsCol().doc(productId).collection('datasheets').add({
+      storagePath: path,
+      name:        file.name,
+      contentType: file.type,
+      sizeBytes:   file.size,
+      uploadedAt:  firebase.firestore.FieldValue.serverTimestamp(),
+      uploadedBy:  email,
+    });
+  } catch (e) {
+    try { await storage.ref(path).delete(); } catch (_) { /* best-effort */ }
+    throw new Error('Firestore metadata schrijven mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+  }
+
+  return ref.id;
+}
+
+async function listProductDatasheets(productId) {
+  const snap = await productsCol().doc(productId).collection('datasheets')
+    .orderBy('uploadedAt', 'desc').get();
+  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  await Promise.all(docs.map(async d => {
+    try { d.downloadUrl = await getStorage().ref(d.storagePath).getDownloadURL(); }
+    catch (e) { d.downloadUrl = null; d.fetchError = e && e.message ? e.message : String(e); }
+  }));
+  return docs;
+}
+
+async function deleteProductDatasheet(productId, dsId, storagePath) {
+  await productsCol().doc(productId).collection('datasheets').doc(dsId).delete();
+  try { await getStorage().ref(storagePath).delete(); }
+  catch (e) { console.warn('Storage blob verwijderen mislukt', e); }
+}
+
 // ─── EXPOSE HELPERS ON WINDOW ────────────────────────────────────────────────
 window.isMarstekConfig = isMarstekConfig;
 window.isZendureConfig = isZendureConfig;
@@ -1440,3 +1578,9 @@ window.createProduct = createProduct;
 window.updateProduct = updateProduct;
 window.deleteProduct = deleteProduct;
 window.toggleProductActive = toggleProductActive;
+window.uploadProductPhoto = uploadProductPhoto;
+window.listProductPhotos = listProductPhotos;
+window.deleteProductPhoto = deleteProductPhoto;
+window.uploadProductDatasheet = uploadProductDatasheet;
+window.listProductDatasheets = listProductDatasheets;
+window.deleteProductDatasheet = deleteProductDatasheet;

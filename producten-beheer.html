@@ -27,6 +27,38 @@
     .product-card.active { border-color: var(--bs-primary); border-width: 2px; }
     .product-card.inactive { opacity: 0.5; }
     #productDetailCard { position: sticky; top: 80px; }
+    /* Blok D: Media */
+    .product-photo-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .product-photo-grid .photo-thumb {
+      width: 80px; height: 80px; object-fit: cover; border-radius: 6px;
+      cursor: pointer; border: 1px solid #dee2e6;
+    }
+    .product-photo-grid .photo-thumb:hover { border-color: var(--bs-primary); }
+    .product-photo-grid .photo-item { position: relative; }
+    .product-photo-grid .photo-delete-btn {
+      position: absolute; top: -6px; right: -6px;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #dc2626; color: #fff; border: 2px solid #fff;
+      font-size: 11px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; opacity: 0; transition: opacity 0.15s;
+    }
+    .product-photo-grid .photo-item:hover .photo-delete-btn { opacity: 1; }
+    .ds-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+    .ds-row .ds-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ds-row .ds-size { color: #6c757d; font-size: 0.85rem; white-space: nowrap; }
+    .media-drop-zone {
+      border: 2px dashed #dee2e6; border-radius: 8px; padding: 12px;
+      text-align: center; color: #6c757d; cursor: pointer; transition: border-color 0.2s;
+    }
+    .media-drop-zone.drag-over { border-color: var(--bs-primary); background: #f0f7ff; }
+    .media-drop-zone input[type="file"] { display: none; }
+    /* Lightbox */
+    .product-lightbox-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+      z-index: 9999; display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .product-lightbox-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
   </style>
 </head>
 <body>
@@ -381,9 +413,10 @@ async function seedDefaultCategories() {
   const cats = await listProductCategories();
   if (cats.length > 0) return; // Already seeded
   const defaults = [
-    { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 0 },
-    { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 1 },
-    { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 2 },
+    { name: 'Thuisbatterij-systemen', slug: 'thuisbatterij-systemen', isDefault: false, sortOrder: 0 },
+    { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 1 },
+    { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 2 },
+    { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 3 },
   ];
   for (const cat of defaults) {
     await createProductCategory(cat);
@@ -773,6 +806,34 @@ function buildDetailFormHtml(product, mode) {
         </button>
       </div>
 
+      ${!isCreate ? `
+      <hr>
+
+      <!-- Blok D: Foto's -->
+      <h6 class="text-muted mb-3"><i class="fa-solid fa-images me-1"></i> Foto's</h6>
+      <div class="product-photo-grid mb-2" data-product-id="${p.id}"></div>
+      <div class="media-drop-zone photo-drop-zone mb-1" data-product-id="${p.id}">
+        <i class="fa-solid fa-cloud-arrow-up me-1"></i> Sleep foto's hierheen of klik om te uploaden
+        <input type="file" accept="image/*" multiple class="photo-file-input">
+      </div>
+      <div class="progress mt-1 d-none photo-progress" style="height: 6px;">
+        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+      </div>
+
+      <hr>
+
+      <!-- Blok D: Datasheets -->
+      <h6 class="text-muted mb-3"><i class="fa-solid fa-file-pdf me-1"></i> Datasheets</h6>
+      <div class="datasheet-list mb-2" data-product-id="${p.id}"></div>
+      <div class="media-drop-zone datasheet-drop-zone mb-1" data-product-id="${p.id}">
+        <i class="fa-solid fa-cloud-arrow-up me-1"></i> Sleep PDF hierheen of klik om te uploaden
+        <input type="file" accept="application/pdf" class="datasheet-file-input">
+      </div>
+      <div class="progress mt-1 d-none datasheet-progress" style="height: 6px;">
+        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+      </div>
+      ` : ''}
+
       <hr>
 
       <!-- Actions -->
@@ -843,6 +904,12 @@ function wireDetailForm(container, product) {
     addCustomBtn.addEventListener('click', () => addCustomSpecRow(container));
   }
 
+  // Wire media sections (only for existing products)
+  if (product) {
+    wirePhotoSection(container, product.id);
+    wireDatasheetSection(container, product.id);
+  }
+
   // Wire save button
   const saveBtn = container.querySelector('.detail-btn-save');
   if (saveBtn) {
@@ -886,6 +953,211 @@ function wireDetailForm(container, product) {
       }
     });
   }
+}
+
+// ─── PRODUCT PHOTO SECTION ────────────────────────────────────────────────────
+
+function wirePhotoSection(container, productId) {
+  const grid     = container.querySelector('.product-photo-grid');
+  const dropZone = container.querySelector('.photo-drop-zone');
+  const fileInput= container.querySelector('.photo-file-input');
+  const progress = container.querySelector('.photo-progress');
+  if (!grid || !dropZone) return;
+
+  // Load existing photos
+  renderProductPhotos(grid, productId);
+
+  // Click to upload
+  dropZone.addEventListener('click', (e) => {
+    if (e.target === fileInput) return;
+    fileInput.click();
+  });
+  fileInput.addEventListener('change', async () => {
+    if (fileInput.files.length) {
+      const files = [...fileInput.files];
+      fileInput.value = '';
+      await handlePhotoUpload(grid, productId, files, progress);
+    }
+  });
+
+  // Drag-drop
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'));
+    if (files.length) handlePhotoUpload(grid, productId, files, progress);
+  });
+
+  // Delegated click: delete + lightbox
+  grid.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('.photo-delete-btn');
+    if (deleteBtn) {
+      e.stopPropagation();
+      const item = deleteBtn.closest('.photo-item');
+      const { photoId, storagePath, thumbStoragePath } = item.dataset;
+      if (!confirm('Foto verwijderen?')) return;
+      try {
+        await deleteProductPhoto(productId, photoId, storagePath, thumbStoragePath || '');
+        item.remove();
+        showToast('Foto verwijderd', 'success');
+      } catch (err) { showToast('Fout: ' + err.message, 'danger'); }
+      return;
+    }
+    const thumb = e.target.closest('.photo-thumb');
+    if (thumb) {
+      const fullUrl = thumb.dataset.fullUrl;
+      if (fullUrl) openProductLightbox(fullUrl);
+    }
+  });
+}
+
+async function handlePhotoUpload(grid, productId, files, progressEl) {
+  progressEl.classList.remove('d-none');
+  const bar = progressEl.querySelector('.progress-bar');
+  let done = 0;
+  for (const file of files) {
+    try {
+      await uploadProductPhoto(productId, file);
+      done++;
+      bar.style.width = `${Math.round((done / files.length) * 100)}%`;
+    } catch (err) {
+      showToast('Upload mislukt: ' + err.message, 'danger');
+    }
+  }
+  progressEl.classList.add('d-none');
+  bar.style.width = '0%';
+  await renderProductPhotos(grid, productId);
+  if (done > 0) showToast(`${done} foto('s) geupload`, 'success');
+}
+
+async function renderProductPhotos(grid, productId) {
+  grid.innerHTML = '<span class="text-muted small">Laden...</span>';
+  try {
+    const photos = await listProductPhotos(productId);
+    if (!photos.length) { grid.innerHTML = '<span class="text-muted small">Geen foto\'s</span>'; return; }
+    grid.innerHTML = photos.map(p => `
+      <div class="photo-item" data-photo-id="${p.id}" data-storage-path="${p.storagePath || ''}" data-thumb-storage-path="${p.thumbStoragePath || ''}">
+        <img class="photo-thumb" src="${p.thumbUrl || p.downloadUrl || ''}" alt="${p.name || ''}" data-full-url="${p.downloadUrl || ''}">
+        <button type="button" class="photo-delete-btn" title="Verwijderen"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    `).join('');
+  } catch (err) {
+    grid.innerHTML = '<span class="text-danger small">Fout bij laden foto\'s</span>';
+    console.error('renderProductPhotos', err);
+  }
+}
+
+function openProductLightbox(url) {
+  const overlay = document.createElement('div');
+  overlay.className = 'product-lightbox-overlay';
+  overlay.innerHTML = `<img src="${url}" alt="Foto">`;
+  overlay.addEventListener('click', () => overlay.remove());
+  document.addEventListener('keydown', function esc(e) {
+    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', esc); }
+  });
+  document.body.appendChild(overlay);
+}
+
+// ─── PRODUCT DATASHEET SECTION ────────────────────────────────────────────────
+
+function wireDatasheetSection(container, productId) {
+  const list     = container.querySelector('.datasheet-list');
+  const dropZone = container.querySelector('.datasheet-drop-zone');
+  const fileInput= container.querySelector('.datasheet-file-input');
+  const progress = container.querySelector('.datasheet-progress');
+  if (!list || !dropZone) return;
+
+  // Load existing datasheets
+  renderProductDatasheets(list, productId);
+
+  // Click to upload
+  dropZone.addEventListener('click', (e) => {
+    if (e.target === fileInput) return;
+    fileInput.click();
+  });
+  fileInput.addEventListener('change', async () => {
+    if (fileInput.files.length) {
+      await handleDatasheetUpload(list, productId, fileInput.files[0], progress);
+    }
+    fileInput.value = '';
+  });
+
+  // Drag-drop
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = [...e.dataTransfer.files].find(f => f.type === 'application/pdf');
+    if (file) await handleDatasheetUpload(list, productId, file, progress);
+    else showToast('Enkel PDF-bestanden worden aanvaard', 'warning');
+  });
+
+  // Delegated click: delete + download
+  list.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('.ds-delete-btn');
+    if (deleteBtn) {
+      e.preventDefault();
+      const row = deleteBtn.closest('.ds-row');
+      const { dsId, storagePath } = row.dataset;
+      if (!confirm('Datasheet verwijderen?')) return;
+      try {
+        await deleteProductDatasheet(productId, dsId, storagePath);
+        row.remove();
+        if (!list.querySelector('.ds-row')) list.innerHTML = '<span class="text-muted small">Geen datasheets</span>';
+        showToast('Datasheet verwijderd', 'success');
+      } catch (err) { showToast('Fout: ' + err.message, 'danger'); }
+    }
+  });
+}
+
+async function handleDatasheetUpload(list, productId, file, progressEl) {
+  progressEl.classList.remove('d-none');
+  const bar = progressEl.querySelector('.progress-bar');
+  bar.style.width = '50%';
+  try {
+    await uploadProductDatasheet(productId, file);
+    bar.style.width = '100%';
+    showToast('Datasheet geupload', 'success');
+    await renderProductDatasheets(list, productId);
+  } catch (err) {
+    showToast('Upload mislukt: ' + err.message, 'danger');
+  }
+  progressEl.classList.add('d-none');
+  bar.style.width = '0%';
+}
+
+async function renderProductDatasheets(list, productId) {
+  list.innerHTML = '<span class="text-muted small">Laden...</span>';
+  try {
+    const docs = await listProductDatasheets(productId);
+    if (!docs.length) { list.innerHTML = '<span class="text-muted small">Geen datasheets</span>'; return; }
+    list.innerHTML = docs.map(d => {
+      const sizeKb = d.sizeBytes ? Math.round(d.sizeBytes / 1024) : '?';
+      return `
+        <div class="ds-row" data-ds-id="${d.id}" data-storage-path="${d.storagePath || ''}">
+          <i class="fa-solid fa-file-pdf text-danger"></i>
+          <a href="${d.downloadUrl || '#'}" target="_blank" class="ds-name" title="${d.name || ''}">${d.name || 'Datasheet'}</a>
+          <span class="ds-size">${sizeKb} KB</span>
+          <button type="button" class="btn btn-sm btn-outline-danger ds-delete-btn" title="Verwijderen">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = '<span class="text-danger small">Fout bij laden datasheets</span>';
+    console.error('renderProductDatasheets', err);
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 function renderSpecFields(container, categoryId, existingSpecs) {

@@ -36,7 +36,8 @@ export default async function globalSetup() {
     console.log(`[global-setup] Fetched UID for ${email}: ${uid}`);
 
     // 3. Create custom auth token (valid for 1 hour)
-    const customToken = await admin.auth().createCustomToken(uid);
+    //    Include email claim so Storage rules can check request.auth.token.email
+    const customToken = await admin.auth().createCustomToken(uid, { email });
     console.log('[global-setup] Custom token created');
 
     // 4. Save token to file so tests can read it
