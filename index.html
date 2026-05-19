@@ -1351,7 +1351,19 @@ function readSelectedConfigs() {
 function readAllSelectedConfigObjects() {
   const priceKey = _getPriceKey();
   const btwPercent = parseFloat(document.getElementById('btwSelect').value) || 21;
-  const meerkostMap = _readMeerkostFromDom();
+  const lineMap = _readMeerkostLinesFromDom();
+  const btwFactor = 1 + btwPercent / 100;
+
+  function resolveLines(rawLines) {
+    return (rawLines || [])
+      .filter(ln => (ln && ((ln.amount && Number(ln.amount) > 0) || (ln.description && ln.description.trim() !== ''))))
+      .map(ln => ({
+        description: ln.description || '',
+        amountExBtw: Number(ln.amount) || 0,
+        amountInclBtw: (Number(ln.amount) || 0) * btwFactor,
+      }));
+  }
+
   // Sheet configs from dropdowns
   const sheetTypes = readSelectedConfigs();
   const sheetResolved = sheetTypes
@@ -1359,21 +1371,33 @@ function readAllSelectedConfigObjects() {
       const c = _sheetConfigs.find(x => x.type === type);
       if (!c) return null;
       const basePrice = c.prices[priceKey];
-      const meerkostExBtw = meerkostMap[type] || 0;
-      const meerkostInclBtw = meerkostExBtw * (1 + btwPercent / 100);
+      const lines = resolveLines(lineMap[type]);
+      const meerkostTotalInclBtw = lines.reduce((s, l) => s + l.amountInclBtw, 0);
       return {
         type: c.type, omschrijving: c.omschrijving, batCap: c.batCap, batInv: c.batInv, eff: c.eff,
-        price: basePrice + meerkostInclBtw,
-        meerkost: meerkostExBtw,
-        meerkostInclBtw,
+        basePrice,
+        price: basePrice + meerkostTotalInclBtw,
+        meerkostLines: lines,
+        meerkostTotalInclBtw,
       };
     })
     .filter(Boolean);
 
-  // Manual configs (already have price resolved)
-  const manualResolved = Object.values(_manualConfigs).map(mc => ({
-    type: mc.type, omschrijving: `${mc.merk} ${mc.omschrijving}`, batCap: mc.batCap, batInv: mc.batInv, eff: mc.eff, price: mc.price, isManual: true,
-  }));
+  // Manual configs (basePrice is the manual all-in price)
+  const manualResolved = Object.values(_manualConfigs).map(mc => {
+    const lines = resolveLines(lineMap[mc.type]);
+    const meerkostTotalInclBtw = lines.reduce((s, l) => s + l.amountInclBtw, 0);
+    return {
+      type: mc.type,
+      omschrijving: `${mc.merk} ${mc.omschrijving}`,
+      batCap: mc.batCap, batInv: mc.batInv, eff: mc.eff,
+      basePrice: mc.price,
+      price: mc.price + meerkostTotalInclBtw,
+      meerkostLines: lines,
+      meerkostTotalInclBtw,
+      isManual: true,
+    };
+  });
 
   return [...sheetResolved, ...manualResolved];
 }
@@ -1404,18 +1428,6 @@ function _readMeerkostLinesFromDom() {
   const manualList = document.getElementById('manualConfigCards');
   if (manualList) harvest(manualList, 'data-config-type');
   return out;
-}
-
-// Backward-compat shim: used by readAllSelectedConfigObjects until Task 4 replaces it.
-// Converts lines map to the old { [type]: number } format (sum of amounts).
-function _readMeerkostFromDom() {
-  const lines = _readMeerkostLinesFromDom();
-  const map = {};
-  for (const [type, lns] of Object.entries(lines)) {
-    const sum = lns.reduce((s, ln) => s + (Number(ln.amount) || 0), 0);
-    if (sum > 0) map[type] = sum;
-  }
-  return map;
 }
 
 // Render N+1 sheet-config pickers. `meerkostLines` is an optional
@@ -1989,7 +2001,7 @@ function renderScenarioGrid(d) {
       <div class="config-group-header">
         🔋 Configuratie ${idx+1}
         <span class="cfg-sub">${cfgLabel}</span>
-        <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}${cfg.meerkost > 0 ? ` <span style="font-size:0.75rem;color:var(--muted);">(incl. ${fmtEur(cfg.meerkostInclBtw)} meerkost)</span>` : ''}</span>
+        <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}${cfg.meerkostTotalInclBtw > 0 ? ` <span style="font-size:0.75rem;color:var(--muted);">(incl. ${fmtEur(cfg.meerkostTotalInclBtw)} meerkost)</span>` : ''}</span>
         ${specsBtn}
       </div>
     </div>`;
