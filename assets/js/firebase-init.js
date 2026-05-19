@@ -876,6 +876,34 @@ async function deleteProjectPhoto(projectId, photoId, storagePath, thumbStorageP
   }
 }
 
+/**
+ * Reset a serial-tagged photo back to ocrStatus=null so the Cloud Function
+ * `ocrSerial` re-fires. Used by the "Re-run OCR" knop in the serial-list UI.
+ */
+async function requestPhotoOcrRerun(projectId, photoId) {
+  const db = firebase.firestore();
+  await db.collection('projects').doc(projectId)
+    .collection('photos').doc(photoId)
+    .update({ ocrStatus: null, ocrError: firebase.firestore.FieldValue.delete() });
+}
+
+/**
+ * Atomically write the serial-tag fields onto a photo-doc. Used by the
+ * tag-modal save handler indirectly (the photo-uploader uses a WriteBatch
+ * for multi-photo saves; this helper is for single-photo flows / future
+ * retag UX).
+ */
+async function setPhotoSerialTag(projectId, photoId, category) {
+  const db = firebase.firestore();
+  await db.collection('projects').doc(projectId)
+    .collection('photos').doc(photoId)
+    .update({
+      tag: 'serial',
+      serialCategory: category,
+      ocrStatus: 'pending',
+    });
+}
+
 // ─── OFFERTES (per-config PDF upload) ────────────────────────────────────────
 
 async function uploadProjectOfferte(projectId, configType, file) {
@@ -1602,3 +1630,5 @@ window.deleteProductPhoto = deleteProductPhoto;
 window.uploadProductDatasheet = uploadProductDatasheet;
 window.listProductDatasheets = listProductDatasheets;
 window.deleteProductDatasheet = deleteProductDatasheet;
+window.requestPhotoOcrRerun = requestPhotoOcrRerun;
+window.setPhotoSerialTag = setPhotoSerialTag;

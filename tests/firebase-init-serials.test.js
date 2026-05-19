@@ -48,3 +48,15 @@ describe('mergeProjectMetadata serial defaults', () => {
     expect(merged.serialNumbers).toEqual([]);
   });
 });
+
+describe('firebase helper signatures (existence smoke-test)', () => {
+  it('exposes requestPhotoOcrRerun on window', () => {
+    const { window } = loadHelpers();
+    expect(typeof window.requestPhotoOcrRerun).toBe('function');
+  });
+
+  it('exposes setPhotoSerialTag on window', () => {
+    const { window } = loadHelpers();
+    expect(typeof window.setPhotoSerialTag).toBe('function');
+  });
+});
