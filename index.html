@@ -1283,7 +1283,7 @@ async function copyShareLink() {
 }
 
 function _applyLoadedState(state, showBanner) {
-  if (!state || (state.v !== 1 && state.v !== 2 && state.v !== 3 && state.v !== 4 && state.v !== 5)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
+  if (!state || ![1,2,3,4,5,6].includes(state.v)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
   const f = state.form || {};
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val != null ? val : ''; };
   set('pvInverter',    f.pvInv);
@@ -1299,9 +1299,11 @@ function _applyLoadedState(state, showBanner) {
     if (mcBtn) mcBtn.style.display = '';
   }
 
-  if ((state.v === 2 || state.v === 3 || state.v === 4 || state.v === 5) && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
-    const mkMap = state.meerkostMap || {};
-    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), mkMap)).catch(() => {});
+  if (state.v >= 2 && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
+    const meerkostLines = (state.v === 6)
+      ? (state.meerkostLines || {})
+      : _migrateMeerkostMapToLines(state.meerkostMap || {});   // v:5 fallback
+    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), meerkostLines)).catch(() => {});
   }
   const r = _restoreState(state.r);
   if (showBanner) {
