@@ -2211,9 +2211,17 @@ async function saveProjectCalcRun(d) {
   const priceNight = (priceNightRaw && priceNightRaw.trim() !== '') ? parseFloat(priceNightRaw) : null;
   const selectedConfigTypes = (d.configResults || []).map(cr => cr.cfg && cr.cfg.type).filter(Boolean);
 
-  // Build meerkostMap from configResults (ex BTW values).
-  const meerkostMap = {};
-  (d.configResults || []).forEach(cr => { if (cr.cfg && cr.cfg.meerkost > 0) meerkostMap[cr.cfg.type] = cr.cfg.meerkost; });
+  // Build meerkostLines from configResults (already in the new shape).
+  const meerkostLines = {};
+  (d.configResults || []).forEach(cr => {
+    if (cr.cfg && Array.isArray(cr.cfg.meerkostLines) && cr.cfg.meerkostLines.length > 0) {
+      meerkostLines[cr.cfg.type] = cr.cfg.meerkostLines.map(ln => ({
+        id: ln.id || _genMeerkostId(),
+        description: ln.description || '',
+        amount: Number(ln.amountExBtw != null ? ln.amountExBtw : ln.amount) || 0,
+      }));
+    }
+  });
 
   // Build results: same as _serializeState's `r` block, but strip dailyCompact since it lives
   // separately in csvUpload (otherwise we'd duplicate the per-day arrays in Firestore).
@@ -2237,7 +2245,7 @@ async function saveProjectCalcRun(d) {
 
   await saveLastCalcRun(_projectId, {
     inputs: { pvInv: pvInverter, priceDay, priceNight, selectedConfigTypes,
-              meerkostMap: Object.keys(meerkostMap).length > 0 ? meerkostMap : null },
+              meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null },
     results,
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
   });
@@ -2752,24 +2760,27 @@ function openProjectStatusPopover() {
 // the existing _applyLoadedState restore-path (which already understands dailyCompact).
 function buildSavedFromProject(proj) {
   const r = (proj.lastCalcRun && proj.lastCalcRun.results) ? { ...proj.lastCalcRun.results } : {};
-  // Splice csvUpload.dailyCompact into the r object so _restoreState can hydrate r.allDays.
   r.dailyCompact = proj.csvUpload ? proj.csvUpload.dailyCompact : null;
-  // Re-attach meter metadata if present in csvUpload (results may also carry it; csv wins).
   if (proj.csvUpload) {
     r.eanCode   = proj.csvUpload.eanCode   || r.eanCode;
     r.meterNr   = proj.csvUpload.meterNr   || r.meterNr;
     r.meterType = proj.csvUpload.meterType || r.meterType;
   }
+  const inputs = (proj.lastCalcRun && proj.lastCalcRun.inputs) || {};
+  // Prefer new shape; fall back to legacy meerkostMap.
+  const meerkostLines = (inputs.meerkostLines && Object.keys(inputs.meerkostLines).length > 0)
+    ? inputs.meerkostLines
+    : (inputs.meerkostMap ? _migrateMeerkostMapToLines(inputs.meerkostMap) : null);
   return {
-    v: 5,
-    form: (proj.lastCalcRun && proj.lastCalcRun.inputs) ? {
-      pvInv: proj.lastCalcRun.inputs.pvInv,
-      priceDay: proj.lastCalcRun.inputs.priceDay,
-      priceNight: proj.lastCalcRun.inputs.priceNight,
-      selectedConfigTypes: proj.lastCalcRun.inputs.selectedConfigTypes,
-    } : {},
+    v: 6,
+    form: {
+      pvInv: inputs.pvInv,
+      priceDay: inputs.priceDay,
+      priceNight: inputs.priceNight,
+      selectedConfigTypes: inputs.selectedConfigTypes,
+    },
     manualConfigs: proj.manualConfigs || {},
-    meerkostMap: (proj.lastCalcRun && proj.lastCalcRun.inputs && proj.lastCalcRun.inputs.meerkostMap) || undefined,
+    meerkostLines: meerkostLines || null,
     r,
   };
 }
