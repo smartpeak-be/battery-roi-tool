@@ -296,6 +296,19 @@ async function updateProjectMetadata(id, patch) {
   await projectDoc(id).set(data, { merge: true });
 }
 
+// One-time schema upgrade: replace lastCalcRun.inputs.meerkostMap with
+// lastCalcRun.inputs.meerkostLines. Caller checks shape and only invokes
+// this when the legacy field is present. Uses doc.update() with dotted-path
+// keys so FieldValue.delete() works (set + merge would write a literal
+// dotted property name).
+async function migrateMeerkostMapToLines(id, meerkostLines) {
+  await projectDoc(id).update({
+    'lastCalcRun.inputs.meerkostLines': meerkostLines,
+    'lastCalcRun.inputs.meerkostMap': firebase.firestore.FieldValue.delete(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
 async function softDeleteProject(id) {
   await projectDoc(id).update({
     deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -1561,6 +1574,7 @@ async function deleteProductDatasheet(productId, dsId, storagePath) {
 }
 
 // ─── EXPOSE HELPERS ON WINDOW ────────────────────────────────────────────────
+window.migrateMeerkostMapToLines = migrateMeerkostMapToLines;
 window.isMarstekConfig = isMarstekConfig;
 window.isZendureConfig = isZendureConfig;
 window.isSupportedConfig = isSupportedConfig;

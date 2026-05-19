@@ -443,19 +443,110 @@
       display: flex;
       gap: 12px;
       align-items: flex-end;
+      flex-wrap: wrap;
     }
     .config-picker-row .form-group { flex: 1; margin-bottom: 0; }
-    .config-picker-row .meerkost-wrap {
-      width: 160px;
-      flex-shrink: 0;
-    }
-    .config-picker-row .meerkost-wrap label {
-      font-size: 0.78rem;
-      white-space: nowrap;
-      text-transform: none;
-    }
-    .config-picker-row .meerkost-wrap input {
+    .meerkost-details {
       width: 100%;
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f7f9fd;
+    }
+    .meerkost-details > summary {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--primary-dark);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .meerkost-details > summary::-webkit-details-marker { display: none; }
+    .meerkost-details > summary::before {
+      content: '▸';
+      font-size: 0.8rem;
+      color: var(--muted);
+      transition: transform 0.15s;
+    }
+    .meerkost-details[open] > summary::before { content: '▾'; }
+    .meerkost-summary-sum {
+      margin-left: auto;
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.82rem;
+    }
+    .meerkost-lines-list { padding: 0 12px 8px 12px; }
+    .meerkost-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 4px 0;
+    }
+    .meerkost-row .meerkost-desc {
+      flex: 1;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.85rem;
+      background: #fff;
+    }
+    .meerkost-row .meerkost-amount {
+      width: 100px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.85rem;
+      background: #fff;
+      text-align: right;
+    }
+    .meerkost-row .meerkost-del {
+      background: none;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 0.95rem;
+      padding: 2px 6px;
+    }
+    .meerkost-add-btn {
+      margin: 4px 0 0 0;
+      padding: 4px 10px;
+      font-size: 0.8rem;
+      border: 1px dashed var(--primary);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--primary);
+      cursor: pointer;
+    }
+    .meerkost-add-btn:hover { background: rgba(44,123,229,0.06); }
+    body.readonly-mode .meerkost-row .meerkost-del,
+    body.readonly-mode .meerkost-add-btn { display: none; }
+    body.readonly-mode .meerkost-row input { pointer-events: none; background: #f0f4fa; }
+    .installprice-details { margin: 4px 0 8px 0; }
+    .installprice-details > summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .installprice-details > summary::-webkit-details-marker { display: none; }
+    .installprice-details > summary::before { content: '▸ '; color: var(--muted); margin-right: 4px; }
+    .installprice-details[open] > summary::before { content: '▾ '; }
+    .installprice-details .breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0 3px 12px;
+      font-size: 0.82rem;
+    }
+    .installprice-details .breakdown-row.totaal {
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+      margin-top: 4px;
+      font-weight: 600;
     }
     select {
       border: 1.5px solid var(--border); border-radius: 8px;
@@ -1034,11 +1125,49 @@ function _wireChartHandlers() {
 // Wire chart handlers once on page load (safe: this script runs after the DOM is parsed).
 _wireChartHandlers();
 
+function _genMeerkostId() {
+  return 'mk_' + Math.random().toString(36).slice(2, 10);
+}
+function _emptyMeerkostLine() {
+  return { id: _genMeerkostId(), description: '', amount: 0 };
+}
+// btwPercent is the project BTW (6 or 21). Returns sum incl BTW across all lines.
+function _sumMeerkostLines(lines, btwPercent) {
+  if (!Array.isArray(lines) || lines.length === 0) return 0;
+  const factor = 1 + (Number(btwPercent) || 0) / 100;
+  return lines.reduce((s, ln) => s + (Number(ln.amount) || 0) * factor, 0);
+}
+// Pure converter: { [type]: number } → { [type]: MeerkostLine[] }
+// Drops entries with amount === 0 or non-positive.
+function _migrateMeerkostMapToLines(map) {
+  const out = {};
+  for (const [type, amount] of Object.entries(map || {})) {
+    const a = Number(amount);
+    if (Number.isFinite(a) && a > 0) {
+      out[type] = [{ id: _genMeerkostId(), description: 'Meerkost', amount: a }];
+    }
+  }
+  return out;
+}
+
 function _serializeState() {
   if (!_saved) return null;
   const d = _saved;
+  // Strip empty lines (no description AND zero amount) at serialize-time.
+  const meerkostLines = {};
+  (d.configResults || []).forEach(cr => {
+    if (!cr.cfg || !Array.isArray(cr.cfg.meerkostLines)) return;
+    const keep = cr.cfg.meerkostLines
+      .map(ln => ({
+        id: ln.id || _genMeerkostId(),
+        description: ln.description || '',
+        amount: Number(ln.amountExBtw != null ? ln.amountExBtw : ln.amount) || 0,
+      }))
+      .filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount > 0);
+    if (keep.length > 0) meerkostLines[cr.cfg.type] = keep;
+  });
   return {
-    v: 5,
+    v: 6,
     form: {
       pvInv:    d.pvInv,
       priceDay: d.priceDay,
@@ -1046,7 +1175,7 @@ function _serializeState() {
       selectedConfigTypes: d.configResults.map(cr => cr.cfg.type),
     },
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
-    meerkostMap: (() => { const m = {}; d.configResults.forEach(cr => { if (cr.cfg.meerkost > 0) m[cr.cfg.type] = cr.cfg.meerkost; }); return Object.keys(m).length > 0 ? m : null; })(),
+    meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
@@ -1154,7 +1283,7 @@ async function copyShareLink() {
 }
 
 function _applyLoadedState(state, showBanner) {
-  if (!state || (state.v !== 1 && state.v !== 2 && state.v !== 3 && state.v !== 4 && state.v !== 5)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
+  if (!state || ![1,2,3,4,5,6].includes(state.v)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
   const f = state.form || {};
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val != null ? val : ''; };
   set('pvInverter',    f.pvInv);
@@ -1170,9 +1299,11 @@ function _applyLoadedState(state, showBanner) {
     if (mcBtn) mcBtn.style.display = '';
   }
 
-  if ((state.v === 2 || state.v === 3 || state.v === 4 || state.v === 5) && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
-    const mkMap = state.meerkostMap || {};
-    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), mkMap)).catch(() => {});
+  if (state.v >= 2 && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
+    const meerkostLines = (state.v === 6)
+      ? (state.meerkostLines || {})
+      : _migrateMeerkostMapToLines(state.meerkostMap || {});   // v:5 fallback
+    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), meerkostLines)).catch(() => {});
   }
   const r = _restoreState(state.r);
   if (showBanner) {
@@ -1235,7 +1366,19 @@ function readSelectedConfigs() {
 function readAllSelectedConfigObjects() {
   const priceKey = _getPriceKey();
   const btwPercent = parseFloat(document.getElementById('btwSelect').value) || 21;
-  const meerkostMap = _readMeerkostFromDom();
+  const lineMap = _readMeerkostLinesFromDom();
+  const btwFactor = 1 + btwPercent / 100;
+
+  function resolveLines(rawLines) {
+    return (rawLines || [])
+      .filter(ln => (ln && ((ln.amount && Number(ln.amount) > 0) || (ln.description && ln.description.trim() !== ''))))
+      .map(ln => ({
+        description: ln.description || '',
+        amountExBtw: Number(ln.amount) || 0,
+        amountInclBtw: (Number(ln.amount) || 0) * btwFactor,
+      }));
+  }
+
   // Sheet configs from dropdowns
   const sheetTypes = readSelectedConfigs();
   const sheetResolved = sheetTypes
@@ -1243,48 +1386,72 @@ function readAllSelectedConfigObjects() {
       const c = _sheetConfigs.find(x => x.type === type);
       if (!c) return null;
       const basePrice = c.prices[priceKey];
-      const meerkostExBtw = meerkostMap[type] || 0;
-      const meerkostInclBtw = meerkostExBtw * (1 + btwPercent / 100);
+      const lines = resolveLines(lineMap[type]);
+      const meerkostTotalInclBtw = lines.reduce((s, l) => s + l.amountInclBtw, 0);
       return {
         type: c.type, omschrijving: c.omschrijving, batCap: c.batCap, batInv: c.batInv, eff: c.eff,
-        price: basePrice + meerkostInclBtw,
-        meerkost: meerkostExBtw,
-        meerkostInclBtw,
+        basePrice,
+        price: basePrice + meerkostTotalInclBtw,
+        meerkostLines: lines,
+        meerkostTotalInclBtw,
       };
     })
     .filter(Boolean);
 
-  // Manual configs (already have price resolved)
-  const manualResolved = Object.values(_manualConfigs).map(mc => ({
-    type: mc.type, omschrijving: `${mc.merk} ${mc.omschrijving}`, batCap: mc.batCap, batInv: mc.batInv, eff: mc.eff, price: mc.price, isManual: true,
-  }));
+  // Manual configs (basePrice is the manual all-in price)
+  const manualResolved = Object.values(_manualConfigs).map(mc => {
+    const lines = resolveLines(lineMap[mc.type]);
+    const meerkostTotalInclBtw = lines.reduce((s, l) => s + l.amountInclBtw, 0);
+    return {
+      type: mc.type,
+      omschrijving: `${mc.merk} ${mc.omschrijving}`,
+      batCap: mc.batCap, batInv: mc.batInv, eff: mc.eff,
+      basePrice: mc.price,
+      price: mc.price + meerkostTotalInclBtw,
+      meerkostLines: lines,
+      meerkostTotalInclBtw,
+      isManual: true,
+    };
+  });
 
   return [...sheetResolved, ...manualResolved];
 }
 
-// Read current meerkost values from the DOM, keyed by config type.
-function _readMeerkostFromDom() {
-  const map = {};
-  document.querySelectorAll('#configPickerList .config-picker-row').forEach(row => {
-    const sel = row.querySelector('.config-select');
-    const inp = row.querySelector('.meerkost-input');
-    if (sel && inp && sel.value) {
-      const v = parseFloat(inp.value) || 0;
-      if (v > 0) map[sel.value] = v;
-    }
-  });
-  return map;
+// Returns { [configType]: MeerkostLine[] } from DOM. Looks at both
+// sheet-config picker rows (#configPickerList) and manual-config cards
+// (#manualConfigCards). Empty rows (no description + zero amount) are
+// dropped at serialize-time, not here — this stays a faithful DOM read
+// so live-editing keeps stable ids.
+function _readMeerkostLinesFromDom() {
+  const out = {};
+  function harvest(scope, typeAttr) {
+    scope.querySelectorAll(`[${typeAttr}]`).forEach(container => {
+      const type = container.getAttribute(typeAttr);
+      if (!type) return;
+      const rows = container.querySelectorAll('.meerkost-row');
+      if (rows.length === 0) return;
+      const lines = Array.from(rows).map(r => ({
+        id: r.dataset.lineId || _genMeerkostId(),
+        description: r.querySelector('.meerkost-desc')?.value || '',
+        amount: parseFloat(r.querySelector('.meerkost-amount')?.value) || 0,
+      }));
+      out[type] = lines;
+    });
+  }
+  const pickerList = document.getElementById('configPickerList');
+  if (pickerList) harvest(pickerList, 'data-config-type');
+  const manualList = document.getElementById('manualConfigCards');
+  if (manualList) harvest(manualList, 'data-config-type');
+  return out;
 }
 
-// Render N+1 pickers where N = number of selected types. Always one trailing
-// empty picker so the user can add another. Already-picked types are disabled
-// in the other pickers to prevent duplicates without visually hiding them.
-// meerkostMap is an optional { [type]: number } map for restoring meerkost values.
-function renderConfigPickers(selectedTypes, meerkostMap) {
+// Render N+1 sheet-config pickers. `meerkostLines` is an optional
+// { [type]: MeerkostLine[] } map used to seed the disclosure on restore.
+// Live DOM lines are preserved across re-renders via _readMeerkostLinesFromDom().
+function renderConfigPickers(selectedTypes, meerkostLines) {
   const list = document.getElementById('configPickerList');
   if (!list) return;
-  // Preserve current meerkost values before re-rendering (merge with provided map).
-  const currentMeerkost = { ..._readMeerkostFromDom(), ...(meerkostMap || {}) };
+  const currentLines = { ..._readMeerkostLinesFromDom(), ...(meerkostLines || {}) };
   const chosen = (selectedTypes || []).filter(v => v);
   list.innerHTML = '';
   for (let i = 0; i <= chosen.length; i++) {
@@ -1292,31 +1459,107 @@ function renderConfigPickers(selectedTypes, meerkostMap) {
     const others = chosen.filter((_, j) => j !== i);
     const row = document.createElement('div');
     row.className = 'config-picker-row';
+    if (currentValue) row.dataset.configType = currentValue;
     const isFirst = i === 0;
     const labelTxt = isFirst
       ? 'Configuratie 1 <span style="color:var(--danger);font-size:1rem;">*</span>'
       : `Configuratie ${i + 1} <span style="font-weight:400;text-transform:none;color:var(--muted)">(optioneel)</span>`;
-    const meerkostVal = currentValue && currentMeerkost[currentValue] ? currentMeerkost[currentValue] : 0;
+    const linesForRow = (currentValue && currentLines[currentValue]) || [];
     row.innerHTML = `
-      <div class="form-group">
+      <div class="form-group" style="flex:1;">
         <label>${labelTxt}</label>
         <select class="config-select">${_buildConfigOptionsHtml(currentValue, others, isFirst)}</select>
       </div>
-      <div class="meerkost-wrap">
-        <label>Meerkost (ex BTW)</label>
-        <input type="number" class="meerkost-input" min="0" step="50" value="${meerkostVal}">
-      </div>
+      ${currentValue ? _meerkostDisclosureHtml(linesForRow) : ''}
     `;
     row.querySelector('.config-select').addEventListener('change', () => {
-      renderConfigPickers(readSelectedConfigs());
+      renderConfigPickers(readSelectedConfigs(), _readMeerkostLinesFromDom());
     });
+    _wireMeerkostRow(row);
     list.appendChild(row);
   }
 }
 
-// Legacy shim — kept because _applyLoadedState still calls this name.
-function _populateConfigSelects(selectedTypes, meerkostMap) {
-  renderConfigPickers(selectedTypes, meerkostMap);
+// Legacy shim — _applyLoadedState calls this name.
+function _populateConfigSelects(selectedTypes, meerkostLines) {
+  renderConfigPickers(selectedTypes, meerkostLines);
+}
+
+// Build the <details> block for one config row. `lines` is the seeded
+// MeerkostLine[] (may be empty).
+function _meerkostDisclosureHtml(lines) {
+  const safeLines = Array.isArray(lines) ? lines : [];
+  const btw = parseFloat(document.getElementById('btwSelect')?.value) || 21;
+  const sumExBtw = safeLines.reduce((s, ln) => s + (Number(ln.amount) || 0), 0);
+  const summaryText = safeLines.length === 0
+    ? `Meerprijzen <span class="meerkost-summary-sum">geen</span>`
+    : `Meerprijzen (${safeLines.length}) <span class="meerkost-summary-sum">€ ${fmt2(sumExBtw)} ex (BTW ${btw}%)</span>`;
+  const isOpen = safeLines.length > 0;
+  const rowsHtml = safeLines.map(ln => _meerkostRowHtml(ln)).join('');
+  return `
+    <details class="meerkost-details" ${isOpen ? 'open' : ''}>
+      <summary>${summaryText}</summary>
+      <div class="meerkost-lines-list">
+        ${rowsHtml}
+        <button type="button" class="meerkost-add-btn">+ Regel toevoegen</button>
+      </div>
+    </details>
+  `;
+}
+function _meerkostRowHtml(line) {
+  return `
+    <div class="meerkost-row" data-line-id="${escapeHtml(line.id)}">
+      <input type="text" class="meerkost-desc" placeholder="Omschrijving" value="${escapeHtml(line.description || '')}">
+      <input type="number" class="meerkost-amount" min="0" step="50" value="${Number(line.amount) || 0}">
+      <button type="button" class="meerkost-del" title="Verwijder regel">✕</button>
+    </div>
+  `;
+}
+// Attach add/delete/input listeners to the meerkost-details inside a row/card.
+function _wireMeerkostRow(container) {
+  const details = container.querySelector(':scope > .meerkost-details');
+  if (!details) return;
+  const list = details.querySelector('.meerkost-lines-list');
+  const addBtn = details.querySelector('.meerkost-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const newLine = _emptyMeerkostLine();
+      addBtn.insertAdjacentHTML('beforebegin', _meerkostRowHtml(newLine));
+      _updateMeerkostSummary(details);
+    });
+  }
+  list.addEventListener('click', (e) => {
+    const delBtn = e.target.closest('.meerkost-del');
+    if (delBtn) {
+      delBtn.closest('.meerkost-row')?.remove();
+      _updateMeerkostSummary(details);
+    }
+  });
+  list.addEventListener('input', (e) => {
+    if (e.target.matches('.meerkost-amount, .meerkost-desc')) {
+      _updateMeerkostSummary(details);
+    }
+  });
+  list.addEventListener('blur', (e) => {
+    if (e.target.matches('.meerkost-amount')) {
+      const v = parseFloat(e.target.value);
+      if (!Number.isFinite(v) || v < 0) e.target.value = 0;
+      _updateMeerkostSummary(details);
+    }
+  }, true);
+}
+function _updateMeerkostSummary(detailsEl) {
+  const rows = detailsEl.querySelectorAll('.meerkost-row');
+  const sum = Array.from(rows).reduce((s, r) => {
+    const v = parseFloat(r.querySelector('.meerkost-amount')?.value);
+    return s + (Number.isFinite(v) && v > 0 ? v : 0);
+  }, 0);
+  const btw = parseFloat(document.getElementById('btwSelect')?.value) || 21;
+  const summary = detailsEl.querySelector('summary');
+  if (!summary) return;
+  summary.innerHTML = rows.length === 0
+    ? `Meerprijzen <span class="meerkost-summary-sum">geen</span>`
+    : `Meerprijzen (${rows.length}) <span class="meerkost-summary-sum">€ ${fmt2(sum)} ex (BTW ${btw}%)</span>`;
 }
 
 // ─── MANUAL CONFIG FORM ──────────────────────────────────────────────────────
@@ -1420,21 +1663,33 @@ function renderManualConfigCards() {
   const entries = Object.values(_manualConfigs);
   if (!entries.length) { container.innerHTML = ''; return; }
 
-  container.innerHTML = entries.map(mc => `
-    <div class="manual-config-card" style="display:flex; align-items:center; gap:10px; padding:8px 12px; margin-top:6px; border:1px solid var(--border); border-radius:8px; background:var(--card-bg);">
-      <span style="background:var(--accent); color:#fff; font-size:0.7rem; padding:2px 8px; border-radius:4px; font-weight:600;">Manueel</span>
-      <span style="flex:1; font-size:0.9rem;">
-        <strong>${escapeHtml(mc.merk)} ${escapeHtml(mc.omschrijving)}</strong>
-        &mdash; ${fmt2(mc.batCap)} kWh / ${fmt2(mc.batInv)} kW &mdash; ${fmtEur(mc.price)}
-      </span>
-      <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px;" onclick="editManualConfig('${mc.type}')" title="Bewerken">
-        <i class="fa-solid fa-pen-to-square"></i>
-      </button>
-      <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px; color:var(--danger);" onclick="deleteManualConfig('${mc.type}')" title="Verwijderen">
-        <i class="fa-solid fa-trash"></i>
-      </button>
+  // Preserve existing meerkost-lines in DOM before redraw.
+  const existingLines = _readMeerkostLinesFromDom();
+
+  container.innerHTML = entries.map(mc => {
+    const lines = existingLines[mc.type] || [];
+    return `
+    <div class="manual-config-card" data-config-type="${escapeHtml(mc.type)}" style="display:flex; flex-direction:column; gap:6px; padding:8px 12px; margin-top:6px; border:1px solid var(--border); border-radius:8px; background:var(--card-bg);">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="background:var(--accent); color:#fff; font-size:0.7rem; padding:2px 8px; border-radius:4px; font-weight:600;">Manueel</span>
+        <span style="flex:1; font-size:0.9rem;">
+          <strong>${escapeHtml(mc.merk)} ${escapeHtml(mc.omschrijving)}</strong>
+          &mdash; ${fmt2(mc.batCap)} kWh / ${fmt2(mc.batInv)} kW &mdash; ${fmtEur(mc.price)}
+        </span>
+        <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px;" onclick="editManualConfig('${mc.type}')" title="Bewerken">
+          <i class="fa-solid fa-pen-to-square"></i>
+        </button>
+        <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px; color:var(--danger);" onclick="deleteManualConfig('${mc.type}')" title="Verwijderen">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </div>
+      ${_meerkostDisclosureHtml(lines)}
     </div>
-  `).join('');
+    `;
+  }).join('');
+
+  // Wire each card's disclosure handlers.
+  container.querySelectorAll('.manual-config-card').forEach(card => _wireMeerkostRow(card));
 }
 
 function editManualConfig(type) {
@@ -1654,7 +1909,7 @@ function renderSummaryCard(d) {
 }
 
 /** Build HTML for a single scenario card (Worst Case or Realistisch). */
-function makeScenCard(d, title, badge, badgeClass, cssClass, scen, installPrice, extraInfo, mainColorOverride, scenAvg) {
+function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, extraInfo, mainColorOverride, scenAvg) {
   const fkw  = n => fmt2(n) + ' kWh';
   const fday = n => Math.round(n) + ' d';
   const feur = n => fmtEur(n) + ' / jaar';
@@ -1696,7 +1951,25 @@ function makeScenCard(d, title, badge, badgeClass, cssClass, scen, installPrice,
     <div class="scenario-sub">${extraInfo}${priceLine}</div>
     <div class="stat-row"><span class="stat-label">Totale opgeslagen energie</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${fkw(totalCharged)}${avgChargedLine}</span></div>
     <div class="stat-row"><span class="stat-label">Totale jaarlijkse besparing</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${feur(scen.annualSaving)}${avgSavingLine}</span></div>
-    <div class="stat-row"><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></div>
+    ${(() => {
+  const installPrice = cfg.price;
+  const lines = Array.isArray(cfg.meerkostLines) ? cfg.meerkostLines : [];
+  if (lines.length === 0) {
+    return `<div class="stat-row"><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></div>`;
+  }
+  const lineRows = lines.map((ln, i) => {
+    const label = (ln.description && ln.description.trim() !== '') ? escapeHtml(ln.description) : `Meerkost #${i+1}`;
+    return `<div class="breakdown-row"><span>${label}</span><span>${fmtEur(ln.amountInclBtw)}</span></div>`;
+  }).join('');
+  return `
+    <details class="installprice-details">
+      <summary><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></summary>
+      <div class="breakdown-row"><span>Basis configuratie</span><span>${fmtEur(cfg.basePrice)}</span></div>
+      ${lineRows}
+      <div class="breakdown-row totaal"><span>Totaal installatie</span><span>${fmtEur(installPrice)}</span></div>
+    </details>
+  `;
+})()}
     <div class="stat-row"><span class="stat-label">Terugverdientijd</span><span class="stat-value big" style="color:var(--warning);display:flex;flex-direction:column;align-items:flex-end;">${paybackText}${avgPaybackLine}</span></div>
     <details class="scen-details">
       <summary>Details <span class="chev">▾</span></summary>
@@ -1773,7 +2046,7 @@ function renderScenarioGrid(d) {
       <div class="config-group-header">
         🔋 Configuratie ${idx+1}
         <span class="cfg-sub">${cfgLabel}</span>
-        <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}${cfg.meerkost > 0 ? ` <span style="font-size:0.75rem;color:var(--muted);">(incl. ${fmtEur(cfg.meerkostInclBtw)} meerkost)</span>` : ''}</span>
+        <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}${cfg.meerkostTotalInclBtw > 0 ? ` <span style="font-size:0.75rem;color:var(--muted);">(incl. ${fmtEur(cfg.meerkostTotalInclBtw)} meerkost)</span>` : ''}</span>
         ${specsBtn}
       </div>
     </div>`;
@@ -1782,7 +2055,7 @@ function renderScenarioGrid(d) {
       : `Verbruikscap toegepast — besparing begrensd door dagelijkse afname.`;
     gridHTML += makeScenCard(d,
       'Worst Case', '⚠️ Worst Case', 'badge-orange', 'worst-case',
-      scenWC, cfg.price, subWC, 'orange',
+      scenWC, cfg, subWC, 'orange',
       cr.scenWCAvg
     );
     if (scenOpt) {
@@ -1791,7 +2064,7 @@ function renderScenarioGrid(d) {
         : `Aanname: batterij laadt volledig en wordt elke dag volledig verbruikt.`;
       gridHTML += makeScenCard(d,
         'Realistisch', '✨ Realistisch', 'badge-blue', 'optimistic',
-        scenOpt, cfg.price, subOpt, 'blue',
+        scenOpt, cfg, subOpt, 'blue',
         cr.scenOptAvg
       );
     }
@@ -1956,9 +2229,17 @@ async function saveProjectCalcRun(d) {
   const priceNight = (priceNightRaw && priceNightRaw.trim() !== '') ? parseFloat(priceNightRaw) : null;
   const selectedConfigTypes = (d.configResults || []).map(cr => cr.cfg && cr.cfg.type).filter(Boolean);
 
-  // Build meerkostMap from configResults (ex BTW values).
-  const meerkostMap = {};
-  (d.configResults || []).forEach(cr => { if (cr.cfg && cr.cfg.meerkost > 0) meerkostMap[cr.cfg.type] = cr.cfg.meerkost; });
+  // Build meerkostLines from configResults (already in the new shape).
+  const meerkostLines = {};
+  (d.configResults || []).forEach(cr => {
+    if (cr.cfg && Array.isArray(cr.cfg.meerkostLines) && cr.cfg.meerkostLines.length > 0) {
+      meerkostLines[cr.cfg.type] = cr.cfg.meerkostLines.map(ln => ({
+        id: ln.id || _genMeerkostId(),
+        description: ln.description || '',
+        amount: Number(ln.amountExBtw != null ? ln.amountExBtw : ln.amount) || 0,
+      }));
+    }
+  });
 
   // Build results: same as _serializeState's `r` block, but strip dailyCompact since it lives
   // separately in csvUpload (otherwise we'd duplicate the per-day arrays in Firestore).
@@ -1982,7 +2263,7 @@ async function saveProjectCalcRun(d) {
 
   await saveLastCalcRun(_projectId, {
     inputs: { pvInv: pvInverter, priceDay, priceNight, selectedConfigTypes,
-              meerkostMap: Object.keys(meerkostMap).length > 0 ? meerkostMap : null },
+              meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null },
     results,
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
   });
@@ -2373,7 +2654,29 @@ async function loadProjectIntoUI(id) {
     // If we have CSV + calc data, reuse the v:5 share-link restore path.
     if (proj.csvUpload && proj.lastCalcRun) {
       const restored = buildSavedFromProject(proj);
+
+      // Suppress renderResults' auto-save during the initial restore. The cached
+      // configResults may have a pre-v:6 cfg shape (no cfg.meerkostLines), so an
+      // auto-save here would write meerkostLines:null and clobber the migration
+      // below. Once the user clicks Bereken, the fresh save uses the new shape.
+      const _savedProjectDoc = _projectDoc;
+      _projectDoc = null;
       _applyLoadedState(restored, /*showBanner*/ false);
+      _projectDoc = _savedProjectDoc;
+
+      // One-time write-migration: legacy meerkostMap → meerkostLines on first open
+      // in a post-v:6 build. Skipped if already migrated. Failure is non-blocking.
+      try {
+        const inputs = proj.lastCalcRun.inputs || {};
+        if (inputs.meerkostMap && !inputs.meerkostLines) {
+          const newLines = _migrateMeerkostMapToLines(inputs.meerkostMap);
+          await migrateMeerkostMapToLines(_projectId, newLines);
+          _projectDoc = await getProject(_projectId);
+        }
+      } catch (e) {
+        console.warn('meerkost write-migration failed (non-blocking)', e);
+      }
+
       // #results hash (set by dashboard's 💾 button) → scroll to results block.
       if (window.location.hash === '#results') {
         const firstResultCard = document.querySelector('#results .card');
@@ -2497,24 +2800,27 @@ function openProjectStatusPopover() {
 // the existing _applyLoadedState restore-path (which already understands dailyCompact).
 function buildSavedFromProject(proj) {
   const r = (proj.lastCalcRun && proj.lastCalcRun.results) ? { ...proj.lastCalcRun.results } : {};
-  // Splice csvUpload.dailyCompact into the r object so _restoreState can hydrate r.allDays.
   r.dailyCompact = proj.csvUpload ? proj.csvUpload.dailyCompact : null;
-  // Re-attach meter metadata if present in csvUpload (results may also carry it; csv wins).
   if (proj.csvUpload) {
     r.eanCode   = proj.csvUpload.eanCode   || r.eanCode;
     r.meterNr   = proj.csvUpload.meterNr   || r.meterNr;
     r.meterType = proj.csvUpload.meterType || r.meterType;
   }
+  const inputs = (proj.lastCalcRun && proj.lastCalcRun.inputs) || {};
+  // Prefer new shape; fall back to legacy meerkostMap.
+  const meerkostLines = (inputs.meerkostLines && Object.keys(inputs.meerkostLines).length > 0)
+    ? inputs.meerkostLines
+    : (inputs.meerkostMap ? _migrateMeerkostMapToLines(inputs.meerkostMap) : null);
   return {
-    v: 5,
-    form: (proj.lastCalcRun && proj.lastCalcRun.inputs) ? {
-      pvInv: proj.lastCalcRun.inputs.pvInv,
-      priceDay: proj.lastCalcRun.inputs.priceDay,
-      priceNight: proj.lastCalcRun.inputs.priceNight,
-      selectedConfigTypes: proj.lastCalcRun.inputs.selectedConfigTypes,
-    } : {},
+    v: 6,
+    form: {
+      pvInv: inputs.pvInv,
+      priceDay: inputs.priceDay,
+      priceNight: inputs.priceNight,
+      selectedConfigTypes: inputs.selectedConfigTypes,
+    },
     manualConfigs: proj.manualConfigs || {},
-    meerkostMap: (proj.lastCalcRun && proj.lastCalcRun.inputs && proj.lastCalcRun.inputs.meerkostMap) || undefined,
+    meerkostLines: meerkostLines || null,
     r,
   };
 }
