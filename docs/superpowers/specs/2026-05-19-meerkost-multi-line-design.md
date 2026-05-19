@@ -132,23 +132,37 @@ function _migrateMeerkostMapToLines(map) {
 
 ### Project-mode write-migration
 
-`loadProjectIntoCalc` (the project-mode hydration path behind auth) performs
-a one-time schema upgrade. Sequence:
+`loadProjectIntoUI(id)` (the project-mode hydration path behind auth, around
+`index.html:2350`) performs a one-time schema upgrade. Sequence:
 
-1. Hydrate state from `proj.lastCalcRun.inputs` as today.
-2. If `proj.lastCalcRun.inputs.meerkostMap` exists AND
+1. Hydrate state from `proj.lastCalcRun.inputs` as today, via
+   `buildSavedFromProject` → `_applyLoadedState`. The v:5 read-fallback in
+   `_applyLoadedState` already builds the in-memory `meerkostLines` from the
+   legacy map, so the UI is correct regardless of write outcome.
+2. After hydration, if `proj.lastCalcRun.inputs.meerkostMap` exists AND
    `proj.lastCalcRun.inputs.meerkostLines` is absent → build the new shape
-   via `_migrateMeerkostMapToLines`, then `updateProjectMetadata(projectId, {
-     'lastCalcRun.inputs.meerkostLines': lines,
-     'lastCalcRun.inputs.meerkostMap': null     // delete sentinel via FieldValue.delete()
-   })`.
+   via `_migrateMeerkostMapToLines`, then issue one Firestore `.update()`
+   with dotted-path keys (same pattern used elsewhere in `firebase-init.js`
+   for `lastCalcRun.results`). A small helper in `firebase-init.js`:
+   ```js
+   async function migrateMeerkostMapToLines(projectId, lines) {
+     await projectDoc(projectId).update({
+       'lastCalcRun.inputs.meerkostLines': lines,
+       'lastCalcRun.inputs.meerkostMap': firebase.firestore.FieldValue.delete(),
+       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+     });
+   }
+   ```
+   This avoids `updateProjectMetadata` because that helper uses
+   `set({}, {merge: true})`, which does not honour dotted-path keys —
+   they would be written as literal property names containing a dot.
 3. Idempotent: a second open finds `meerkostLines` present and skips step 2.
 4. Write failure (offline / rules reject) → `console.warn` and continue.
-   In-memory state already has the new shape; user can re-trigger the
-   migration on next open.
+   In-memory state already has the new shape (step 1 handled the read
+   fallback); the user can re-trigger the migration on next open.
 
-Read-only paths (share-link / non-whitelisted users) never reach
-`loadProjectIntoCalc`, so there is no risk of an unauthorised write
+Read-only paths (share-link `?s=` / `?data=`, non-whitelisted users) never
+reach `loadProjectIntoUI`, so there is no risk of an unauthorised write
 attempt.
 
 ### Share-link / downloaded JSON
@@ -272,7 +286,7 @@ All changes are inline in `index.html`. `assets/js/calc-engine.js` and
 | `_populateConfigSelects(types, meerkostLines)` | Shim passes 2nd arg through |
 | `saveLastCalcRun` callsite | Writes `inputs.meerkostLines` instead of `inputs.meerkostMap` |
 | `buildSavedFromProject(proj)` | Reads `inputs.meerkostLines`, with v:5 fallback to `inputs.meerkostMap` |
-| `loadProjectIntoCalc` | Adds one-time write-migration step (`updateProjectMetadata` patch) |
+| `loadProjectIntoUI` | Adds one-time write-migration step (`updateProjectMetadata` patch) after the `_applyLoadedState` call |
 | `makeScenCard(d, ..., cfg)` | Receives the full `cfg` (or at least `meerkostLines` + `basePrice`) and renders the install-price disclosure |
 | `renderScenarioGrid(d)` | Passes `cfg.meerkostLines` + `cfg.basePrice` to `makeScenCard` |
 
@@ -283,6 +297,8 @@ New small helpers (inline in `index.html`):
 - `_migrateMeerkostMapToLines(map)` — pure converter, used by v:5 read fallback AND project write-migration
 
 Outside `index.html`:
+- `assets/js/firebase-init.js` — adds the small `migrateMeerkostMapToLines`
+  helper (Firestore `.update()` with dotted-path keys + `FieldValue.delete()`).
 - `CLAUDE.md` — update the 2026-05-08 meerkost paragraph: new schema, `v: 6`
   bump, project-load write-migration.
 - No `firestore.rules` change needed (`lastCalcRun.inputs` is free-form).
