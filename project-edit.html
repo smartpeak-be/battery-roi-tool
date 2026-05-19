@@ -117,6 +117,10 @@ let _project = null;
 // reflects the new BTW rate (6% vs 21%) in all config installPrices.
 let _initialHouseAge = null;
 
+// Unsubscribe handle for the project-doc onSnapshot listener (Task 9).
+// Module-scoped so the beforeunload cleanup can reach it across calls.
+let _serialUnsub = null;
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function showError(msg) {
   const el = document.getElementById('globalError');
@@ -196,10 +200,56 @@ async function bootstrap() {
     ensureOfferteModal();
     const offertesSlot = document.getElementById('blokOffertes-slot');
     if (offertesSlot) wireOffertesClicks(offertesSlot, () => _project, _refreshOffertes);
+
+    // Subscribe to project-doc for live serial-list updates (Task 9).
+    // Only the Blok D serial-list re-renders so user-typed fields in other
+    // blocks aren't clobbered.
+    _subscribeSerials();
   } finally {
     hideSpinner();
   }
 }
+
+// Live-subscribe to the project doc so OCR results written by the Cloud
+// Function show up in Blok D without a manual reload. Edit-mode only —
+// in new-project mode there's no doc yet.
+function _subscribeSerials() {
+  if (!PROJECT_ID) return;
+  const db = firebase.firestore();
+  _serialUnsub = db.collection('projects').doc(PROJECT_ID).onSnapshot(snap => {
+    if (!snap.exists) return;
+    const fresh = mergeProjectMetadata(snap.data());
+    const cur   = _project.serialNumbers || [];
+    const next  = fresh.serialNumbers || [];
+    if (_serialListEqual(cur, next)) return;
+    _project.serialNumbers = next;
+    rerenderBlokD();
+  }, err => {
+    console.warn('serial onSnapshot error', err);
+  });
+}
+
+// Shallow-compare two serial-lists on the fields the UI renders. Any drift
+// triggers a Blok D re-render. Keep this cheap — fires on every project-doc
+// change including unrelated metadata edits.
+function _serialListEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (!x || !y) return false;
+    if (x.id !== y.id) return false;
+    if ((x.value     || '')   !== (y.value     || ''))   return false;
+    if ((x.ocrStatus || null) !== (y.ocrStatus || null)) return false;
+    if ((x.category  || null) !== (y.category  || null)) return false;
+  }
+  return true;
+}
+
+// Cleanup the snapshot listener on page unload so Firestore doesn't keep
+// the connection alive past the lifecycle of this page.
+window.addEventListener('beforeunload', () => {
+  if (_serialUnsub) { try { _serialUnsub(); } catch (e) {} _serialUnsub = null; }
+});
 
 function renderSections() {
   // Blok A — Voor de berekening (Task 6)
