@@ -214,6 +214,13 @@ async function bootstrap() {
 // Function show up in Blok D without a manual reload. Edit-mode only —
 // in new-project mode there's no doc yet.
 function _subscribeSerials() {
+  // Unsubscribe any prior handle before registering a new one — bootstrap()
+  // re-runs on auth-state transitions (token refresh) so the same call site
+  // can fire multiple times in the lifetime of a tab.
+  if (_serialUnsub) {
+    try { _serialUnsub(); } catch (e) {}
+    _serialUnsub = null;
+  }
   if (!PROJECT_ID) return;
   const db = firebase.firestore();
   _serialUnsub = db.collection('projects').doc(PROJECT_ID).onSnapshot(snap => {
@@ -223,6 +230,7 @@ function _subscribeSerials() {
     const next  = fresh.serialNumbers || [];
     if (_serialListEqual(cur, next)) return;
     _project.serialNumbers = next;
+    // TODO(race): full-block re-render clobbers in-progress typed input
     rerenderBlokD();
   }, err => {
     console.warn('serial onSnapshot error', err);
