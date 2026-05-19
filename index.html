@@ -2654,7 +2654,15 @@ async function loadProjectIntoUI(id) {
     // If we have CSV + calc data, reuse the v:5 share-link restore path.
     if (proj.csvUpload && proj.lastCalcRun) {
       const restored = buildSavedFromProject(proj);
+
+      // Suppress renderResults' auto-save during the initial restore. The cached
+      // configResults may have a pre-v:6 cfg shape (no cfg.meerkostLines), so an
+      // auto-save here would write meerkostLines:null and clobber the migration
+      // below. Once the user clicks Bereken, the fresh save uses the new shape.
+      const _savedProjectDoc = _projectDoc;
+      _projectDoc = null;
       _applyLoadedState(restored, /*showBanner*/ false);
+      _projectDoc = _savedProjectDoc;
 
       // One-time write-migration: legacy meerkostMap → meerkostLines on first open
       // in a post-v:6 build. Skipped if already migrated. Failure is non-blocking.
