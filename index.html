@@ -1648,21 +1648,33 @@ function renderManualConfigCards() {
   const entries = Object.values(_manualConfigs);
   if (!entries.length) { container.innerHTML = ''; return; }
 
-  container.innerHTML = entries.map(mc => `
-    <div class="manual-config-card" style="display:flex; align-items:center; gap:10px; padding:8px 12px; margin-top:6px; border:1px solid var(--border); border-radius:8px; background:var(--card-bg);">
-      <span style="background:var(--accent); color:#fff; font-size:0.7rem; padding:2px 8px; border-radius:4px; font-weight:600;">Manueel</span>
-      <span style="flex:1; font-size:0.9rem;">
-        <strong>${escapeHtml(mc.merk)} ${escapeHtml(mc.omschrijving)}</strong>
-        &mdash; ${fmt2(mc.batCap)} kWh / ${fmt2(mc.batInv)} kW &mdash; ${fmtEur(mc.price)}
-      </span>
-      <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px;" onclick="editManualConfig('${mc.type}')" title="Bewerken">
-        <i class="fa-solid fa-pen-to-square"></i>
-      </button>
-      <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px; color:var(--danger);" onclick="deleteManualConfig('${mc.type}')" title="Verwijderen">
-        <i class="fa-solid fa-trash"></i>
-      </button>
+  // Preserve existing meerkost-lines in DOM before redraw.
+  const existingLines = _readMeerkostLinesFromDom();
+
+  container.innerHTML = entries.map(mc => {
+    const lines = existingLines[mc.type] || [];
+    return `
+    <div class="manual-config-card" data-config-type="${escapeHtml(mc.type)}" style="display:flex; flex-direction:column; gap:6px; padding:8px 12px; margin-top:6px; border:1px solid var(--border); border-radius:8px; background:var(--card-bg);">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="background:var(--accent); color:#fff; font-size:0.7rem; padding:2px 8px; border-radius:4px; font-weight:600;">Manueel</span>
+        <span style="flex:1; font-size:0.9rem;">
+          <strong>${escapeHtml(mc.merk)} ${escapeHtml(mc.omschrijving)}</strong>
+          &mdash; ${fmt2(mc.batCap)} kWh / ${fmt2(mc.batInv)} kW &mdash; ${fmtEur(mc.price)}
+        </span>
+        <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px;" onclick="editManualConfig('${mc.type}')" title="Bewerken">
+          <i class="fa-solid fa-pen-to-square"></i>
+        </button>
+        <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px; color:var(--danger);" onclick="deleteManualConfig('${mc.type}')" title="Verwijderen">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </div>
+      ${_meerkostDisclosureHtml(lines)}
     </div>
-  `).join('');
+    `;
+  }).join('');
+
+  // Wire each card's disclosure handlers.
+  container.querySelectorAll('.manual-config-card').forEach(card => _wireMeerkostRow(card));
 }
 
 function editManualConfig(type) {
