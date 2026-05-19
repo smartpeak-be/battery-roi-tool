@@ -191,6 +191,66 @@ Firestore doc. Throttled op één tegelijk per component-instance; fail-soft
 `fa-camera` / `fa-eye` per serial-rij zijn verwijderd; serial-rijen hebben nu
 enkel een tekstveld + delete. De oude `uploadProjectPhoto` is ook verwijderd.
 
+## Serial-OCR pipeline (2026-05-19)
+
+Serial-tagged foto's worden door een Cloud Function (`functions/index.js`,
+trigger `onDocumentWritten` op `projects/{id}/photos/{photoId}`, regio
+`europe-west1`) doorgehaald langs Google Cloud Vision (EU endpoint). De
+function leest de blob via Admin SDK, extracteert het langste alfanumerieke
+token (≥ 6 chars) via `extractSerialFromOcr` (gedupliceerd in
+`assets/js/serial-extract.js` voor de client en `functions/index.js` voor de
+server, met identieke tokenize-en-dedup heuristiek), en append in één
+transactie een entry aan `project.serialNumbers` met `source: 'ocr'`,
+`category`, `photoId`, en `ocrStatus`.
+
+Photo-doc velden:
+- `tag: 'situatie' | 'serial'`
+- `serialCategory?: 'batterij' | 'omvormer' | 'omvormer_batterij'`
+- `ocrStatus?: 'pending' | 'ok' | 'failed' | null` (`null` = re-run requested)
+- `ocrCandidates?: string[]`
+- `serialEntryId?: string` (link naar `project.serialNumbers[].id`)
+
+Serial-entry shape (uitgebreid t.o.v. pre-feature `{id, value}`):
+`{id, value, category, source, photoId?, ocrStatus?, uploadedAt, uploadedBy}`.
+Pre-feature entries krijgen `category: null` + `source: 'manual'` via lazy
+merge in `mergeProjectMetadata`.
+
+**Tag-modal** (`assets/js/photo-uploader.js`) heeft 2-level radio: Situatie/Serieel
++ wanneer Serieel zichtbaar Batterij/Omvormer/Omvormer+Batterij.
+
+**UI** in Blok D (`project-edit.html`) en drawer (`dashboard.html`):
+category-badge + status-icon (spinner/check/warning) + source-icon
+(image/keyboard) + value-input + re-run knop (alleen failed) + delete.
+Project-edit Blok D subscribet op project-doc `onSnapshot` zodat pending →
+ok transitie live update. Drawer doet hetzelfde maar scoped aan
+drawer-open lifecycle (subscribe bij `openDrawer`, unsubscribe bij
+`closeDrawer` én `hidden.bs.offcanvas`).
+
+**Cloud Function package** (`functions/`): Node 20 runtime, ESM
+(`"type": "module"` in `functions/package.json` voor vitest mock
+compatibility). Deploy: `cd functions && npm install && firebase deploy --only functions:ocrSerial`.
+Service-account heeft Vision API + Firestore + Storage rollen nodig. Geen
+API-key in code of Firestore — ADC via de function's eigen service-account.
+
+**Cost**: $1.50/1000 photos (eerste 1000/maand gratis).
+
+**Re-run** (failed OCR): klik `fa-rotate` knop op de serial-rij → schrijft
+`ocrStatus: null` + `ocrError` deleted op photo-doc → function fired
+opnieuw (via `shouldRun` guard die de null-transitie detecteert).
+
+**Cleanup**: retag serial → situatie verwijdert de gekoppelde
+`project.serialNumbers`-entry en cleart de OCR-velden op de photo-doc
+(`shouldCleanup` guard).
+
+**E2E coverage**: `e2e/tests/serial-ocr.spec.js` (2 tests):
+happy-path (upload + tag + mocked-OCR via Admin transaction → row appears)
+en failure-path (pre-seed failed + click re-run → `ocrStatus` resets to
+`null`). De Cloud Function zelf draait niet in tests; alleen de UI ↔
+Firestore feedback loop wordt gecoverd via direct-write simulatie.
+
+Bebat-export UI (filteren op `category in ['batterij', 'omvormer_batterij']`)
+is een follow-up; het datamodel is er klaar voor.
+
 ## How to work on it
 
 - **Run locally:** open `index.html` directly in a browser, or `python3 -m http.server` from the repo root and visit `http://localhost:8000`. A local server is needed if you want the URL `?data=...` share-link flow to behave like production.
