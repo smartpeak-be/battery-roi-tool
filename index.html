@@ -1378,29 +1378,53 @@ function readAllSelectedConfigObjects() {
   return [...sheetResolved, ...manualResolved];
 }
 
-// Read current meerkost values from the DOM, keyed by config type.
+// Returns { [configType]: MeerkostLine[] } from DOM. Looks at both
+// sheet-config picker rows (#configPickerList) and manual-config cards
+// (#manualConfigCards). Empty rows (no description + zero amount) are
+// dropped at serialize-time, not here — this stays a faithful DOM read
+// so live-editing keeps stable ids.
+function _readMeerkostLinesFromDom() {
+  const out = {};
+  function harvest(scope, typeAttr) {
+    scope.querySelectorAll(`[${typeAttr}]`).forEach(container => {
+      const type = container.getAttribute(typeAttr);
+      if (!type) return;
+      const rows = container.querySelectorAll('.meerkost-row');
+      if (rows.length === 0) return;
+      const lines = Array.from(rows).map(r => ({
+        id: r.dataset.lineId || _genMeerkostId(),
+        description: r.querySelector('.meerkost-desc')?.value || '',
+        amount: parseFloat(r.querySelector('.meerkost-amount')?.value) || 0,
+      }));
+      out[type] = lines;
+    });
+  }
+  const pickerList = document.getElementById('configPickerList');
+  if (pickerList) harvest(pickerList, 'data-config-type');
+  const manualList = document.getElementById('manualConfigCards');
+  if (manualList) harvest(manualList, 'data-config-type');
+  return out;
+}
+
+// Backward-compat shim: used by readAllSelectedConfigObjects until Task 4 replaces it.
+// Converts lines map to the old { [type]: number } format (sum of amounts).
 function _readMeerkostFromDom() {
+  const lines = _readMeerkostLinesFromDom();
   const map = {};
-  document.querySelectorAll('#configPickerList .config-picker-row').forEach(row => {
-    const sel = row.querySelector('.config-select');
-    const inp = row.querySelector('.meerkost-input');
-    if (sel && inp && sel.value) {
-      const v = parseFloat(inp.value) || 0;
-      if (v > 0) map[sel.value] = v;
-    }
-  });
+  for (const [type, lns] of Object.entries(lines)) {
+    const sum = lns.reduce((s, ln) => s + (Number(ln.amount) || 0), 0);
+    if (sum > 0) map[type] = sum;
+  }
   return map;
 }
 
-// Render N+1 pickers where N = number of selected types. Always one trailing
-// empty picker so the user can add another. Already-picked types are disabled
-// in the other pickers to prevent duplicates without visually hiding them.
-// meerkostMap is an optional { [type]: number } map for restoring meerkost values.
-function renderConfigPickers(selectedTypes, meerkostMap) {
+// Render N+1 sheet-config pickers. `meerkostLines` is an optional
+// { [type]: MeerkostLine[] } map used to seed the disclosure on restore.
+// Live DOM lines are preserved across re-renders via _readMeerkostLinesFromDom().
+function renderConfigPickers(selectedTypes, meerkostLines) {
   const list = document.getElementById('configPickerList');
   if (!list) return;
-  // Preserve current meerkost values before re-rendering (merge with provided map).
-  const currentMeerkost = { ..._readMeerkostFromDom(), ...(meerkostMap || {}) };
+  const currentLines = { ..._readMeerkostLinesFromDom(), ...(meerkostLines || {}) };
   const chosen = (selectedTypes || []).filter(v => v);
   list.innerHTML = '';
   for (let i = 0; i <= chosen.length; i++) {
@@ -1408,31 +1432,107 @@ function renderConfigPickers(selectedTypes, meerkostMap) {
     const others = chosen.filter((_, j) => j !== i);
     const row = document.createElement('div');
     row.className = 'config-picker-row';
+    if (currentValue) row.dataset.configType = currentValue;
     const isFirst = i === 0;
     const labelTxt = isFirst
       ? 'Configuratie 1 <span style="color:var(--danger);font-size:1rem;">*</span>'
       : `Configuratie ${i + 1} <span style="font-weight:400;text-transform:none;color:var(--muted)">(optioneel)</span>`;
-    const meerkostVal = currentValue && currentMeerkost[currentValue] ? currentMeerkost[currentValue] : 0;
+    const linesForRow = (currentValue && currentLines[currentValue]) || [];
     row.innerHTML = `
-      <div class="form-group">
+      <div class="form-group" style="flex:1;">
         <label>${labelTxt}</label>
         <select class="config-select">${_buildConfigOptionsHtml(currentValue, others, isFirst)}</select>
       </div>
-      <div class="meerkost-wrap">
-        <label>Meerkost (ex BTW)</label>
-        <input type="number" class="meerkost-input" min="0" step="50" value="${meerkostVal}">
-      </div>
+      ${currentValue ? _meerkostDisclosureHtml(linesForRow) : ''}
     `;
     row.querySelector('.config-select').addEventListener('change', () => {
-      renderConfigPickers(readSelectedConfigs());
+      renderConfigPickers(readSelectedConfigs(), _readMeerkostLinesFromDom());
     });
+    _wireMeerkostRow(row);
     list.appendChild(row);
   }
 }
 
-// Legacy shim — kept because _applyLoadedState still calls this name.
-function _populateConfigSelects(selectedTypes, meerkostMap) {
-  renderConfigPickers(selectedTypes, meerkostMap);
+// Legacy shim — _applyLoadedState calls this name.
+function _populateConfigSelects(selectedTypes, meerkostLines) {
+  renderConfigPickers(selectedTypes, meerkostLines);
+}
+
+// Build the <details> block for one config row. `lines` is the seeded
+// MeerkostLine[] (may be empty).
+function _meerkostDisclosureHtml(lines) {
+  const safeLines = Array.isArray(lines) ? lines : [];
+  const btw = parseFloat(document.getElementById('btwSelect')?.value) || 21;
+  const sumExBtw = safeLines.reduce((s, ln) => s + (Number(ln.amount) || 0), 0);
+  const summaryText = safeLines.length === 0
+    ? `Meerprijzen <span class="meerkost-summary-sum">geen</span>`
+    : `Meerprijzen (${safeLines.length}) <span class="meerkost-summary-sum">€ ${fmt2(sumExBtw)} ex (BTW ${btw}%)</span>`;
+  const isOpen = safeLines.length > 0;
+  const rowsHtml = safeLines.map(ln => _meerkostRowHtml(ln)).join('');
+  return `
+    <details class="meerkost-details" ${isOpen ? 'open' : ''}>
+      <summary>${summaryText}</summary>
+      <div class="meerkost-lines-list">
+        ${rowsHtml}
+        <button type="button" class="meerkost-add-btn">+ Regel toevoegen</button>
+      </div>
+    </details>
+  `;
+}
+function _meerkostRowHtml(line) {
+  return `
+    <div class="meerkost-row" data-line-id="${escapeHtml(line.id)}">
+      <input type="text" class="meerkost-desc" placeholder="Omschrijving" value="${escapeHtml(line.description || '')}">
+      <input type="number" class="meerkost-amount" min="0" step="50" value="${Number(line.amount) || 0}">
+      <button type="button" class="meerkost-del" title="Verwijder regel">✕</button>
+    </div>
+  `;
+}
+// Attach add/delete/input listeners to the meerkost-details inside a row/card.
+function _wireMeerkostRow(container) {
+  const details = container.querySelector(':scope > .meerkost-details');
+  if (!details) return;
+  const list = details.querySelector('.meerkost-lines-list');
+  const addBtn = details.querySelector('.meerkost-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const newLine = _emptyMeerkostLine();
+      addBtn.insertAdjacentHTML('beforebegin', _meerkostRowHtml(newLine));
+      _updateMeerkostSummary(details);
+    });
+  }
+  list.addEventListener('click', (e) => {
+    const delBtn = e.target.closest('.meerkost-del');
+    if (delBtn) {
+      delBtn.closest('.meerkost-row')?.remove();
+      _updateMeerkostSummary(details);
+    }
+  });
+  list.addEventListener('input', (e) => {
+    if (e.target.matches('.meerkost-amount, .meerkost-desc')) {
+      _updateMeerkostSummary(details);
+    }
+  });
+  list.addEventListener('blur', (e) => {
+    if (e.target.matches('.meerkost-amount')) {
+      const v = parseFloat(e.target.value);
+      if (!Number.isFinite(v) || v < 0) e.target.value = 0;
+      _updateMeerkostSummary(details);
+    }
+  }, true);
+}
+function _updateMeerkostSummary(detailsEl) {
+  const rows = detailsEl.querySelectorAll('.meerkost-row');
+  const sum = Array.from(rows).reduce((s, r) => {
+    const v = parseFloat(r.querySelector('.meerkost-amount')?.value);
+    return s + (Number.isFinite(v) && v > 0 ? v : 0);
+  }, 0);
+  const btw = parseFloat(document.getElementById('btwSelect')?.value) || 21;
+  const summary = detailsEl.querySelector('summary');
+  if (!summary) return;
+  summary.innerHTML = rows.length === 0
+    ? `Meerprijzen <span class="meerkost-summary-sum">geen</span>`
+    : `Meerprijzen (${rows.length}) <span class="meerkost-summary-sum">€ ${fmt2(sum)} ex (BTW ${btw}%)</span>`;
 }
 
 // ─── MANUAL CONFIG FORM ──────────────────────────────────────────────────────
