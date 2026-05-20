@@ -17,7 +17,7 @@ describe('security whitelist drift guard', () => {
     'assets/js/firebase-init.js',
     'firestore.rules',
     'storage.rules',
-    'lead-result.html',
+    'assets/js/pages/lead-result-app.js',
   ])('%s uses the expected whitelisted/admin emails', path => {
     expect(emailsIn(path)).toEqual([...EXPECTED_WHITELIST].sort());
   });
