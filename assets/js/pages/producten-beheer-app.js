@@ -1,4 +1,4 @@
-import { sellPrice, unitPrice } from '../product-pricing.js';
+import { sellPrice, totalProductPrice, unitPrice } from '../product-pricing.js';
 import { specsForCategory } from '../product-specs.js';
 import {
   bebatTotalInclVat,
@@ -295,6 +295,31 @@ const BRAND_OPTIONS = {
   'Installatie': ['Huawei', 'BYD', 'Dyness', 'Sigenergy', 'Enphase', 'Tesla', 'Sonnen', 'LG', 'Solarwatt', 'Pylontech', 'Alpha ESS', 'SAJ', 'Sungrow', 'Sessy'],
 };
 const ALL_BRANDS = Object.values(BRAND_OPTIONS).flat();
+const ZENDURE_STATIC_PRODUCT_MEDIA = {
+  acplus: {
+    photos: [
+      'assets/products/zendure-ac-plus/zendure-acplus-1.png',
+      'assets/products/zendure-ac-plus/zendure-acplus-2.jpg',
+      'assets/products/zendure-ac-plus/zendure-acplus-3.jpg',
+      'assets/products/zendure-ac-plus/zendure-acplus-4.jpg',
+      'assets/products/zendure-ac-plus/zendure-acplus-5.jpg',
+      'assets/products/zendure-ac-plus/zendure-acplus-6.jpg',
+    ],
+    datasheets: [{
+      name: 'SolarFlow 2400 AC+ — Handleiding (EN/NL)',
+      url:  'https://cdn.shopify.com/s/files/1/0722/0956/3903/files/SolarFlow_2400_AC__User_Manual_EN_NL.pdf?v=1770794779',
+    }],
+  },
+  ab3000l: {
+    photos: [
+      'assets/products/zendure-ac-plus/zendure-acplus-ab3000l.jpg',
+    ],
+    datasheets: [{
+      name: 'AB3000L — Handleiding',
+      url:  'https://cdn.shopify.com/s/files/1/0722/0956/3903/files/ZDB2503_AB3000L_6_20260104_removed_removed.pdf?v=1770795311',
+    }],
+  },
+};
 
 function getCategorySlug(categoryId) {
   const cat = _categories.find(c => c.id === categoryId);
@@ -303,6 +328,35 @@ function getCategorySlug(categoryId) {
 
 function isBrandlessCategorySlug(slug) {
   return slug === 'service' || slug === 'materiaal' || slug === 'diversen';
+}
+
+function staticZendureMediaKey(product) {
+  const haystack = [product?.brand, product?.model, product?.description].filter(Boolean).join(' ').toLowerCase();
+  if (haystack.includes('ab3000l')) return 'ab3000l';
+  if (haystack.includes('ac+') || haystack.includes('ac plus') || haystack.includes('2400 ac')) return 'acplus';
+  return null;
+}
+
+function staticProductPhotos(product) {
+  const media = ZENDURE_STATIC_PRODUCT_MEDIA[staticZendureMediaKey(product)];
+  return (media?.photos || []).map((url, idx) => ({
+    id:          `static-${idx}`,
+    name:        url.split('/').pop() || 'Productfoto',
+    downloadUrl: url,
+    thumbUrl:    url,
+    isStatic:    true,
+  }));
+}
+
+function staticProductDatasheets(product) {
+  const media = ZENDURE_STATIC_PRODUCT_MEDIA[staticZendureMediaKey(product)];
+  return (media?.datasheets || []).map((doc, idx) => ({
+    id:          `static-${idx}`,
+    name:        doc.name,
+    downloadUrl: doc.url,
+    sizeBytes:   null,
+    isStatic:    true,
+  }));
 }
 
 let _allProducts = [];
@@ -807,9 +861,12 @@ async function handlePhotoUpload(grid, productId, files, progressEl) {
 async function renderProductPhotos(grid, productId) {
   grid.innerHTML = '<span class="text-muted small">Laden...</span>';
   try {
+    const product = _allProducts.find(p => p.id === productId);
+    const staticPhotos = staticProductPhotos(product);
     const photos = await listProductPhotos(productId);
-    if (!photos.length) { grid.innerHTML = '<span class="text-muted small">Geen foto\'s</span>'; return; }
-    grid.innerHTML = productPhotosHtml(photos);
+    const allPhotos = [...staticPhotos, ...photos];
+    if (!allPhotos.length) { grid.innerHTML = '<span class="text-muted small">Geen foto\'s</span>'; return; }
+    grid.innerHTML = productPhotosHtml(allPhotos);
   } catch (err) {
     grid.innerHTML = '<span class="text-danger small">Fout bij laden foto\'s</span>';
     console.error('renderProductPhotos', err);
@@ -908,9 +965,12 @@ async function handleDatasheetUpload(list, productId, file, progressEl) {
 async function renderProductDatasheets(list, productId) {
   list.innerHTML = '<span class="text-muted small">Laden...</span>';
   try {
+    const product = _allProducts.find(p => p.id === productId);
+    const staticDocs = staticProductDatasheets(product);
     const docs = await listProductDatasheets(productId);
-    if (!docs.length) { list.innerHTML = '<span class="text-muted small">Geen datasheets</span>'; return; }
-    list.innerHTML = productDatasheetsHtml(docs);
+    const allDocs = [...staticDocs, ...docs];
+    if (!allDocs.length) { list.innerHTML = '<span class="text-muted small">Geen datasheets</span>'; return; }
+    list.innerHTML = productDatasheetsHtml(allDocs);
   } catch (err) {
     list.innerHTML = '<span class="text-danger small">Fout bij laden datasheets</span>';
     console.error('renderProductDatasheets', err);
@@ -1590,6 +1650,27 @@ function groupedQuoteIncl(groups, productsById) {
   }, 0);
 }
 
+function productPurchaseCostExVat(product, qty, categoriesById) {
+  const cat = product && categoriesById && categoriesById[product.categoryId];
+  const isService = cat && cat.slug === 'service';
+  const explicitCost = product?.specs && Number(product.specs.purchaseCostExVat);
+  if (isService && (!explicitCost || explicitCost <= 0)) return 0;
+  if (isService) return explicitCost * Math.max(0, qty || 0);
+  return Math.max(0, Number(product?.purchasePrice) || 0) * Math.max(0, qty || 0);
+}
+
+function groupedQuoteProfitExVat(groups, productsById, categoriesById) {
+  return groups.reduce((sum, group) => {
+    return sum + group.items.reduce((itemSum, item) => {
+      const product = productsById[item.productId];
+      if (!product) return itemSum;
+      const revenue = totalProductPrice(product, item.qty);
+      const cost = productPurchaseCostExVat(product, item.qty, categoriesById);
+      return itemSum + Math.max(0, revenue - cost);
+    }, 0);
+  }, 0);
+}
+
 function updateQuotePreview() {
   const el = document.getElementById('quotePreview');
   if (!el) return;
@@ -1619,6 +1700,11 @@ function updateQuotePreview() {
   const groupedIncl = groupedQuoteIncl(mainGroups, productsById)
     + groupedQuoteIncl(materialGroups, productsById)
     + groupedQuoteIncl(miscGroups, productsById);
+  const groupedProfit = groupedQuoteProfitExVat(mainGroups, productsById, categoriesById)
+    + groupedQuoteProfitExVat(materialGroups, productsById, categoriesById)
+    + groupedQuoteProfitExVat(miscGroups, productsById, categoriesById);
+  const manualProfit = extraLines.reduce((sum, line) => sum + line.exVat, 0);
+  const totalProfit = groupedProfit + manualProfit;
   const totalIncl = groupedIncl + bebatIncl + extraIncl;
   el.innerHTML = `
     <div class="table-responsive">
@@ -1638,6 +1724,10 @@ function updateQuotePreview() {
         </tbody>
         <tfoot><tr><th colspan="3" class="text-end">Totaal incl. BTW</th><th class="text-end">€${totalIncl.toFixed(2)}</th></tr></tfoot>
       </table>
+    </div>
+    <div class="alert alert-success py-2 mb-2">
+      <strong>Totale winst ex BTW:</strong> €${totalProfit.toFixed(2)}
+      <span class="text-muted small">(Bebat niet meegerekend)</span>
     </div>
     <p class="text-muted small mb-0">Deze preview maakt nog geen offerte-document aan; hij test alleen UX en berekening.</p>`;
 }
