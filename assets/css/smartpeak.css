@@ -493,6 +493,22 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   outline-offset: 2px;
 }
 
+/* ── Shared serial rows (dashboard drawer + project-edit) ─────────────── */
+
+.serial-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.serial-row .serial-cat-badge {
+  font-size: 11px; padding: 3px 8px; border-radius: 12px; color: #fff; font-weight: 500;
+  min-width: 96px; text-align: center;
+}
+.serial-row .serial-cat-batterij        { background: #2c7be5; }
+.serial-row .serial-cat-omvormer        { background: #7e57c2; }
+.serial-row .serial-cat-omvormer_batterij { background: #16a34a; }
+.serial-row .serial-cat-null            { background: #9ca3af; }
+.serial-row .serial-status-icon { width: 18px; text-align: center; }
+.serial-row input.serial-value { flex: 1; }
+.serial-row .serial-action-btn { background: none; border: 0; color: #64748b; padding: 4px 6px; cursor: pointer; }
+.serial-row .serial-action-btn:hover { color: #1e293b; }
+
 /* ── 5. Pagination bar for project list ──────────────────────────────────── */
 
 .sp-pagination {
@@ -571,6 +587,86 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   margin: 0 auto;
   padding: 24px 16px;
 }
+
+/* ── Page-specific extracted rules ─────────────────────────────────────── */
+
+/* dashboard.html: desktop layout keeps leads pinned below the project list. */
+@media (min-width: 992px) {
+  #stateAuthorized {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #stateAuthorized > nav { flex-shrink: 0; }
+  #stateAuthorized > main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 0 !important;
+  }
+  #stateAuthorized > main > .card.mb-3 { flex-shrink: 0; }
+  #stateAuthorized > main > .card:not(.mb-3):not(#leadsCard) {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  #leadsCard {
+    flex-shrink: 0;
+    max-height: 33vh;
+    overflow-y: auto;
+    margin-top: 0.75rem !important;
+    margin-bottom: 0 !important;
+  }
+}
+
+/* producten-beheer.html */
+.cat-row {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+.cat-row.is-default { background: #e7f3ff; }
+.product-card { cursor: pointer; transition: border-color 0.15s; }
+.product-card:hover { border-color: var(--bs-primary); }
+.product-card.active { border-color: var(--bs-primary); border-width: 2px; }
+.product-card.inactive { opacity: 0.5; }
+#productDetailCard { position: sticky; top: 80px; }
+.product-photo-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.product-photo-grid .photo-thumb {
+  width: 80px; height: 80px; object-fit: cover; border-radius: 6px;
+  cursor: pointer; border: 1px solid #dee2e6;
+}
+.product-photo-grid .photo-thumb:hover { border-color: var(--bs-primary); }
+.product-photo-grid .photo-item { position: relative; }
+.product-photo-grid .photo-delete-btn {
+  position: absolute; top: -6px; right: -6px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: #dc2626; color: #fff; border: 2px solid #fff;
+  font-size: 11px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; opacity: 0; transition: opacity 0.15s;
+}
+.product-photo-grid .photo-item:hover .photo-delete-btn { opacity: 1; }
+.ds-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.ds-row .ds-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-row .ds-size { color: #6c757d; font-size: 0.85rem; white-space: nowrap; }
+.media-drop-zone {
+  border: 2px dashed #dee2e6; border-radius: 8px; padding: 12px;
+  text-align: center; color: #6c757d; cursor: pointer; transition: border-color 0.2s;
+}
+.media-drop-zone.drag-over { border-color: var(--bs-primary); background: #f0f7ff; }
+.media-drop-zone input[type="file"] { display: none; }
+.product-lightbox-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  z-index: 9999; display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.product-lightbox-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+
+/* producten.html */
+.carousel-inner .carousel-item img { max-height: 380px; object-fit: contain; width: 100%; background: #f7f9fd; }
 
 /* Hero card — big euro savings number above the fold */
 .sp-hero-card {

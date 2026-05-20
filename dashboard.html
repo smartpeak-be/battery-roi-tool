@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" integrity="sha512-jnSuA4Ss2PkkikSOLtYs8BlYIeeIK1h99ty4YfvRPAlzr377vr3CXDb7sb7eEEBYjDtcYj+AjBH3FLv5uSJuXg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="assets/css/smartpeak.css" />
+  <link rel="stylesheet" href="assets/css/smartpeak.css?v=2" />
   <title>SmartPeak — Projecten</title>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js" integrity="sha384-+65NgAKqXr1Nb7sBmV6O09pL8ASqZsi29OE718meKinGAWaa70VE5V6LNjXVBjIA" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js" integrity="sha384-I1LYojsZ5RM1cOda44Z2h42Qa6YfsQ1XkXxREnhp4ueYBR/4d1pG1K+NZM537Vsj" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -20,63 +20,6 @@
   <script src="assets/js/status-chip.js"></script>
   <script src="assets/js/offertes-ui.js"></script>
   <script type="module" src="assets/js/photo-uploader.js"></script>
-  <style>
-    /*
-     * Page-specific overrides live here. Global app styles are in
-     * assets/css/smartpeak.css (loaded above). Keep this block minimal
-     * — only rules truly relevant for dashboard.html.
-     */
-
-    /* Serial-list rows (drawer) — mirrors project-edit.html. */
-    .serial-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-    .serial-row .serial-cat-badge {
-      font-size: 11px; padding: 3px 8px; border-radius: 12px; color: #fff; font-weight: 500;
-      min-width: 96px; text-align: center;
-    }
-    .serial-row .serial-cat-batterij        { background: #2c7be5; }
-    .serial-row .serial-cat-omvormer        { background: #7e57c2; }
-    .serial-row .serial-cat-omvormer_batterij { background: #16a34a; }
-    .serial-row .serial-cat-null            { background: #9ca3af; }
-    .serial-row .serial-status-icon { width: 18px; text-align: center; }
-    .serial-row input.serial-value { flex: 1; }
-    .serial-row .serial-action-btn { background: none; border: 0; color: #64748b; padding: 4px 6px; cursor: pointer; }
-    .serial-row .serial-action-btn:hover { color: #1e293b; }
-
-    /* Desktop: fill viewport, projects scroll, leads pinned at bottom */
-    @media (min-width: 992px) {
-      #stateAuthorized {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-        overflow: hidden;
-      }
-      #stateAuthorized > nav { flex-shrink: 0; }
-      #stateAuthorized > main {
-        flex: 1;
-        min-height: 0;          /* allow flex child to shrink below content */
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        padding-bottom: 0 !important;
-      }
-      /* Toolbar stays fixed size */
-      #stateAuthorized > main > .card.mb-3 { flex-shrink: 0; }
-      /* Project list fills remaining space and scrolls */
-      #stateAuthorized > main > .card:not(.mb-3):not(#leadsCard) {
-        flex: 1;
-        min-height: 0;
-        overflow-y: auto;
-      }
-      /* Leads card pinned at bottom, max 1/3 screen */
-      #leadsCard {
-        flex-shrink: 0;
-        max-height: 33vh;
-        overflow-y: auto;
-        margin-top: 0.75rem !important;
-        margin-bottom: 0 !important;
-      }
-    }
-  </style>
 </head>
 <body>
 
