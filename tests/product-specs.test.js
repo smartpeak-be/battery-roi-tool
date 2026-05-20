@@ -1,8 +1,7 @@
 // tests/product-specs.test.js
 // Unit tests for product-specs.js spec field definitions and category filtering.
 
-import { describe, test } from 'node:test';
-import assert from 'node:assert';
+import { describe, test, assert } from 'vitest';
 import { SPEC_FIELDS, specsForCategory } from '../assets/js/product-specs.js';
 
 describe('SPEC_FIELDS', () => {
@@ -10,7 +9,7 @@ describe('SPEC_FIELDS', () => {
     for (const field of SPEC_FIELDS) {
       assert.ok(field.key, `Field missing key: ${JSON.stringify(field)}`);
       assert.ok(field.label, `Field "${field.key}" missing label`);
-      assert.ok(field.hasOwnProperty('unit'), `Field "${field.key}" missing unit property`);
+      assert.ok(Object.hasOwn(field, 'unit'), `Field "${field.key}" missing unit property`);
       assert.ok(field.type, `Field "${field.key}" missing type`);
       assert.ok(Array.isArray(field.categories), `Field "${field.key}" categories is not an array`);
       assert.ok(field.categories.length > 0, `Field "${field.key}" has empty categories array`);

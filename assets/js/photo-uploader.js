@@ -1,4 +1,4 @@
-/* global firebase, bootstrap, makeThumbnail, uploadProjectPhotoWithThumb, listProjectPhotos,
+/* global firebase, bootstrap, uploadProjectPhotoWithThumb, listProjectPhotos,
           deleteProjectPhoto, backfillThumbnail, showToast, showSpinner, updateSpinner, hideSpinner */
 
 import { escapeHtml } from './shared-helpers.js';

@@ -76,7 +76,13 @@ export default [
 
   // ── Browser ES-module source files (calc-engine, csv, shared-helpers) ─────
   {
-    files: ['assets/js/calc-engine.js', 'assets/js/csv.js', 'assets/js/shared-helpers.js', 'assets/js/lead-calc.js'],
+    files: [
+      'assets/js/calc-engine.js',
+      'assets/js/csv.js',
+      'assets/js/shared-helpers.js',
+      'assets/js/lead-calc.js',
+      'assets/js/serial-extract.js',
+    ],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
@@ -87,7 +93,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-console': 'off',
       'no-constant-condition': 'off',
     },
@@ -129,7 +135,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-console': 'off',
       'no-constant-condition': 'off',
       'no-redeclare': 'off',          // firebase global from CDN + import
@@ -148,7 +154,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
     },
   },
 
@@ -163,9 +169,26 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
       // page.evaluate() callbacks run in browser context, not Node
       'no-undef': 'off',
+    },
+  },
+
+  // ── Node/CommonJS utility scripts ──────────────────────────────────────────
+  {
+    files: ['e2e/**/*.cjs', 'scripts/**/*.{js,cjs}'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      'no-console': 'off',
+      'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
 
