@@ -742,8 +742,9 @@
       text-align: center;
     }
   </style>
-  <!-- Chart.js loaded lazily on first use — see _loadChartJs() -->
+  <!-- Chart.js loaded lazily on first use — see assets/js/chart-loader.js -->
   <script type="module" src="assets/js/csv.js"></script>
+  <script src="assets/js/chart-loader.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js" integrity="sha384-+65NgAKqXr1Nb7sBmV6O09pL8ASqZsi29OE718meKinGAWaa70VE5V6LNjXVBjIA" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js" integrity="sha384-I1LYojsZ5RM1cOda44Z2h42Qa6YfsQ1XkXxREnhp4ueYBR/4d1pG1K+NZM537Vsj" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js" integrity="sha384-YHSscHG455M7b+d6r5ibTMznxrZxV272bMjXT9ndTgmx05fLR7HsdmcVklhpBSyt" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -944,25 +945,6 @@ let _saved = null; // last renderResults argument, set at render time
 let _energyChartInstance = null;
 let _chartState = { level: 'month', dayMonthIdx: -1 };
 let _chartHandlersWired = false;
-let _chartJsPromise = null;
-
-/** Lazy-load Chart.js from CDN on first use. Returns a Promise that resolves when Chart is available. */
-function _loadChartJs() {
-  if (typeof Chart !== 'undefined') return Promise.resolve();
-  if (_chartJsPromise) return _chartJsPromise;
-  _chartJsPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js';
-    s.integrity = 'sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC';
-    s.crossOrigin = 'anonymous';
-    s.referrerPolicy = 'no-referrer';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('Chart.js kon niet laden'));
-    document.head.appendChild(s);
-  });
-  return _chartJsPromise;
-}
-
 function _setActiveLevel(level) {
   ['Year','Month','Day'].forEach(L => {
     const btn = document.getElementById('btnLevel' + L);
@@ -1051,7 +1033,7 @@ async function renderEnergyChart(d) {
   const canvas = document.getElementById('energyChartCanvas');
 
   try {
-    await _loadChartJs();
+    await SmartPeakChartLoader.loadChartJs();
   } catch (_) { /* fall through to Chart === undefined check */ }
 
   if (typeof Chart === 'undefined') {

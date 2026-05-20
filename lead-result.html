@@ -24,6 +24,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js" integrity="sha384-+65NgAKqXr1Nb7sBmV6O09pL8ASqZsi29OE718meKinGAWaa70VE5V6LNjXVBjIA" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js" integrity="sha384-YHSscHG455M7b+d6r5ibTMznxrZxV272bMjXT9ndTgmx05fLR7HsdmcVklhpBSyt" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="assets/js/firebase-init.js"></script>
+<script src="assets/js/chart-loader.js"></script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"
         integrity="sha512-7Pi/otdlbbCR+LnW+F7PwFcSDJOuUJB3OxtEHbg4vSMvzvJjde4Po1v4BR9Gdc9aXNUNFVUY+SK51wWT8WF0Gg=="
@@ -33,23 +34,6 @@
 import { escapeHtml, showToast } from './assets/js/shared-helpers.js';
 
 const container = document.getElementById('resultContainer');
-
-let _chartJsPromise = null;
-function loadChartJs() {
-  if (typeof Chart !== 'undefined') return Promise.resolve();
-  if (_chartJsPromise) return _chartJsPromise;
-  _chartJsPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js';
-    s.integrity = 'sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC';
-    s.crossOrigin = 'anonymous';
-    s.referrerPolicy = 'no-referrer';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('Chart.js kon niet laden'));
-    document.head.appendChild(s);
-  });
-  return _chartJsPromise;
-}
 
 (async function loadResult() {
   const params = new URLSearchParams(window.location.search);
@@ -323,7 +307,7 @@ function renderDisclaimer(lead) {
 // ── Chart ────────────────────────────────────────────────────────────────────
 
 async function renderUsageChart(lead, selfPct) {
-  await loadChartJs();
+  await SmartPeakChartLoader.loadChartJs();
   const dc = lead.csvDailyCompact;
   if (!dc || !dc.startDate || !Array.isArray(dc.afname) || dc.afname.length === 0) {
     const wrap = document.getElementById('usageChartCard');

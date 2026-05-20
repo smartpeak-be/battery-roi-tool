@@ -106,6 +106,7 @@ export default [
       'assets/js/firebase-init.js',
       'assets/js/status-chip.js',
       'assets/js/offertes-ui.js',
+      'assets/js/chart-loader.js',
     ],
     languageOptions: {
       ecmaVersion: 'latest',
