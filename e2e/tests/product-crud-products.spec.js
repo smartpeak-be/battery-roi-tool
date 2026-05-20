@@ -65,16 +65,6 @@ async function createTestProductAdmin(overrides = {}) {
   return { id: ref.id, ...doc };
 }
 
-/**
- * Helper: delete a test product via Admin SDK.
- */
-async function deleteTestProductAdmin(id) {
-  const db = getAdminFirestore();
-  try {
-    await db.collection('products').doc(id).delete();
-  } catch {}
-}
-
 test.describe('Product CRUD', () => {
   // Track products created during tests for cleanup
   const createdProductIds = [];

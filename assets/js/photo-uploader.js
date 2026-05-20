@@ -1,4 +1,4 @@
-/* global firebase, bootstrap, makeThumbnail, uploadProjectPhotoWithThumb, listProjectPhotos,
+/* global firebase, bootstrap, uploadProjectPhotoWithThumb, listProjectPhotos,
           deleteProjectPhoto, backfillThumbnail, showToast, showSpinner, updateSpinner, hideSpinner */
 
 import { escapeHtml } from './shared-helpers.js';
@@ -37,7 +37,7 @@ import { escapeHtml } from './shared-helpers.js';
                 <i class="fa-solid fa-camera me-1"></i> Alles → Situatie
               </button>
               <button type="button" class="btn btn-sm btn-outline-primary" data-pu-bulk="serial">
-                <i class="fa-solid fa-barcode me-1"></i> Alles → Serieel
+                <i class="fa-solid fa-barcode me-1"></i> Alles → Serieel · Batterij
               </button>
             </div>
             <div data-pu-modal-list></div>
@@ -250,6 +250,11 @@ import { escapeHtml } from './shared-helpers.js';
       if (lb) lb.classList.remove('open');
     }
 
+    function openByPhotoId(photoId) {
+      const idx = state.photos.findIndex(p => p.id === photoId);
+      if (idx >= 0) _openLightbox(idx);
+    }
+
     // Lazy backfill — one at a time, fail-soft.
     async function _drainBackfillQueue() {
       if (state.backfillBusy) return;
@@ -381,25 +386,58 @@ import { escapeHtml } from './shared-helpers.js';
             <img src="${escapeHtml(t.blobUrl)}" alt="${escapeHtml(t.name)}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;" />
             <div class="flex-grow-1">
               <div class="small text-muted text-truncate" style="max-width:200px;">${escapeHtml(t.name)}</div>
-              <div class="btn-group btn-group-sm mt-1" role="group">
-                <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-s" value="situatie" checked />
-                <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-s"><i class="fa-solid fa-camera me-1"></i>Situatie</label>
-                <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-r" value="serial" />
-                <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-r"><i class="fa-solid fa-barcode me-1"></i>Serieel</label>
+              <div class="d-flex flex-wrap gap-2 mt-1">
+                <div class="btn-group btn-group-sm" role="group">
+                  <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-s" value="situatie" checked />
+                  <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-s"><i class="fa-solid fa-camera me-1"></i>Situatie</label>
+                  <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-r" value="serial" />
+                  <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-r"><i class="fa-solid fa-barcode me-1"></i>Serieel</label>
+                </div>
+                <div class="btn-group btn-group-sm pu-serial-cat w-100 flex-wrap mt-2" role="group" data-pu-cat-row hidden>
+                  <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-b" value="batterij" checked />
+                  <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-b">Batterij</label>
+                  <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-o" value="omvormer" />
+                  <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-o">Omvormer</label>
+                  <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-c" value="omvormer_batterij" />
+                  <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-c">Omvormer+Batterij</label>
+                </div>
               </div>
             </div>
           </div>`;
       }).join('');
+
+      // Show category row only when this photo is tagged as serial.
+      list.querySelectorAll('[data-pu-modal-row]').forEach(row => {
+        row.querySelectorAll('input[type="radio"][name^="tag-"]').forEach(radio => {
+          radio.addEventListener('change', () => {
+            _syncSerialCategoryVisibility(row);
+          });
+        });
+        _syncSerialCategoryVisibility(row);
+      });
 
       // Bulk handlers
       el.querySelectorAll('[data-pu-bulk]').forEach(btn => {
         btn.onclick = () => {
           const target = btn.getAttribute('data-pu-bulk');
           list.querySelectorAll('[data-pu-modal-row]').forEach(row => {
-            const id = row.getAttribute('data-photo-id');
-            const radio = row.querySelector(`input[name="tag-${CSS.escape(id)}"][value="${target}"]`);
+            const radio = row.querySelector(`input[type="radio"][name^="tag-"][value="${target}"]`);
             if (radio) radio.checked = true;
+            _syncSerialCategoryVisibility(row);
           });
+          // When bulk-tagging as serial, also reveal the category row and reset
+          // each one to the default Batterij selection.
+          if (target === 'serial') {
+            list.querySelectorAll(`[data-pu-cat-row]`).forEach(catRow => {
+              catRow.hidden = false;
+              const def = catRow.querySelector(`input[value="batterij"]`);
+              if (def) def.checked = true;
+            });
+          } else {
+            list.querySelectorAll(`[data-pu-cat-row]`).forEach(catRow => {
+              catRow.hidden = true;
+            });
+          }
         };
       });
 
@@ -415,13 +453,21 @@ import { escapeHtml } from './shared-helpers.js';
           const batch = db.batch();
           let patches = 0;
           uploadedIds.forEach(id => {
-            const checked = list.querySelector(`input[name="tag-${CSS.escape(id)}"]:checked`);
-            const tag = checked && checked.value === 'serial' ? 'serial' : 'situatie';
-            if (tag !== 'situatie') {
-              const ref = db.collection('projects').doc(options.projectId).collection('photos').doc(id);
-              batch.update(ref, { tag });
+            const row = list.querySelector(`[data-photo-id="${CSS.escape(id)}"]`);
+            const tagChecked = row && row.querySelector(`input[type="radio"][name^="tag-"]:checked`);
+            const isSerial = tagChecked && tagChecked.value === 'serial';
+            const ref = db.collection('projects').doc(options.projectId).collection('photos').doc(id);
+            if (isSerial) {
+              const catChecked = row.querySelector(`input[type="radio"][name^="cat-"]:checked`);
+              const category = (catChecked && catChecked.value) || 'batterij';
+              batch.update(ref, {
+                tag: 'serial',
+                serialCategory: category,
+                ocrStatus: 'pending',
+              });
               patches++;
             }
+            // No write needed when situatie (default) — saves Firestore quota.
           });
           if (patches > 0) await batch.commit();
           bootstrap.Modal.getOrCreateInstance(el).hide();
@@ -443,6 +489,18 @@ import { escapeHtml } from './shared-helpers.js';
       el.addEventListener('hidden.bs.modal', onHidden);
 
       bootstrap.Modal.getOrCreateInstance(el).show();
+    }
+
+    function _syncSerialCategoryVisibility(row) {
+      const tagChecked = row.querySelector(`input[type="radio"][name^="tag-"]:checked`);
+      const catRow = row.querySelector('[data-pu-cat-row]');
+      if (!catRow) return;
+      const isSerial = tagChecked && tagChecked.value === 'serial';
+      catRow.hidden = !isSerial;
+      if (isSerial && !catRow.querySelector('input[type="radio"]:checked')) {
+        const def = catRow.querySelector('input[value="batterij"]');
+        if (def) def.checked = true;
+      }
     }
 
     function destroy() {
@@ -497,7 +555,7 @@ import { escapeHtml } from './shared-helpers.js';
 
     refresh();
 
-    return { refresh, destroy };
+    return { refresh, destroy, openByPhotoId };
   }
 
   global.mountPhotoUploader = mountPhotoUploader;

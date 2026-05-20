@@ -191,6 +191,66 @@ Firestore doc. Throttled op één tegelijk per component-instance; fail-soft
 `fa-camera` / `fa-eye` per serial-rij zijn verwijderd; serial-rijen hebben nu
 enkel een tekstveld + delete. De oude `uploadProjectPhoto` is ook verwijderd.
 
+## Serial-OCR pipeline (2026-05-19)
+
+Serial-tagged foto's worden door een Cloud Function (`functions/index.js`,
+trigger `onDocumentWritten` op `projects/{id}/photos/{photoId}`, regio
+`europe-west1`) doorgehaald langs Google Cloud Vision (EU endpoint). De
+function leest de blob via Admin SDK, extracteert het langste alfanumerieke
+token (≥ 6 chars) via `extractSerialFromOcr` (gedupliceerd in
+`assets/js/serial-extract.js` voor de client en `functions/index.js` voor de
+server, met identieke tokenize-en-dedup heuristiek), en append in één
+transactie een entry aan `project.serialNumbers` met `source: 'ocr'`,
+`category`, `photoId`, en `ocrStatus`.
+
+Photo-doc velden:
+- `tag: 'situatie' | 'serial'`
+- `serialCategory?: 'batterij' | 'omvormer' | 'omvormer_batterij'`
+- `ocrStatus?: 'pending' | 'ok' | 'failed' | null` (`null` = re-run requested)
+- `ocrCandidates?: string[]`
+- `serialEntryId?: string` (link naar `project.serialNumbers[].id`)
+
+Serial-entry shape (uitgebreid t.o.v. pre-feature `{id, value}`):
+`{id, value, category, source, photoId?, ocrStatus?, uploadedAt, uploadedBy}`.
+Pre-feature entries krijgen `category: null` + `source: 'manual'` via lazy
+merge in `mergeProjectMetadata`.
+
+**Tag-modal** (`assets/js/photo-uploader.js`) heeft 2-level radio: Situatie/Serieel
++ wanneer Serieel zichtbaar Batterij/Omvormer/Omvormer+Batterij.
+
+**UI** in Blok D (`project-edit.html`) en drawer (`dashboard.html`):
+category-badge + status-icon (spinner/check/warning) + source-icon
+(image/keyboard) + value-input + re-run knop (alleen failed) + delete.
+Project-edit Blok D subscribet op project-doc `onSnapshot` zodat pending →
+ok transitie live update. Drawer doet hetzelfde maar scoped aan
+drawer-open lifecycle (subscribe bij `openDrawer`, unsubscribe bij
+`closeDrawer` én `hidden.bs.offcanvas`).
+
+**Cloud Function package** (`functions/`): Node 20 runtime, ESM
+(`"type": "module"` in `functions/package.json` voor vitest mock
+compatibility). Deploy: `cd functions && npm install && firebase deploy --only functions:ocrSerial`.
+Service-account heeft Vision API + Firestore + Storage rollen nodig. Geen
+API-key in code of Firestore — ADC via de function's eigen service-account.
+
+**Cost**: $1.50/1000 photos (eerste 1000/maand gratis).
+
+**Re-run** (failed OCR): klik `fa-rotate` knop op de serial-rij → schrijft
+`ocrStatus: null` + `ocrError` deleted op photo-doc → function fired
+opnieuw (via `shouldRun` guard die de null-transitie detecteert).
+
+**Cleanup**: retag serial → situatie verwijdert de gekoppelde
+`project.serialNumbers`-entry en cleart de OCR-velden op de photo-doc
+(`shouldCleanup` guard).
+
+**E2E coverage**: `e2e/tests/serial-ocr.spec.js` (2 tests):
+happy-path (upload + tag + mocked-OCR via Admin transaction → row appears)
+en failure-path (pre-seed failed + click re-run → `ocrStatus` resets to
+`null`). De Cloud Function zelf draait niet in tests; alleen de UI ↔
+Firestore feedback loop wordt gecoverd via direct-write simulatie.
+
+Bebat-export UI (filteren op `category in ['batterij', 'omvormer_batterij']`)
+is een follow-up; het datamodel is er klaar voor.
+
 ## How to work on it
 
 - **Run locally:** open `index.html` directly in a browser, or `python3 -m http.server` from the repo root and visit `http://localhost:8000`. A local server is needed if you want the URL `?data=...` share-link flow to behave like production.
@@ -266,4 +326,4 @@ spec na deze iteratie.
 
 **Config-picker dynamics (2026-04-20 polish)** — Product-configuratie dropdowns leven binnen `#configPickerList` en worden volledig door JS gegenereerd. `renderConfigPickers(selectedTypes, meerkostMap)` toont altijd `N+1` `.config-picker-row` flex-containers waar N = aantal gekozen types; elke rij bevat een `<select class="config-select">` links en een `<input class="meerkost-input">` rechts. De trailing picker is altijd leeg zodat de user er één kan toevoegen. `readSelectedConfigs()` leest de huidige selectie in DOM-volgorde. Already-picked types worden `disabled` gezet in de andere pickers via `_buildConfigOptionsHtml`. De save-payload (`selectedConfigTypes: string[]` in v:5) is lengte-agnostisch — geen schema-bump nodig. `_populateConfigSelects` blijft als shim bestaan omdat `_applyLoadedState` die nog aanroept tijdens restore. Dashboard's `fa-calculator` rij-knop (alleen getoond als `p.lastCalcRun`) navigeert naar `index.html?project=<id>#results` — bij aankomst scrollt de index automatisch naar de eerste zichtbare `.card` in `#results`.
 
-**Meerkost (extra cost) per sheet config (2026-05-08)** — Elke sheet-config dropdown-rij heeft een "Meerkost (ex BTW)" number-input (default 0, step 50). De meerkost is exclusief BTW; bij berekening wordt BTW toegevoegd conform het huidige BTW-tarief: `effectiveInstallPrice = sheetPrice + meerkost * (1 + btwPercent / 100)`. Manuele configuraties krijgen geen meerkost-veld (prijs is al all-in). Layout is flex-column (gestapeld, één config per rij) in plaats van de oude CSS grid. `_readMeerkostFromDom()` leest de huidige meerkostwaarden; `renderConfigPickers` bewaart bestaande waarden bij re-render. `readAllSelectedConfigObjects()` voegt `meerkost` (ex BTW) en `meerkostInclBtw` toe aan elk resolved config object. Resultaat-headers tonen "(incl. €X meerkost)" annotatie wanneer meerkost > 0. Persistentie: `meerkostMap: { [configType]: number }` in `_serializeState` (top-level), `lastCalcRun.inputs.meerkostMap` in project-mode, en in `buildSavedFromProject` → `_applyLoadedState` restore-pad. Geen schema-versie bump nodig (afwezige map = alle meerkost 0).
+**Meerkost (extra cost) — multi-line breakdown per config (2026-05-19, supersedes 2026-05-08 single-amount)** — Elke configuratie heeft een uitklap "Meerprijzen" onder zijn picker-rij (sheet) of card (manueel) met een lijst van regels, elk met omschrijving + bedrag (ex BTW). Sum incl BTW wordt opgeteld bij de basisprijs: `cfg.price = cfg.basePrice + Σ(line.amount * (1 + btw/100))`. Sheet- en manuele configs gebruiken hetzelfde model — keyed op `cfg.type` (sheet-type of `MANUAL_<uuid>`). Bij Bereken wordt elke regel weergegeven in een `<details class="installprice-details">` uitklap onder `Installatieprijs` in elke scenario-card: `Basis configuratie €X`, elke regel met omschrijving + bedrag incl BTW, `Totaal installatie`. Bij 0 regels: geen uitklap, gewone regel. Lege omschrijving rendert als `Meerkost #N` (1-based). `_serializeState` filtert regels weg waarbij omschrijving leeg is én bedrag 0. Persistentie: `meerkostLines: { [type]: MeerkostLine[] }` op v:6 top-level (share-links + downloaded JSON) + `lastCalcRun.inputs.meerkostLines` in project-mode. `MeerkostLine = { id, description, amount }` (amount = ex BTW). Legacy `meerkostMap: { [type]: number }` wordt bij eerste open van een project lazy gemigreerd via `migrateMeerkostMapToLines` in `firebase-init.js` (Firestore `.update()` met dotted-path keys + `FieldValue.delete()`); `_applyLoadedState` accepteert `v: 1..6` met in-memory v:5-fallback via `_migrateMeerkostMapToLines` (pure converter in `index.html`). Tijdens de project-restore wordt de auto-save in `renderResults` tijdelijk onderdrukt (`_projectDoc = null` rond `_applyLoadedState`) zodat de migratie niet wordt geclobberd door een save met de pre-v:6 cfg-shape. Helpers in `index.html`: `_genMeerkostId`, `_emptyMeerkostLine`, `_sumMeerkostLines`, `_migrateMeerkostMapToLines` (pure), `_readMeerkostLinesFromDom`, `_meerkostDisclosureHtml`, `_meerkostRowHtml`, `_wireMeerkostRow`, `_updateMeerkostSummary`. Read-only mode (share-link) verbergt ✕/+ knoppen via CSS (`body.readonly-mode`) maar laat de `<details>` uitklap zichtbaar zodat de klant de breakdown ziet.

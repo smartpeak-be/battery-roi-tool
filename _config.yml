@@ -1,0 +1,22 @@
+# GitHub Pages publishes this branch through Jekyll. Keep non-runtime
+# repository files out of the public site while leaving them available in Git.
+exclude:
+  - _config.yml
+  - CLAUDE.md
+  - README.md
+  - dashboard-logged-in
+  - docs/
+  - e2e/
+  - functions/
+  - node_modules/
+  - scripts/
+  - tests/
+  - eslint.config.js
+  - firebase.json
+  - firestore.indexes.json
+  - firestore.rules
+  - netlify.toml
+  - package-lock.json
+  - package.json
+  - storage.rules
+  - vitest.config.js

@@ -134,7 +134,11 @@ function mergeProjectMetadata(project) {
     calcDefaults: { ...empty.calcDefaults, ...(project.calcDefaults || {}) },
   };
   merged.offertes      = project.offertes || {};
-  merged.serialNumbers = Array.isArray(project.serialNumbers) ? project.serialNumbers : [];
+  merged.serialNumbers = (Array.isArray(project.serialNumbers) ? project.serialNumbers : []).map(e => ({
+    ...e,
+    category: (e && e.category != null) ? e.category : null,
+    source: (e && e.source) || 'manual',
+  }));
   merged.manualConfigs = project.manualConfigs || {};
   return merged;
 }
@@ -296,6 +300,19 @@ async function updateProjectMetadata(id, patch) {
   await projectDoc(id).set(data, { merge: true });
 }
 
+// One-time schema upgrade: replace lastCalcRun.inputs.meerkostMap with
+// lastCalcRun.inputs.meerkostLines. Caller checks shape and only invokes
+// this when the legacy field is present. Uses doc.update() with dotted-path
+// keys so FieldValue.delete() works (set + merge would write a literal
+// dotted property name).
+async function migrateMeerkostMapToLines(id, meerkostLines) {
+  await projectDoc(id).update({
+    'lastCalcRun.inputs.meerkostLines': meerkostLines,
+    'lastCalcRun.inputs.meerkostMap': firebase.firestore.FieldValue.delete(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
 async function softDeleteProject(id) {
   await projectDoc(id).update({
     deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -438,7 +455,14 @@ async function getProductsConfig() {
 
 // ─── SHARES (customer-facing read-only snapshots) ────────────────────────────
 // Each share doc holds a full v:5 state payload (inputs + results + dailyCompact).
-// Firestore rules: read = public (customers have no login), write = isWhitelisted().
+// Firestore rules: bearer-link read until expiresAt, write = isWhitelisted().
+const SHARE_LINK_TTL_DAYS = 180;
+const LEAD_RESULT_TTL_DAYS = 30;
+
+function futureTimestamp(days) {
+  return firebase.firestore.Timestamp.fromDate(new Date(Date.now() + days * 24 * 60 * 60 * 1000));
+}
+
 async function createShare(payload, projectId) {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd — alleen ingelogde gebruikers mogen deellinks maken.');
@@ -447,6 +471,7 @@ async function createShare(payload, projectId) {
     projectId:  projectId || null,
     createdBy:  email,
     createdAt:  firebase.firestore.FieldValue.serverTimestamp(),
+    expiresAt:  futureTimestamp(SHARE_LINK_TTL_DAYS),
   };
   return getDb().collection('shares').add(doc);
 }
@@ -607,17 +632,11 @@ async function _resizeToJpeg(source, MAX_SIDE, QUALITY) {
     naturalWidth  = source.naturalWidth;
     naturalHeight = source.naturalHeight;
   } else if (source instanceof Blob) {
-    if (source.size === 0) throw new Error('Decoder-output is leeg (0 bytes).');
-    if (typeof createImageBitmap !== 'function') {
-      throw new Error('createImageBitmap niet ondersteund in deze browser.');
-    }
-    let bitmap;
-    try { bitmap = await createImageBitmap(source); }
-    catch (e) { throw new Error('Kan afbeelding niet decoderen: ' + (e && e.message ? e.message : e), { cause: e }); }
-    drawable = bitmap;
-    naturalWidth  = bitmap.width;
-    naturalHeight = bitmap.height;
-    cleanup = () => { if (typeof bitmap.close === 'function') bitmap.close(); };
+    const decoded = await _decodeBlobForCanvas(source);
+    drawable = decoded.drawable;
+    naturalWidth = decoded.width;
+    naturalHeight = decoded.height;
+    cleanup = decoded.cleanup;
   } else {
     throw new Error('makeThumbnail: source moet File/Blob of HTMLImageElement zijn');
   }
@@ -640,6 +659,54 @@ async function _resizeToJpeg(source, MAX_SIDE, QUALITY) {
   cleanup();
   if (!blob) throw new Error('Thumbnail-aanmaak mislukt (canvas.toBlob)');
   return { blob, width: naturalWidth, height: naturalHeight };
+}
+
+async function _decodeBlobForCanvas(blob) {
+  if (blob.size === 0) throw new Error('Decoder-output is leeg (0 bytes).');
+
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      return {
+        drawable: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        cleanup: () => { if (typeof bitmap.close === 'function') bitmap.close(); },
+      };
+    } catch (bitmapErr) {
+      console.warn('[image-decode] createImageBitmap failed, falling back to <img>:', bitmapErr);
+    }
+  }
+
+  return _decodeBlobViaImageElement(blob);
+}
+
+async function _decodeBlobViaImageElement(blob) {
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = url;
+
+  try {
+    if (typeof img.decode === 'function') {
+      await img.decode();
+    } else {
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+    }
+  } catch (imgErr) {
+    URL.revokeObjectURL(url);
+    throw new Error('Kan afbeelding niet decoderen: ' + (imgErr && imgErr.message ? imgErr.message : imgErr), { cause: imgErr });
+  }
+
+  return {
+    drawable: img,
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+    cleanup: () => URL.revokeObjectURL(url),
+  };
 }
 
 function getStorage() {
@@ -857,6 +924,34 @@ async function deleteProjectPhoto(projectId, photoId, storagePath, thumbStorageP
     try { await getStorage().ref(thumbStoragePath).delete(); }
     catch (e) { console.warn('Storage thumb-blob verwijderen mislukt', e); }
   }
+}
+
+/**
+ * Reset a serial-tagged photo back to ocrStatus=null so the Cloud Function
+ * `ocrSerial` re-fires. Used by the "Re-run OCR" knop in the serial-list UI.
+ */
+async function requestPhotoOcrRerun(projectId, photoId) {
+  const db = firebase.firestore();
+  await db.collection('projects').doc(projectId)
+    .collection('photos').doc(photoId)
+    .update({ ocrStatus: null, ocrError: firebase.firestore.FieldValue.delete() });
+}
+
+/**
+ * Atomically write the serial-tag fields onto a photo-doc. Used by the
+ * tag-modal save handler indirectly (the photo-uploader uses a WriteBatch
+ * for multi-photo saves; this helper is for single-photo flows / future
+ * retag UX).
+ */
+async function setPhotoSerialTag(projectId, photoId, category) {
+  const db = firebase.firestore();
+  await db.collection('projects').doc(projectId)
+    .collection('photos').doc(photoId)
+    .update({
+      tag: 'serial',
+      serialCategory: category,
+      ocrStatus: 'pending',
+    });
 }
 
 // ─── OFFERTES (per-config PDF upload) ────────────────────────────────────────
@@ -1099,7 +1194,8 @@ async function createLead(leadData) {
     status: 'cold_lead',
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     hotLeadAt: null,
-    deletedAt: null
+    deletedAt: null,
+    resultExpiresAt: futureTimestamp(LEAD_RESULT_TTL_DAYS),
   };
   const ref = await db.collection('leads').add(doc);
   return ref.id;
@@ -1160,7 +1256,14 @@ async function updateLeadToHot(leadId) {
 /** Write a document to the mail collection (triggers Firebase email extension). */
 async function createMailDoc(mailData) {
   const db = getDb();
-  await db.collection('mail').add(mailData);
+  if (!mailData || !mailData.kind || !mailData.leadId) {
+    throw new Error('Mail mist verplichte metadata.');
+  }
+  const mailId = `${mailData.kind}_${mailData.leadId}`;
+  await db.collection('mail').doc(mailId).set({
+    ...mailData,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
 }
 
 /**
@@ -1561,6 +1664,7 @@ async function deleteProductDatasheet(productId, dsId, storagePath) {
 }
 
 // ─── EXPOSE HELPERS ON WINDOW ────────────────────────────────────────────────
+window.migrateMeerkostMapToLines = migrateMeerkostMapToLines;
 window.isMarstekConfig = isMarstekConfig;
 window.isZendureConfig = isZendureConfig;
 window.isSupportedConfig = isSupportedConfig;
@@ -1584,3 +1688,5 @@ window.deleteProductPhoto = deleteProductPhoto;
 window.uploadProductDatasheet = uploadProductDatasheet;
 window.listProductDatasheets = listProductDatasheets;
 window.deleteProductDatasheet = deleteProductDatasheet;
+window.requestPhotoOcrRerun = requestPhotoOcrRerun;
+window.setPhotoSerialTag = setPhotoSerialTag;
