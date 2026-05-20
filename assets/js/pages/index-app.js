@@ -6,7 +6,7 @@ import {
   processDataPure,
   validateCalcInputs,
 } from '../calc-engine.js';
-import { escapeHtml, showSpinner, hideSpinner, withSpinner } from '../shared-helpers.js';
+import { escapeHtml, showSpinner, hideSpinner, withSpinner, showConfirm } from '../shared-helpers.js';
 import { makeScenCard } from '../index/scenario-card.js';
 import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js';
 
@@ -591,8 +591,14 @@ function editManualConfig(type) {
   showManualConfigForm(type);
 }
 
-function deleteManualConfig(type) {
-  if (!confirm('Manuele configuratie verwijderen?')) return;
+async function deleteManualConfig(type) {
+  const ok = await showConfirm({
+    title: 'Manuele configuratie verwijderen?',
+    message: `Configuratie "${type}" wordt uit deze berekening verwijderd.`,
+    confirmText: 'Verwijderen',
+    variant: 'danger',
+  });
+  if (!ok) return;
   delete _manualConfigs[type];
   renderManualConfigCards();
 }
@@ -972,9 +978,14 @@ async function _confirmConfigCascade(projectId, newSelectedTypes) {
     if (removedWithPdf.length === 0) return true;
     const label = removedWithPdf.join(', ');
     const msg = removedWithPdf.length === 1
-      ? `De config "${label}" heeft een offerte-PDF. Als je doorgaat wordt die ook verwijderd.\n\nDoorgaan?`
-      : `De configs "${label}" hebben offerte-PDF's. Als je doorgaat worden die ook verwijderd.\n\nDoorgaan?`;
-    return confirm(msg);
+      ? `De config "${label}" heeft een offerte-PDF. Als je doorgaat wordt die ook verwijderd.`
+      : `De configs "${label}" hebben offerte-PDF's. Als je doorgaat worden die ook verwijderd.`;
+    return showConfirm({
+      title: 'Configuratie met offerte verwijderen?',
+      message: msg,
+      confirmText: 'Doorgaan',
+      variant: 'danger',
+    });
   } catch (e) {
     console.warn('_confirmConfigCascade: snapshot read mislukt, doorgaan zonder confirm', e);
     return true; // fail-open: don't block Bereken on a stale read error.
@@ -1538,7 +1549,15 @@ function wireProjectCsvUpload() {
     const file = e.target.files[0];
     if (!file) return;
     const isReplace = fileInput.dataset.replace === '1' && _projectDoc.csvUpload;
-    if (isReplace && !confirm('Vorige CSV en berekening blijven bewaard tot je opnieuw rekent. Doorgaan?')) return;
+    if (isReplace) {
+      const ok = await showConfirm({
+        title: 'CSV vervangen?',
+        message: 'Vorige CSV en berekening blijven bewaard tot je opnieuw rekent.',
+        confirmText: 'Doorgaan',
+        variant: 'primary',
+      });
+      if (!ok) return;
+    }
 
     await withSpinner(async () => {
       try {

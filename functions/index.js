@@ -174,6 +174,7 @@ export function shouldRun(before, after) {
 
 export function shouldCleanup(before, after) {
   if (!before || before.tag !== 'serial') return false;
+  if (!after && before.preserveSerialEntry === true) return false;
   if (!after) return true; // photo deleted while tagged
   return after.tag !== 'serial';
 }

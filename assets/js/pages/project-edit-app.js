@@ -1,4 +1,4 @@
-import { escapeHtml, showToast, showState, showSpinner, hideSpinner } from '../shared-helpers.js';
+import { escapeHtml, showToast, showState, showSpinner, hideSpinner, showConfirm } from '../shared-helpers.js';
 import { extractCsvForStorage } from '../csv.js';
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
@@ -876,7 +876,13 @@ function wireBlokD() {
   document.querySelectorAll('[data-serial-delete]').forEach(btn => {
     btn.addEventListener('click', async e => {
       const id = e.currentTarget.getAttribute('data-serial-delete');
-      if (!confirm('Dit serienummer verwijderen?')) return;
+      const ok = await showConfirm({
+        title: 'Serienummer verwijderen?',
+        message: 'Dit serienummer wordt uit het project verwijderd.',
+        confirmText: 'Serienummer verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
       if (PROJECT_ID) {
         try { await deleteProjectSerial(PROJECT_ID, id); }
         catch (err) { showToast('Verwijderen mislukt: ' + (err && err.message ? err.message : String(err)), 'danger'); return; }

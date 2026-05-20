@@ -111,6 +111,7 @@ const firebaseInitGlobals = {
   updateSpinner: 'readonly',
   hideSpinner: 'readonly',
   withSpinner: 'readonly',
+  showConfirm: 'readonly',
 };
 
 export default [

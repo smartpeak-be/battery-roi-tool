@@ -115,6 +115,83 @@ export async function withSpinner(fn, opts) {
   }
 }
 
+// --- Modal confirmations ---
+
+function _ensureConfirmStyles() {
+  if (document.getElementById('spConfirmStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'spConfirmStyles';
+  style.textContent = `
+    .sp-confirm-backdrop{position:fixed;inset:0;z-index:20000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+    .sp-confirm-dialog{width:min(100%,460px);background:#fff;border-radius:16px;box-shadow:0 24px 80px rgba(15,23,42,.28);overflow:hidden;color:#1e2a3a}
+    .sp-confirm-header{padding:20px 22px 8px;font-weight:700;font-size:1.08rem}
+    .sp-confirm-body{padding:0 22px 18px;color:#52627a;white-space:pre-wrap;line-height:1.45}
+    .sp-confirm-actions{display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;background:#f8fafc;border-top:1px solid #e2e8f0;flex-wrap:wrap}
+    .sp-confirm-btn{border:1px solid #cbd5e1;background:#fff;color:#1e2a3a;border-radius:10px;padding:8px 14px;font-weight:600;cursor:pointer}
+    .sp-confirm-btn:hover{background:#f1f5f9}
+    .sp-confirm-btn.primary{background:#2c7be5;border-color:#2c7be5;color:#fff}
+    .sp-confirm-btn.primary:hover{background:#1a5fba}
+    .sp-confirm-btn.danger{background:#dc2626;border-color:#dc2626;color:#fff}
+    .sp-confirm-btn.danger:hover{background:#b91c1c}
+    .sp-confirm-btn.warning{background:#f59e0b;border-color:#f59e0b;color:#111827}
+    .sp-confirm-btn.warning:hover{background:#d97706}
+  `;
+  document.head.appendChild(style);
+}
+
+export function showConfirm(opts = {}) {
+  _ensureConfirmStyles();
+  const actions = Array.isArray(opts.actions) && opts.actions.length
+    ? opts.actions
+    : [
+        { value: false, label: opts.cancelText || 'Annuleren', variant: 'secondary' },
+        { value: true, label: opts.confirmText || 'Bevestigen', variant: opts.variant || 'primary', autofocus: true },
+      ];
+
+  return new Promise(resolve => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'sp-confirm-backdrop';
+    backdrop.setAttribute('role', 'presentation');
+    const title = opts.title || 'Bevestigen';
+    const message = opts.message || '';
+    backdrop.innerHTML = `
+      <div class="sp-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="spConfirmTitle">
+        <div class="sp-confirm-header" id="spConfirmTitle">${escapeHtml(title)}</div>
+        ${message ? `<div class="sp-confirm-body">${escapeHtml(message)}</div>` : ''}
+        <div class="sp-confirm-actions"></div>
+      </div>
+    `;
+    const actionsEl = backdrop.querySelector('.sp-confirm-actions');
+    let settled = false;
+    const close = (value) => {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener('keydown', onKeydown);
+      backdrop.remove();
+      resolve(value);
+    };
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') close(opts.cancelValue !== undefined ? opts.cancelValue : false);
+    };
+    actions.forEach((action, idx) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `sp-confirm-btn ${action.variant || ''}`.trim();
+      btn.textContent = action.label || String(action.value);
+      btn.addEventListener('click', () => close(action.value));
+      actionsEl.appendChild(btn);
+      if (action.autofocus || (!actions.some(a => a.autofocus) && idx === actions.length - 1)) {
+        setTimeout(() => btn.focus(), 0);
+      }
+    });
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) close(opts.cancelValue !== undefined ? opts.cancelValue : false);
+    });
+    document.addEventListener('keydown', onKeydown);
+    document.body.appendChild(backdrop);
+  });
+}
+
 // --- UI Feedback ---
 
 /**
@@ -185,4 +262,5 @@ if (typeof window !== 'undefined') {
   window.updateSpinner = updateSpinner;
   window.hideSpinner = hideSpinner;
   window.withSpinner = withSpinner;
+  window.showConfirm = showConfirm;
 }
