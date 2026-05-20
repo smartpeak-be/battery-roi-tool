@@ -62,6 +62,39 @@ describe('extractSerialFromOcr', () => {
     expect(extractSerialFromOcr(annotations).value).toBe('MUCHLONGER1234567');
   });
 
+  it('prefers a value next to an SN label over a longer unrelated token', () => {
+    const annotations = [
+      { description: 'MODEL ZENDURE-SUPER-LONG-TYPE\nS/N: ZD123456789\nCE 2024' },
+      { description: 'ZENDURE-SUPER-LONG-TYPE' },
+      { description: 'S/N' },
+      { description: 'ZD123456789' },
+    ];
+    expect(extractSerialFromOcr(annotations).value).toBe('ZD123456789');
+  });
+
+  it('can pick the line below a serial label', () => {
+    const annotations = [
+      { description: 'Serial Number\nZX987654321\nMODEL-VERY-LONG-NOT-SERIAL' },
+      { description: 'MODEL-VERY-LONG-NOT-SERIAL' },
+    ];
+    expect(extractSerialFromOcr(annotations).value).toBe('ZX987654321');
+  });
+
+  it('adds a lower-label bonus for battery stickers when there is no explicit SN label', () => {
+    const annotations = [
+      { description: 'TYPE-CODE-LONG-999\nZD-BAT-123456' },
+      {
+        description: 'TYPE-CODE-LONG-999',
+        boundingPoly: { vertices: [{ y: 10 }, { y: 10 }, { y: 30 }, { y: 30 }] },
+      },
+      {
+        description: 'ZD-BAT-123456',
+        boundingPoly: { vertices: [{ y: 80 }, { y: 80 }, { y: 100 }, { y: 100 }] },
+      },
+    ];
+    expect(extractSerialFromOcr(annotations, { category: 'batterij' }).value).toBe('ZD-BAT-123456');
+  });
+
   it('case-insensitive regex but preserves original casing', () => {
     const annotations = [
       { description: 'aBcD1234ef' },

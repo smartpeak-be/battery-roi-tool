@@ -2,10 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock @google-cloud/vision before importing the function module.
 const mockTextDetection = vi.fn();
+const mockJpegDecode = vi.fn(() => {
+  throw new Error('not-a-jpeg');
+});
+const mockJsQr = vi.fn(() => null);
 vi.mock('@google-cloud/vision', () => ({
   ImageAnnotatorClient: vi.fn().mockImplementation(() => ({
     textDetection: mockTextDetection,
   })),
+}));
+vi.mock('jpeg-js', () => ({
+  default: { decode: mockJpegDecode },
+}));
+vi.mock('jsqr', () => ({
+  default: mockJsQr,
 }));
 
 // Mock firebase-admin Storage + Firestore.
@@ -62,6 +72,10 @@ function makeEvent({ before, after, projectId = 'P', photoId = 'PH' }) {
 describe('handleOcrSerial — happy path', () => {
   beforeEach(() => {
     mockTextDetection.mockReset();
+    mockJpegDecode.mockReset();
+    mockJpegDecode.mockImplementation(() => { throw new Error('not-a-jpeg'); });
+    mockJsQr.mockReset();
+    mockJsQr.mockReturnValue(null);
     mockDownload.mockReset();
     mockRunTransaction.mockReset();
     mockProjectDocGet.mockReset();
@@ -107,6 +121,48 @@ describe('handleOcrSerial — happy path', () => {
 
     expect(mockTextDetection).toHaveBeenCalled();
     expect(mockRunTransaction).toHaveBeenCalled();
+  });
+
+  it('uses QR value before OCR text when a QR code is readable', async () => {
+    mockDownload.mockResolvedValue([Buffer.from('fake-jpeg-bytes')]);
+    mockJpegDecode.mockReturnValue({
+      data: new Uint8ClampedArray(4 * 4 * 4),
+      width: 4,
+      height: 4,
+    });
+    mockJsQr.mockReturnValue({ data: 'ZX-QR-SERIAL-123456' });
+    mockTextDetection.mockResolvedValue([{
+      textAnnotations: [
+        { description: 'FULL\nSOME-MUCH-LONGER-WRONG-TEXT' },
+        { description: 'SOME-MUCH-LONGER-WRONG-TEXT' },
+      ],
+    }]);
+    const txnUpdateCalls = [];
+    mockRunTransaction.mockImplementation(async (fn) => {
+      const txn = {
+        get: vi.fn().mockResolvedValue({
+          exists: true,
+          data: () => ({ serialNumbers: [] }),
+        }),
+        update: vi.fn((ref, payload) => txnUpdateCalls.push(payload)),
+      };
+      return fn(txn);
+    });
+
+    const event = makeEvent({
+      before: null,
+      after: {
+        tag: 'serial',
+        serialCategory: 'batterij',
+        ocrStatus: 'pending',
+        storagePath: 'projects/P/123_foto.jpg',
+      },
+    });
+    await handleOcrSerial(event);
+
+    expect(mockTextDetection).not.toHaveBeenCalled();
+    const projectUpdate = txnUpdateCalls.find(p => Array.isArray(p.serialNumbers));
+    expect(projectUpdate.serialNumbers[0].value).toBe('ZX-QR-SERIAL-123456');
   });
 });
 
@@ -160,6 +216,10 @@ describe('shouldRun / shouldCleanup guards', () => {
 describe('handleOcrSerial — failure paths', () => {
   beforeEach(() => {
     mockTextDetection.mockReset();
+    mockJpegDecode.mockReset();
+    mockJpegDecode.mockImplementation(() => { throw new Error('not-a-jpeg'); });
+    mockJsQr.mockReset();
+    mockJsQr.mockReturnValue(null);
     mockDownload.mockReset();
     mockRunTransaction.mockReset();
     mockPhotoDocUpdate.mockReset();
