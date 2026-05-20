@@ -1343,6 +1343,24 @@ function buildQuoteModalHtml(projects, context) {
         <select class="form-select" id="quoteVat"><option value="6">6% woning 10+ jaar</option><option value="21" selected>21%</option></select>
       </div>
       <div class="col-12">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h6 class="mb-0">Extra producten</h6>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddQuoteProduct">
+            <i class="fa-solid fa-plus me-1"></i>Productlijn toevoegen
+          </button>
+        </div>
+        <div id="quoteExtraProducts"></div>
+      </div>
+      <div class="col-12">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h6 class="mb-0">Manuele lijnen</h6>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddQuoteManualLine">
+            <i class="fa-solid fa-plus me-1"></i>Manuele lijn toevoegen
+          </button>
+        </div>
+        <div id="quoteManualLines"></div>
+      </div>
+      <div class="col-12">
         <div id="quotePreview" class="border rounded p-3 bg-light"></div>
       </div>
     </div>`;
@@ -1352,6 +1370,119 @@ function wireQuoteModal() {
   ['quoteProject', 'quoteConfig', 'quoteVat'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', updateQuotePreview);
   });
+  document.getElementById('btnAddQuoteProduct')?.addEventListener('click', () => {
+    document.getElementById('quoteExtraProducts').insertAdjacentHTML('beforeend', quoteExtraProductRowHtml());
+    wireQuoteDynamicRows();
+    updateQuotePreview();
+  });
+  document.getElementById('btnAddQuoteManualLine')?.addEventListener('click', () => {
+    document.getElementById('quoteManualLines').insertAdjacentHTML('beforeend', quoteManualLineRowHtml());
+    wireQuoteDynamicRows();
+    updateQuotePreview();
+  });
+  wireQuoteDynamicRows();
+}
+
+function quoteExtraProductRowHtml(row = {}) {
+  return `
+    <div class="row g-2 align-items-end mb-2 quote-extra-product-row">
+      <div class="col-md-7">
+        <label class="form-label small mb-1">Product</label>
+        <select class="form-select quote-extra-product-id">${productOptionsHtml(row.productId || '')}</select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">Aantal</label>
+        <input type="number" class="form-control quote-extra-product-qty" min="1" step="1" value="${escapeAttr(row.qty || 1)}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">BTW</label>
+        <select class="form-select quote-extra-product-vat">
+          <option value="6" ${row.vat === 6 ? 'selected' : ''}>6%</option>
+          <option value="21" ${row.vat === 21 || row.vat == null ? 'selected' : ''}>21%</option>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <button type="button" class="btn btn-outline-danger w-100 quote-row-remove"><i class="fa-solid fa-trash"></i></button>
+      </div>
+    </div>`;
+}
+
+function quoteManualLineRowHtml(row = {}) {
+  return `
+    <div class="row g-2 align-items-end mb-2 quote-manual-line-row">
+      <div class="col-md-6">
+        <label class="form-label small mb-1">Omschrijving</label>
+        <input type="text" class="form-control quote-manual-desc" value="${escapeAttr(row.description || '')}" placeholder="Omschrijving">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Prijs ex BTW</label>
+        <div class="input-group">
+          <span class="input-group-text">€</span>
+          <input type="number" class="form-control quote-manual-price" min="0" step="0.01" value="${escapeAttr(row.priceExVat ?? '')}">
+        </div>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">BTW</label>
+        <select class="form-select quote-manual-vat">
+          <option value="6" ${row.vat === 6 ? 'selected' : ''}>6%</option>
+          <option value="21" ${row.vat === 21 || row.vat == null ? 'selected' : ''}>21%</option>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <button type="button" class="btn btn-outline-danger w-100 quote-row-remove"><i class="fa-solid fa-trash"></i></button>
+      </div>
+    </div>`;
+}
+
+function wireQuoteDynamicRows() {
+  document.querySelectorAll('#quoteModalBody .quote-row-remove').forEach(btn => {
+    btn.onclick = () => {
+      btn.closest('.quote-extra-product-row, .quote-manual-line-row').remove();
+      updateQuotePreview();
+    };
+  });
+  document.querySelectorAll('#quoteExtraProducts select, #quoteExtraProducts input, #quoteManualLines input, #quoteManualLines select').forEach(el => {
+    el.oninput = updateQuotePreview;
+    el.onchange = updateQuotePreview;
+  });
+}
+
+function readQuoteExtraProductLines() {
+  const { productsById } = _maps();
+  return Array.from(document.querySelectorAll('#quoteExtraProducts .quote-extra-product-row')).map(row => {
+    const productId = row.querySelector('.quote-extra-product-id').value;
+    const product = productsById[productId];
+    const qty = parseInt(row.querySelector('.quote-extra-product-qty').value, 10) || 0;
+    const vat = parseFloat(row.querySelector('.quote-extra-product-vat').value) || 21;
+    if (!product || qty <= 0) return null;
+    const exVat = configSubtotalExVat([{ productId, qty }], productsById);
+    return {
+      description: `${qty}x ${productLabel(product)}`,
+      exVat,
+      vat,
+    };
+  }).filter(Boolean);
+}
+
+function readQuoteManualLines() {
+  return Array.from(document.querySelectorAll('#quoteManualLines .quote-manual-line-row')).map(row => {
+    const description = row.querySelector('.quote-manual-desc').value.trim();
+    const exVat = parseFloat(row.querySelector('.quote-manual-price').value) || 0;
+    const vat = parseFloat(row.querySelector('.quote-manual-vat').value) || 21;
+    if (!description || exVat <= 0) return null;
+    return { description, exVat, vat };
+  }).filter(Boolean);
+}
+
+function quoteLineHtml(line) {
+  const incl = line.exVat * (1 + line.vat / 100);
+  return `
+          <tr>
+            <td>${escapeHtml(line.description)}</td>
+            <td class="text-end">€${line.exVat.toFixed(2)}</td>
+            <td class="text-end">${line.vat}%</td>
+            <td class="text-end">€${incl.toFixed(2)}</td>
+          </tr>`;
 }
 
 function updateQuotePreview() {
@@ -1393,7 +1524,10 @@ function updateQuotePreview() {
             <td class="text-end">${vat}%</td>
             <td class="text-end">€${miscIncl.toFixed(2)}</td>
           </tr>` : '';
-  const totalIncl = mainIncl + materialIncl + miscIncl + bebatIncl;
+  const extraLines = [...readQuoteExtraProductLines(), ...readQuoteManualLines()];
+  const extraRows = extraLines.map(quoteLineHtml).join('');
+  const extraIncl = extraLines.reduce((sum, line) => sum + line.exVat * (1 + line.vat / 100), 0);
+  const totalIncl = mainIncl + materialIncl + miscIncl + bebatIncl + extraIncl;
   el.innerHTML = `
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-2">
@@ -1407,6 +1541,7 @@ function updateQuotePreview() {
           </tr>
           ${materialRow}
           ${miscRow}
+          ${extraRows}
           <tr>
             <td>Bebat bijdrage (${kg.toFixed(2)} kg × €${bebatPrice.toFixed(2)}/kg)</td>
             <td class="text-end">€${(bebatIncl / 1.21).toFixed(2)}</td>
