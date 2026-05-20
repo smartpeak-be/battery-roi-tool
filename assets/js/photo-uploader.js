@@ -250,6 +250,11 @@ import { escapeHtml } from './shared-helpers.js';
       if (lb) lb.classList.remove('open');
     }
 
+    function openByPhotoId(photoId) {
+      const idx = state.photos.findIndex(p => p.id === photoId);
+      if (idx >= 0) _openLightbox(idx);
+    }
+
     // Lazy backfill — one at a time, fail-soft.
     async function _drainBackfillQueue() {
       if (state.backfillBusy) return;
@@ -541,7 +546,7 @@ import { escapeHtml } from './shared-helpers.js';
 
     refresh();
 
-    return { refresh, destroy };
+    return { refresh, destroy, openByPhotoId };
   }
 
   global.mountPhotoUploader = mountPhotoUploader;

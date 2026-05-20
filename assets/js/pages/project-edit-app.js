@@ -1,4 +1,4 @@
-import { escapeHtml, showToast, showState, shortEmail, formatTs, showSpinner, hideSpinner, withSpinner } from '../shared-helpers.js';
+import { escapeHtml, showToast, showState, showSpinner, hideSpinner } from '../shared-helpers.js';
 import { extractCsvForStorage } from '../csv.js';
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ function _subscribeSerials() {
   // re-runs on auth-state transitions (token refresh) so the same call site
   // can fire multiple times in the lifetime of a tab.
   if (_serialUnsub) {
-    try { _serialUnsub(); } catch (e) {}
+    try { _serialUnsub(); } catch (_) {}
     _serialUnsub = null;
   }
   if (!PROJECT_ID) return;
@@ -152,7 +152,7 @@ function _serialListEqual(a, b) {
 // Cleanup the snapshot listener on page unload so Firestore doesn't keep
 // the connection alive past the lifecycle of this page.
 window.addEventListener('beforeunload', () => {
-  if (_serialUnsub) { try { _serialUnsub(); } catch (e) {} _serialUnsub = null; }
+  if (_serialUnsub) { try { _serialUnsub(); } catch (_) {} _serialUnsub = null; }
 });
 
 function renderSections() {
@@ -205,33 +205,6 @@ async function _refreshOffertes() {
   } catch (err) {
     showToast('Kon offertes niet verversen: ' + (err && err.message ? err.message : String(err)), 'danger');
   }
-}
-
-// Helper — replaces one accordion-item element in place without losing state of others.
-// For accordion items the "open" state is controlled by Bootstrap collapse classes.
-function rerenderSection(id, renderFn, wireFn) {
-  const existing = document.getElementById(id);
-  // Check if the collapse panel is currently shown
-  const collapseEl = existing ? existing.closest('.accordion-item') : null;
-  const collapsePanel = collapseEl ? collapseEl.querySelector('.accordion-collapse') : null;
-  const wasShown = collapsePanel ? collapsePanel.classList.contains('show') : true;
-
-  const wrap = document.createElement('div');
-  wrap.innerHTML = renderFn();
-  const freshItem = wrap.firstElementChild; // the new accordion-item
-  // Sync collapse state
-  if (!wasShown) {
-    const newPanel = freshItem.querySelector('.accordion-collapse');
-    const newBtn   = freshItem.querySelector('.accordion-button');
-    if (newPanel) { newPanel.classList.remove('show'); }
-    if (newBtn)   { newBtn.classList.add('collapsed'); newBtn.setAttribute('aria-expanded', 'false'); }
-  }
-  if (collapseEl) {
-    collapseEl.replaceWith(freshItem);
-  } else if (existing) {
-    existing.replaceWith(freshItem);
-  }
-  wireFn();
 }
 
 function sectionBlokA() {
@@ -935,9 +908,8 @@ function wireBlokD() {
       const photoLink = e.target.closest('.serial-photo-link');
       if (photoLink) {
         const photoId = photoLink.getAttribute('data-photo-id');
-        // If the page has a lightbox helper, call it here; otherwise no-op.
-        if (photoId && typeof window.openPhotoLightbox === 'function') {
-          window.openPhotoLightbox(photoId);
+        if (photoId && _blokDUploader && typeof _blokDUploader.openByPhotoId === 'function') {
+          _blokDUploader.openByPhotoId(photoId);
         }
       }
     });

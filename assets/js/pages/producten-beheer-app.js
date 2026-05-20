@@ -234,7 +234,7 @@ function wireCategoryModal() {
 function renderCategoryModal() {
   const container = document.getElementById('categoryList');
   let html = '';
-  _categories.forEach((c, i) => {
+  _categories.forEach((c) => {
     const isDefault = c.isDefault;
     html += `
       <div class="cat-row d-flex align-items-center gap-2 mb-2 ${isDefault ? 'is-default' : ''}" data-id="${escapeAttr(c.id)}">
@@ -567,8 +567,6 @@ function buildDetailFormHtml(product, mode) {
 }
 
 function wireDetailForm(container, product) {
-  const isCreate = !product;
-
   // Wire brand "Andere" toggle
   const brandSelect = container.querySelector('.detail-brand-select');
   const customBrandGroup = container.querySelector('[data-custom-brand-group]');
@@ -849,13 +847,6 @@ async function renderProductDatasheets(list, productId) {
     list.innerHTML = '<span class="text-danger small">Fout bij laden datasheets</span>';
     console.error('renderProductDatasheets', err);
   }
-}
-
-function formatBytes(bytes) {
-  if (!bytes) return '0 B';
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 function renderSpecFields(container, categoryId, existingSpecs) {

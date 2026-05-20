@@ -1,13 +1,12 @@
 import { extractCsvForStorage } from '../csv.js';
 import {
-  CALC_CONSTANTS, VALIDATION_BOUNDS,
   formatDate, fmt2, fmtEur, renderWithAvg,
-  parseCSVLine, parseEurAmount, parseSheetConfigs,
-  csvToAllDaysAndMeta, buildAllDaysFromDailyCompact,
-  calcScenario, processDataPure, computePerYearStats, averageStats,
+  parseSheetConfigs,
+  buildAllDaysFromDailyCompact,
+  processDataPure,
   validateCalcInputs,
 } from '../calc-engine.js';
-import { escapeHtml, showSpinner, updateSpinner, hideSpinner, withSpinner } from '../shared-helpers.js';
+import { escapeHtml, showSpinner, hideSpinner, withSpinner } from '../shared-helpers.js';
 import { makeScenCard } from '../index/scenario-card.js';
 import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js';
 
@@ -635,7 +634,6 @@ async function calculate() {
     return;
   }
 
-  const priceKey = _getPriceKey();
   const selectedConfigs = readAllSelectedConfigObjects();
 
   if (!selectedConfigs.length) { alert('Kies minstens één productconfiguratie.'); return; }
@@ -692,14 +690,6 @@ async function calculate() {
 // ─── MAIN CALC ─────────────────────────────────────────────────────────────────
 // Multi-year helpers (computePerYearStats, averageStats), CSV parsing (_csvToAllDaysAndMeta),
 // and data rebuilding (_buildAllDaysFromDailyCompact) are in assets/js/calc-engine.js
-
-// Accepts either a raw CSV string OR a pre-built { allDays, eanCode, meterNr, meterType } object
-// (used by project-mode which loads data from Firestore instead of a file upload).
-function processData(input, pvInv, selectedConfigs, priceDay, priceNight) {
-  const d = processDataPure(input, pvInv, selectedConfigs, priceDay, priceNight);
-  if (!d) { alert('Geen data gevonden in het CSV bestand.'); return; }
-  renderResults(d);
-}
 
 // Async wrapper for processData to allow awaiting the project save
 async function processDataAsync(input, pvInv, selectedConfigs, priceDay, priceNight) {

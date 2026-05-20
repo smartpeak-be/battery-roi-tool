@@ -50,6 +50,15 @@
 .icon-warn   { color: #f59e0b; }
 .icon-danger { color: #dc2626; }
 
+.sp-pre-wrap { white-space: pre-wrap; }
+.sp-text-body-sm {
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+.sp-text-body-xs {
+  font-size: 0.82rem;
+}
+
 /* Status chip — Bootstrap .badge with pointer cursor + custom runtime color */
 .badge.status-chip {
   cursor: pointer;
@@ -783,6 +792,18 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   color: #495057;
   text-align: center;
   margin: 0;
+}
+.sp-chart-caption-injection {
+  color: #16a34a;
+  font-weight: 600;
+}
+.sp-chart-caption-battery {
+  color: #0ea5e9;
+  font-weight: 600;
+}
+.sp-chart-caption-grid {
+  color: #dc2626;
+  font-weight: 600;
 }
 
 /* Final CTA card */

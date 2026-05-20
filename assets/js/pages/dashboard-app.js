@@ -1,4 +1,4 @@
-import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, showSpinner, updateSpinner, hideSpinner, withSpinner } from '../shared-helpers.js';
+import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
@@ -277,7 +277,7 @@ function renderBoard(active, el) {
               <span class="count">${items.length}</span>
             </div>
             <div class="kanban-col-body">
-              ${items.map(p => kanbanCardHTML(p)).join('') || '<p class="sp-empty-state" style="font-size:0.82rem;">—</p>'}
+        ${items.map(p => kanbanCardHTML(p)).join('') || '<p class="sp-empty-state sp-text-body-xs">—</p>'}
             </div>
           </div>
         `;
@@ -609,7 +609,7 @@ function renderDrawer(project) {
 
   // Contact
   const contactLines = [];
-  if (m.customer.address) contactLines.push(`<div class="mb-1" style="white-space:pre-wrap;">📍 ${escapeHtml(m.customer.address)}</div>`);
+  if (m.customer.address) contactLines.push(`<div class="mb-1 sp-pre-wrap">📍 ${escapeHtml(m.customer.address)}</div>`);
   if (m.customer.phone)   contactLines.push(`<div class="mb-1">📞 <a href="tel:${escapeHtml(m.customer.phone)}">${escapeHtml(m.customer.phone)}</a></div>`);
   if (m.customer.email)   contactLines.push(`<div class="mb-1">✉️ <a href="mailto:${escapeHtml(m.customer.email)}">${escapeHtml(m.customer.email)}</a></div>`);
   if (contactLines.length > 0) {
@@ -643,7 +643,7 @@ function renderDrawer(project) {
     sections.push(`
       <section class="border-bottom pb-3 mb-3">
         <h6 class="mb-2 text-uppercase text-muted">Situatie</h6>
-        <div style="white-space:pre-wrap;font-size:0.92rem;line-height:1.4;">${escapeHtml(m.situation)}</div>
+          <div class="sp-pre-wrap sp-text-body-sm">${escapeHtml(m.situation)}</div>
       </section>
     `);
   }
@@ -652,7 +652,7 @@ function renderDrawer(project) {
     sections.push(`
       <section class="border-bottom pb-3 mb-3">
         <h6 class="mb-2 text-uppercase text-muted">Notities</h6>
-        <div style="white-space:pre-wrap;font-size:0.92rem;line-height:1.4;">${escapeHtml(m.notes)}</div>
+          <div class="sp-pre-wrap sp-text-body-sm">${escapeHtml(m.notes)}</div>
       </section>
     `);
   }
@@ -824,7 +824,7 @@ function renderComments(project, comments) {
         <span class="fw-semibold text-primary-emphasis small">${escapeHtml(shortEmail(c.author))}</span>
         <span class="text-muted small">${fmtRelTime(c.createdAt)}</span>
       </div>
-      <div style="white-space:pre-wrap;font-size:0.92rem;line-height:1.35;">${escapeHtml(c.text || '')}</div>
+              <div class="sp-pre-wrap sp-text-body-sm">${escapeHtml(c.text || '')}</div>
     </div>
   `).join('');
   // Scroll last comment into view if the newest is below the fold.
