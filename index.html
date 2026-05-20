@@ -100,7 +100,7 @@
     </div>
   </div>
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px;">
-    <button class="btn btn-secondary btn-load-configs" style="margin-top:0;" onclick="loadConfigs()">🔄 Configuraties laden</button>
+    <button type="button" id="loadConfigsBtn" class="btn btn-secondary btn-load-configs" style="margin-top:0;">🔄 Configuraties laden</button>
     <span id="configsStatus" style="font-size:0.85rem;color:var(--muted);">Klik om productconfiguraties te laden vanuit de prijslijst.</span>
   </div>
   <div id="configSelectorsArea" style="display:none;">
@@ -109,14 +109,14 @@
   <div id="manualConfigArea">
     <div id="manualConfigCards"></div>
     <div id="manualConfigFormContainer" style="display:none;"></div>
-    <button type="button" id="addManualConfigBtn" class="btn btn-secondary" style="margin-top:8px; display:none;" onclick="showManualConfigForm()">
+    <button type="button" id="addManualConfigBtn" class="btn btn-secondary" style="margin-top:8px; display:none;">
       <i class="fa-solid fa-plus"></i> Manuele configuratie
     </button>
   </div>
 </div>
 
 <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-top:8px;">
-  <button class="btn btn-calculate" onclick="calculate()">
+  <button type="button" id="calculateBtn" class="btn btn-calculate">
     <span>⚡</span> Bereken ROI
   </button>
 </div>
@@ -172,11 +172,11 @@
       Sla de berekening op als deelbare URL of als JSON-bestand. De CSV-data wordt <strong>niet</strong> opgeslagen — enkel de berekende resultaten en ingegeven parameters.
     </p>
     <div class="save-actions">
-      <button class="btn btn-secondary btn-copyshare" onclick="copyShareLink()">🔗 Kopieer deellink</button>
+      <button type="button" id="copyShareLinkBtn" class="btn btn-secondary btn-copyshare">🔗 Kopieer deellink</button>
     </div>
     <div class="share-url-row" id="shareUrlRow" style="display:none;">
-      <input type="text" id="shareUrlInput" readonly onclick="this.select()" />
-      <button class="btn btn-secondary" style="white-space:nowrap" onclick="document.getElementById('shareUrlInput').select();document.execCommand('copy');showToast('🔗 Gekopieerd!')">Kopieer</button>
+      <input type="text" id="shareUrlInput" readonly />
+      <button type="button" id="copyShareUrlBtn" class="btn btn-secondary" style="white-space:nowrap">Kopieer</button>
     </div>
   </div>
 </div>
@@ -679,10 +679,10 @@ function _buildManualConfigFormHtml(existing) {
         </div>
       </div>
       <div style="margin-top:12px; display:flex; gap:8px;">
-        <button type="button" class="btn btn-calculate" onclick="submitManualConfigForm('${e.type || ''}')" style="font-size:0.9rem; padding:6px 16px;">
+        <button type="button" class="btn btn-calculate" data-manual-submit data-edit-type="${escapeHtml(e.type || '')}" style="font-size:0.9rem; padding:6px 16px;">
           ${e.type ? 'Opslaan' : 'Toevoegen'}
         </button>
-        <button type="button" class="btn btn-secondary" onclick="hideManualConfigForm()" style="font-size:0.9rem; padding:6px 16px;">
+        <button type="button" class="btn btn-secondary" data-manual-cancel style="font-size:0.9rem; padding:6px 16px;">
           Annuleren
         </button>
       </div>
@@ -759,10 +759,10 @@ function renderManualConfigCards() {
           <strong>${escapeHtml(mc.merk)} ${escapeHtml(mc.omschrijving)}</strong>
           &mdash; ${fmt2(mc.batCap)} kWh / ${fmt2(mc.batInv)} kW &mdash; ${fmtEur(mc.price)}
         </span>
-        <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px;" onclick="editManualConfig('${mc.type}')" title="Bewerken">
+        <button type="button" class="btn btn-secondary" data-manual-edit="${escapeHtml(mc.type)}" style="font-size:0.8rem; padding:3px 8px;" title="Bewerken">
           <i class="fa-solid fa-pen-to-square"></i>
         </button>
-        <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:3px 8px; color:var(--danger);" onclick="deleteManualConfig('${mc.type}')" title="Verwijderen">
+        <button type="button" class="btn btn-secondary" data-manual-delete="${escapeHtml(mc.type)}" style="font-size:0.8rem; padding:3px 8px; color:var(--danger);" title="Verwijderen">
           <i class="fa-solid fa-trash"></i>
         </button>
       </div>
@@ -1001,7 +1001,7 @@ function renderScenarioGrid(d) {
       : `${escapeHtml(cfg.type)} — ${escapeHtml(cfg.omschrijving)}`;
     const specsBtn = cfg.isManual
       ? ''
-      : `<button class="btn-spec" onclick="window.open('producten.html?type=${encodeURIComponent(cfg.type)}', '_blank', 'noopener')">📖 Productspecs ↗</button>`;
+      : `<button type="button" class="btn-spec js-product-specs" data-product-type="${escapeHtml(cfg.type)}">📖 Productspecs ↗</button>`;
     gridHTML += `<div style="grid-column:1/-1;">
       <div class="config-group-header">
         🔋 Configuratie ${idx+1}
@@ -1331,8 +1331,68 @@ function renderCapAnalysis(capAnalysis, isFullYear, daysInWindow, numYears) {
   content.innerHTML = html;
 }
 
+async function copyShareUrlInput() {
+  const input = document.getElementById('shareUrlInput');
+  if (!input || !input.value) return;
+  input.select();
+  if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(input.value);
+      showToast('🔗 Gekopieerd!');
+      return;
+    } catch (_) {
+      // Fall back to the legacy selection + execCommand path below.
+    }
+  }
+  document.execCommand('copy');
+  showToast('🔗 Gekopieerd!');
+}
+
+function wireIndexActions() {
+  document.getElementById('loadConfigsBtn')?.addEventListener('click', () => {
+    loadConfigs().catch(() => {});
+  });
+  document.getElementById('addManualConfigBtn')?.addEventListener('click', () => showManualConfigForm());
+  document.getElementById('calculateBtn')?.addEventListener('click', () => {
+    calculate().catch(() => {});
+  });
+  document.getElementById('copyShareLinkBtn')?.addEventListener('click', () => {
+    copyShareLink().catch(() => {});
+  });
+  document.getElementById('shareUrlInput')?.addEventListener('click', e => e.currentTarget.select());
+  document.getElementById('copyShareUrlBtn')?.addEventListener('click', () => {
+    copyShareUrlInput().catch(() => {});
+  });
+  document.getElementById('manualConfigArea')?.addEventListener('click', e => {
+    const submitBtn = e.target.closest('[data-manual-submit]');
+    if (submitBtn) {
+      submitManualConfigForm(submitBtn.dataset.editType || '');
+      return;
+    }
+    if (e.target.closest('[data-manual-cancel]')) {
+      hideManualConfigForm();
+      return;
+    }
+    const editBtn = e.target.closest('[data-manual-edit]');
+    if (editBtn) {
+      editManualConfig(editBtn.dataset.manualEdit);
+      return;
+    }
+    const deleteBtn = e.target.closest('[data-manual-delete]');
+    if (deleteBtn) {
+      deleteManualConfig(deleteBtn.dataset.manualDelete);
+    }
+  });
+  document.getElementById('scenariosGrid')?.addEventListener('click', e => {
+    const btn = e.target.closest('.js-product-specs');
+    if (!btn) return;
+    window.open('producten.html?type=' + encodeURIComponent(btn.dataset.productType), '_blank', 'noopener');
+  });
+}
+
 // ─── AUTO-LOAD FROM URL ────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
+  wireIndexActions();
   // Repopulate dropdowns when BTW/keuring changes
   ['btwSelect','keuringSelect'].forEach(id => {
     document.getElementById(id).addEventListener('change', () => {
@@ -1782,18 +1842,6 @@ function buildSavedFromProject(proj) {
     r,
   };
 }
-
-// ─── Expose functions used by inline onclick handlers ───────────────────────
-// (ES modules don't put top-level declarations on `window`)
-window.loadConfigs            = loadConfigs;
-window.calculate              = calculate;
-window.copyShareLink          = copyShareLink;
-window.showToast              = showToast;
-window.showManualConfigForm   = showManualConfigForm;
-window.hideManualConfigForm   = hideManualConfigForm;
-window.submitManualConfigForm = submitManualConfigForm;
-window.editManualConfig       = editManualConfig;
-window.deleteManualConfig     = deleteManualConfig;
 
 </script>
 </body>
