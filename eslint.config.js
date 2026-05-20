@@ -53,6 +53,8 @@ const firebaseInitGlobals = {
   listProjectPhotos: 'readonly',
   uploadProjectPhotoWithThumb: 'readonly',
   backfillThumbnail: 'readonly',
+  saveProjectPhotoAnnotation: 'readonly',
+  deleteProjectPhotoAnnotation: 'readonly',
   deleteProjectPhoto: 'readonly',
   uploadProjectOfferte: 'readonly',
   deleteProjectOfferte: 'readonly',

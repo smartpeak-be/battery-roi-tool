@@ -896,6 +896,54 @@ async function backfillThumbnail(projectId, photoDoc) {
   return thumbPath;
 }
 
+async function saveProjectPhotoAnnotation(projectId, photoDoc, annotationBlob, annotatedThumbBlob) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  if (!photoDoc || !photoDoc.id) throw new Error('Foto ontbreekt.');
+  if (!(annotationBlob instanceof Blob)) throw new Error('Aantekening ontbreekt.');
+  if (!(annotatedThumbBlob instanceof Blob)) throw new Error('Aantekening-thumbnail ontbreekt.');
+
+  const storage = getStorage();
+  const basePath = `projects/${projectId}/annotations/${photoDoc.id}`;
+  const annotationPath = `${basePath}_annotation.png`;
+  const annotatedThumbPath = `${basePath}_annotated_thumb.jpg`;
+
+  try {
+    await Promise.all([
+      storage.ref(annotationPath).put(annotationBlob, { contentType: 'image/png' }),
+      storage.ref(annotatedThumbPath).put(annotatedThumbBlob, { contentType: 'image/jpeg' }),
+    ]);
+
+    await projectDoc(projectId).collection('photos').doc(photoDoc.id).update({
+      annotationStoragePath: annotationPath,
+      annotatedThumbStoragePath: annotatedThumbPath,
+      annotationUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      annotationUpdatedBy: email,
+    });
+  } catch (e) {
+    try { await storage.ref(annotationPath).delete(); } catch (_) { /* best-effort */ }
+    try { await storage.ref(annotatedThumbPath).delete(); } catch (_) { /* best-effort */ }
+    throw e;
+  }
+
+  return { annotationStoragePath: annotationPath, annotatedThumbStoragePath: annotatedThumbPath };
+}
+
+async function deleteProjectPhotoAnnotation(projectId, photoDoc) {
+  if (!photoDoc || !photoDoc.id) throw new Error('Foto ontbreekt.');
+  const storage = getStorage();
+  const deletes = [];
+  if (photoDoc.annotationStoragePath) deletes.push(storage.ref(photoDoc.annotationStoragePath).delete());
+  if (photoDoc.annotatedThumbStoragePath) deletes.push(storage.ref(photoDoc.annotatedThumbStoragePath).delete());
+  await Promise.all(deletes.map(p => p.catch(e => console.warn('Aantekening-blob verwijderen mislukt', e))));
+  await projectDoc(projectId).collection('photos').doc(photoDoc.id).update({
+    annotationStoragePath: firebase.firestore.FieldValue.delete(),
+    annotatedThumbStoragePath: firebase.firestore.FieldValue.delete(),
+    annotationUpdatedAt: firebase.firestore.FieldValue.delete(),
+    annotationUpdatedBy: firebase.firestore.FieldValue.delete(),
+  });
+}
+
 async function listProjectPhotos(projectId) {
   const snap = await projectDoc(projectId).collection('photos').orderBy('uploadedAt', 'desc').get();
   const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -909,6 +957,18 @@ async function listProjectPhotos(projectId) {
       catch (e) { d.thumbUrl = null; /* will fall back to downloadUrl in the UI */ }
     } else {
       d.thumbUrl = null;
+    }
+    if (d.annotationStoragePath) {
+      try { d.annotationUrl = await getStorage().ref(d.annotationStoragePath).getDownloadURL(); }
+      catch (e) { d.annotationUrl = null; }
+    } else {
+      d.annotationUrl = null;
+    }
+    if (d.annotatedThumbStoragePath) {
+      try { d.annotatedThumbUrl = await getStorage().ref(d.annotatedThumbStoragePath).getDownloadURL(); }
+      catch (e) { d.annotatedThumbUrl = null; }
+    } else {
+      d.annotatedThumbUrl = null;
     }
     // Defaults for legacy docs
     if (!d.tag) d.tag = 'situatie';
@@ -942,6 +1002,14 @@ async function deleteProjectPhoto(projectId, photoId, storagePath, thumbStorageP
   if (thumbStoragePath) {
     try { await getStorage().ref(thumbStoragePath).delete(); }
     catch (e) { console.warn('Storage thumb-blob verwijderen mislukt', e); }
+  }
+  if (opts.annotationStoragePath) {
+    try { await getStorage().ref(opts.annotationStoragePath).delete(); }
+    catch (e) { console.warn('Storage annotation-blob verwijderen mislukt', e); }
+  }
+  if (opts.annotatedThumbStoragePath) {
+    try { await getStorage().ref(opts.annotatedThumbStoragePath).delete(); }
+    catch (e) { console.warn('Storage annotated-thumb-blob verwijderen mislukt', e); }
   }
 }
 

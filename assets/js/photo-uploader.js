@@ -1,5 +1,6 @@
 /* global firebase, bootstrap, uploadProjectPhotoWithThumb, listProjectPhotos,
-          deleteProjectPhoto, backfillThumbnail, showToast, showSpinner, updateSpinner, hideSpinner */
+          deleteProjectPhoto, backfillThumbnail, saveProjectPhotoAnnotation,
+          deleteProjectPhotoAnnotation, showToast, showSpinner, updateSpinner, hideSpinner */
 
 import { escapeHtml, showConfirm } from './shared-helpers.js';
 
@@ -57,6 +58,17 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
   // the latest mount always drives the lightbox, never the first mount that
   // happened to create the element.
   let _activeLightboxMount = null;
+
+  const ANNOTATION_COLORS = [
+    { label: 'Rood', value: '#ff2d2d' },
+    { label: 'Geel', value: '#ffd400' },
+    { label: 'Blauw', value: '#0077ff' },
+  ];
+  const ANNOTATION_SIZES = [
+    { label: 'Small', value: 4 },
+    { label: 'Normal', value: 9 },
+    { label: 'Large', value: 16 },
+  ];
 
   function _renderSkeleton(opts) {
     const canCam  = !!opts.allowCamera;
@@ -118,6 +130,14 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
       backfillBusy:   false,
       backfillQueue:  [],
       uploadBusy:     false,
+      annotationMode:  false,
+      annotationDirty: false,
+      annotationHasContent: false,
+      annotationColor: ANNOTATION_COLORS[0].value,
+      annotationSize:  ANNOTATION_SIZES[1].value,
+      annotationDrawing: false,
+      annotationLastPoint: null,
+      lightboxSeq:    0,
     };
 
     async function refresh() {
@@ -140,7 +160,7 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
         return;
       }
       grid.innerHTML = state.photos.map((p, i) => {
-        const src = p.thumbUrl || p.downloadUrl;
+        const src = p.annotatedThumbUrl || p.thumbUrl || p.downloadUrl;
         if (!src) {
           return `<div class="photo-tile broken" title="${escapeHtml(p.fetchError || 'Kon foto niet laden')}">${escapeHtml(p.name || 'onbekend')}</div>`;
         }
@@ -172,6 +192,7 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
       _activeLightboxMount = {
         close: _closeLightbox,
         nav:   _navLightbox,
+        layout:_layoutAnnotationStage,
       };
 
       let lb = document.getElementById('pu-lightbox');
@@ -186,7 +207,25 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
           <button type="button" class="sp-lightbox-btn prev" title="Vorige" aria-label="Vorige foto">‹</button>
           <button type="button" class="sp-lightbox-btn next" title="Volgende" aria-label="Volgende foto">›</button>
           <button type="button" class="sp-lightbox-btn del" title="Verwijder foto" aria-label="Verwijder foto"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
-          <img data-pu-lightbox-img alt="Foto" />
+          <button type="button" class="sp-lightbox-btn annotate" title="Aantekenen" aria-label="Aantekenen"><i class="fa-solid fa-pencil" aria-hidden="true"></i></button>
+          <div class="pu-annotation-stage" data-pu-annotation-stage>
+            <img data-pu-lightbox-img alt="Foto" />
+            <canvas data-pu-annotation-canvas aria-label="Aantekeningenlaag"></canvas>
+          </div>
+          <div class="pu-annotation-toolbar" data-pu-annotation-toolbar hidden>
+            <div class="pu-annotation-tools" role="group" aria-label="Kleur">
+              ${ANNOTATION_COLORS.map((c, i) => `
+                <button type="button" class="pu-annotation-swatch${i === 0 ? ' active' : ''}" data-pu-annotation-color="${escapeHtml(c.value)}" title="${escapeHtml(c.label)}" style="--swatch:${escapeHtml(c.value)}"></button>
+              `).join('')}
+            </div>
+            <div class="pu-annotation-tools" role="group" aria-label="Dikte">
+              ${ANNOTATION_SIZES.map(s => `
+                <button type="button" class="btn btn-sm btn-outline-light${s.value === ANNOTATION_SIZES[1].value ? ' active' : ''}" data-pu-annotation-size="${s.value}">${escapeHtml(s.label)}</button>
+              `).join('')}
+            </div>
+            <button type="button" class="btn btn-sm btn-primary" data-pu-annotation-save disabled><i class="fa-solid fa-floppy-disk me-1"></i>Opslaan</button>
+            <button type="button" class="btn btn-sm btn-outline-light" data-pu-annotation-clear hidden><i class="fa-solid fa-eraser me-1"></i>Wissen</button>
+          </div>
         `;
         document.body.appendChild(lb);
 
@@ -198,6 +237,11 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
           else if (e.key === 'ArrowLeft')  _activeLightboxMount.nav(-1);
           else if (e.key === 'ArrowRight') _activeLightboxMount.nav(+1);
         });
+        window.addEventListener('resize', () => {
+          const el = document.getElementById('pu-lightbox');
+          if (!el || !el.classList.contains('open') || !_activeLightboxMount) return;
+          _activeLightboxMount.layout();
+        });
       }
 
       // Per-call rewiring of button handlers — each open binds THIS mount's
@@ -205,6 +249,15 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
       lb.querySelector('.close').onclick = () => _closeLightbox();
       lb.querySelector('.prev').onclick  = e => { e.stopPropagation(); _navLightbox(-1); };
       lb.querySelector('.next').onclick  = e => { e.stopPropagation(); _navLightbox(+1); };
+      const annotateBtn = lb.querySelector('.annotate');
+      if (annotateBtn) {
+        annotateBtn.hidden = !!options.readOnly;
+        annotateBtn.onclick = e => {
+          e.stopPropagation();
+          _setAnnotationMode(!state.annotationMode);
+        };
+      }
+      _wireAnnotationToolbar(lb);
       lb.querySelector('.del').onclick   = async e => {
         e.stopPropagation();
         const photo = state.photos[state.lightboxIdx];
@@ -232,6 +285,8 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
         try {
           await deleteProjectPhoto(options.projectId, photo.id, photo.storagePath, photo.thumbStoragePath || null, {
             preserveSerial: choice === 'photo-only',
+            annotationStoragePath: photo.annotationStoragePath || null,
+            annotatedThumbStoragePath: photo.annotatedThumbStoragePath || null,
           });
           await refresh();
           if (state.photos.length === 0) _closeLightbox();
@@ -253,21 +308,324 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
       // Focus management: move focus into lightbox on open
       lb.querySelector('.close').focus();
     }
-    function _refreshLightboxImg() {
+    async function _refreshLightboxImg() {
+      const seq = ++state.lightboxSeq;
+      state.annotationDirty = false;
+      state.annotationDrawing = false;
+      state.annotationLastPoint = null;
+      state.annotationMode = false;
+      state.annotationHasContent = false;
+
+      const lb = document.getElementById('pu-lightbox');
       const img = document.querySelector('#pu-lightbox [data-pu-lightbox-img]');
+      const canvas = document.querySelector('#pu-lightbox [data-pu-annotation-canvas]');
       const p   = state.photos[state.lightboxIdx];
-      if (!img) return;
+      if (!img || !canvas || !lb) return;
+      const width = Number(p && p.width) || img.naturalWidth || 1;
+      const height = Number(p && p.height) || img.naturalHeight || 1;
+      canvas.width = width;
+      canvas.height = height;
+      _clearCanvas(canvas);
+      _layoutAnnotationStage();
+      _updateAnnotationControls();
+      img.crossOrigin = 'anonymous';
       img.src = (p && (p.downloadUrl || p.thumbUrl)) || '';
       img.alt = (p && p.name) || '';
+      if (p && p.annotationUrl) {
+        try {
+          const bitmap = await _loadBitmapFromUrl(p.annotationUrl);
+          if (seq !== state.lightboxSeq) {
+            _releaseBitmap(bitmap);
+            return;
+          }
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+          _releaseBitmap(bitmap);
+          state.annotationHasContent = true;
+        } catch (e) {
+          console.warn('[photo-uploader] annotation load failed', e);
+        }
+      }
+      _setAnnotationMode(false);
+      _updateAnnotationControls();
     }
-    function _navLightbox(delta) {
+    async function _navLightbox(delta) {
       if (!state.photos.length) return;
+      if (!await _confirmDiscardAnnotation()) return;
       state.lightboxIdx = (state.lightboxIdx + delta + state.photos.length) % state.photos.length;
       _refreshLightboxImg();
     }
-    function _closeLightbox() {
+    async function _closeLightbox() {
+      if (!await _confirmDiscardAnnotation()) return;
       const lb = document.getElementById('pu-lightbox');
       if (lb) lb.classList.remove('open');
+    }
+
+    function _layoutAnnotationStage() {
+      const stage = document.querySelector('#pu-lightbox [data-pu-annotation-stage]');
+      const canvas = document.querySelector('#pu-lightbox [data-pu-annotation-canvas]');
+      if (!stage || !canvas || !canvas.width || !canvas.height) return;
+      const maxW = Math.max(240, window.innerWidth - (window.innerWidth < 576 ? 32 : 96));
+      const maxH = Math.max(240, window.innerHeight - (state.annotationMode ? 168 : 96));
+      const scale = Math.min(maxW / canvas.width, maxH / canvas.height, 1);
+      stage.style.width = Math.max(1, Math.round(canvas.width * scale)) + 'px';
+      stage.style.height = Math.max(1, Math.round(canvas.height * scale)) + 'px';
+    }
+
+    function _wireAnnotationToolbar(lb) {
+      const canvas = lb.querySelector('[data-pu-annotation-canvas]');
+      if (!canvas || canvas.dataset.puAnnotationWired === '1') return;
+      canvas.dataset.puAnnotationWired = '1';
+
+      canvas.addEventListener('pointerdown', _annotationPointerDown);
+      canvas.addEventListener('pointermove', _annotationPointerMove);
+      canvas.addEventListener('pointerup', _annotationPointerUp);
+      canvas.addEventListener('pointercancel', _annotationPointerUp);
+      canvas.addEventListener('lostpointercapture', _annotationPointerUp);
+
+      lb.querySelectorAll('[data-pu-annotation-color]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          state.annotationColor = btn.getAttribute('data-pu-annotation-color') || ANNOTATION_COLORS[0].value;
+          lb.querySelectorAll('[data-pu-annotation-color]').forEach(b => b.classList.toggle('active', b === btn));
+        });
+      });
+      lb.querySelectorAll('[data-pu-annotation-size]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          state.annotationSize = parseInt(btn.getAttribute('data-pu-annotation-size'), 10) || ANNOTATION_SIZES[1].value;
+          lb.querySelectorAll('[data-pu-annotation-size]').forEach(b => b.classList.toggle('active', b === btn));
+        });
+      });
+      const saveBtn = lb.querySelector('[data-pu-annotation-save]');
+      if (saveBtn) saveBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        _saveAnnotation();
+      });
+      const clearBtn = lb.querySelector('[data-pu-annotation-clear]');
+      if (clearBtn) clearBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        _clearAnnotation();
+      });
+    }
+
+    function _setAnnotationMode(enabled) {
+      state.annotationMode = !!enabled;
+      const lb = document.getElementById('pu-lightbox');
+      if (!lb) return;
+      lb.classList.toggle('annotation-mode', state.annotationMode);
+      const toolbar = lb.querySelector('[data-pu-annotation-toolbar]');
+      if (toolbar) toolbar.hidden = !state.annotationMode;
+      const annotateBtn = lb.querySelector('.annotate');
+      if (annotateBtn) annotateBtn.classList.toggle('active', state.annotationMode);
+      _layoutAnnotationStage();
+      _updateAnnotationControls();
+    }
+
+    function _updateAnnotationControls() {
+      const lb = document.getElementById('pu-lightbox');
+      if (!lb) return;
+      const saveBtn = lb.querySelector('[data-pu-annotation-save]');
+      const clearBtn = lb.querySelector('[data-pu-annotation-clear]');
+      if (saveBtn) saveBtn.disabled = !state.annotationDirty;
+      if (clearBtn) clearBtn.hidden = !(state.annotationHasContent || state.annotationDirty);
+    }
+
+    function _annotationPointerDown(e) {
+      if (!state.annotationMode) return;
+      e.preventDefault();
+      const canvas = e.currentTarget;
+      try { canvas.setPointerCapture(e.pointerId); } catch {}
+      state.annotationDrawing = true;
+      state.annotationLastPoint = _eventToCanvasPoint(canvas, e);
+    }
+
+    function _annotationPointerMove(e) {
+      if (!state.annotationMode || !state.annotationDrawing || !state.annotationLastPoint) return;
+      e.preventDefault();
+      const canvas = e.currentTarget;
+      const next = _eventToCanvasPoint(canvas, e);
+      const prev = state.annotationLastPoint;
+      const ctx = canvas.getContext('2d');
+      const rect = canvas.getBoundingClientRect();
+      const scale = rect.width > 0 ? canvas.width / rect.width : 1;
+      ctx.strokeStyle = state.annotationColor;
+      ctx.lineWidth = state.annotationSize * scale;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      ctx.lineTo(next.x, next.y);
+      ctx.stroke();
+      state.annotationLastPoint = next;
+      state.annotationDirty = true;
+      state.annotationHasContent = true;
+      _updateAnnotationControls();
+    }
+
+    function _annotationPointerUp(e) {
+      if (!state.annotationDrawing) return;
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+      state.annotationDrawing = false;
+      state.annotationLastPoint = null;
+    }
+
+    function _eventToCanvasPoint(canvas, e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+      const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+      return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY,
+      };
+    }
+
+    async function _confirmDiscardAnnotation() {
+      if (!state.annotationDirty) return true;
+      const ok = await showConfirm({
+        title: 'Aantekening niet opgeslagen',
+        message: 'Je hebt nog niet opgeslagen aantekeningen. Wil je doorgaan en die wijzigingen verliezen?',
+        confirmLabel: 'Wijzigingen verliezen',
+        confirmVariant: 'danger',
+        cancelLabel: 'Verder tekenen',
+      });
+      if (ok) state.annotationDirty = false;
+      return !!ok;
+    }
+
+    async function _saveAnnotation() {
+      const photo = state.photos[state.lightboxIdx];
+      const canvas = document.querySelector('#pu-lightbox [data-pu-annotation-canvas]');
+      if (!photo || !canvas || !state.annotationDirty) return;
+      showSpinner();
+      try {
+        const annotationBlob = await _canvasToBlob(canvas, 'image/png');
+        const annotatedThumbBlob = await _makeAnnotatedThumbBlob(photo, annotationBlob);
+        await saveProjectPhotoAnnotation(options.projectId, photo, annotationBlob, annotatedThumbBlob);
+        state.annotationDirty = false;
+        state.annotationHasContent = true;
+        await _refreshAfterAnnotationChange(photo.id);
+        _toast('Aantekening opgeslagen.', 'success');
+      } catch (e) {
+        _toast('Aantekening opslaan mislukt: ' + (e && e.message ? e.message : e), 'danger');
+      } finally {
+        hideSpinner();
+      }
+    }
+
+    async function _clearAnnotation() {
+      const photo = state.photos[state.lightboxIdx];
+      const canvas = document.querySelector('#pu-lightbox [data-pu-annotation-canvas]');
+      if (!photo || !canvas || !(state.annotationHasContent || state.annotationDirty)) return;
+      const ok = await showConfirm({
+        title: 'Aantekeningen wissen?',
+        message: 'Alle aantekeningen op deze foto worden verwijderd. De originele foto blijft behouden.',
+        confirmLabel: 'Aantekeningen wissen',
+        confirmVariant: 'danger',
+        cancelLabel: 'Annuleren',
+      });
+      if (!ok) return;
+      showSpinner();
+      try {
+        _clearCanvas(canvas);
+        state.annotationDirty = false;
+        state.annotationHasContent = false;
+        if (photo.annotationStoragePath || photo.annotatedThumbStoragePath) {
+          await deleteProjectPhotoAnnotation(options.projectId, photo);
+          await _refreshAfterAnnotationChange(photo.id);
+        }
+        _updateAnnotationControls();
+        _toast('Aantekeningen gewist.', 'success');
+      } catch (e) {
+        _toast('Aantekeningen wissen mislukt: ' + (e && e.message ? e.message : e), 'danger');
+      } finally {
+        hideSpinner();
+      }
+    }
+
+    async function _refreshAfterAnnotationChange(photoId) {
+      await refresh();
+      const idx = state.photos.findIndex(p => p.id === photoId);
+      if (idx >= 0) state.lightboxIdx = idx;
+      await _refreshLightboxImg();
+      if (typeof options.onChange === 'function') { try { await options.onChange(); } catch {} }
+    }
+
+    function _clearCanvas(canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    async function _loadBitmapFromUrl(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Afbeelding laden mislukt (${res.status})`);
+      const blob = await res.blob();
+      return _loadBitmapFromBlob(blob);
+    }
+
+    async function _makeAnnotatedThumbBlob(photo, annotationBlob) {
+      const baseBitmap = await _loadBitmapFromUrl(photo.thumbUrl || photo.downloadUrl);
+      const annotationBitmap = await _loadBitmapFromBlob(annotationBlob);
+      try {
+        const baseWidth = _bitmapWidth(baseBitmap);
+        const baseHeight = _bitmapHeight(baseBitmap);
+        const longest = Math.max(baseWidth, baseHeight);
+        const scale = longest > 400 ? 400 / longest : 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(baseWidth * scale));
+        canvas.height = Math.max(1, Math.round(baseHeight * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2D context niet beschikbaar');
+        ctx.drawImage(baseBitmap, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(annotationBitmap, 0, 0, canvas.width, canvas.height);
+        return _canvasToBlob(canvas, 'image/jpeg', 0.82);
+      } finally {
+        _releaseBitmap(baseBitmap);
+        _releaseBitmap(annotationBitmap);
+      }
+    }
+
+    function _canvasToBlob(canvas, type, quality) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => {
+          if (blob) resolve(blob);
+          else reject(new Error('Canvas export mislukt'));
+        }, type, quality);
+      });
+    }
+
+    async function _loadBitmapFromBlob(blob) {
+      if (typeof createImageBitmap === 'function') return createImageBitmap(blob);
+      return _loadImageElementFromBlob(blob);
+    }
+
+    async function _loadImageElementFromBlob(blob) {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img._puObjectUrl = url;
+      img.src = url;
+      if (typeof img.decode === 'function') await img.decode();
+      else await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+      return img;
+    }
+
+    function _bitmapWidth(bitmap) {
+      return bitmap.width || bitmap.naturalWidth || 1;
+    }
+
+    function _bitmapHeight(bitmap) {
+      return bitmap.height || bitmap.naturalHeight || 1;
+    }
+
+    function _releaseBitmap(bitmap) {
+      if (!bitmap) return;
+      if (typeof bitmap.close === 'function') bitmap.close();
+      if (bitmap._puObjectUrl) {
+        try { URL.revokeObjectURL(bitmap._puObjectUrl); } catch {}
+      }
     }
 
     function openByPhotoId(photoId) {

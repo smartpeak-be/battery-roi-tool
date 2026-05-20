@@ -240,6 +240,65 @@
 .sp-lightbox .next  { right: 14px; top: 50%; transform: translateY(-50%); }
 .sp-lightbox .del   { bottom: 14px; right: 14px; background: rgba(229,69,69,0.85); }
 .sp-lightbox .del:hover { background: rgba(229,69,69,1); }
+.sp-lightbox .annotate { bottom: 68px; right: 14px; }
+.sp-lightbox .annotate.active { background: rgba(var(--bs-primary-rgb), 0.95); }
+.pu-annotation-stage {
+  position: relative;
+  display: block;
+  max-width: calc(100vw - 96px);
+  max-height: calc(100vh - 96px);
+}
+.pu-annotation-stage img,
+.pu-annotation-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.pu-annotation-stage img {
+  object-fit: contain;
+  border-radius: 6px;
+}
+.pu-annotation-stage canvas {
+  pointer-events: none;
+  touch-action: none;
+}
+.sp-lightbox.annotation-mode .pu-annotation-stage canvas {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.pu-annotation-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100vw - 112px);
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.58);
+  border: 1px solid rgba(255,255,255,0.16);
+}
+.pu-annotation-tools {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.pu-annotation-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.45);
+  background: var(--swatch);
+}
+.pu-annotation-swatch.active {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
 .sp-lightbox .counter {
   position: absolute; bottom: 14px; left: 14px;
   color: rgba(255,255,255,0.75);
@@ -247,6 +306,17 @@
   background: rgba(0,0,0,0.3);
   padding: 4px 10px;
   border-radius: 12px;
+}
+@media (max-width: 575.98px) {
+  .sp-lightbox {
+    padding: 16px;
+  }
+  .sp-lightbox .annotate { bottom: 64px; right: 10px; }
+  .pu-annotation-toolbar {
+    bottom: 10px;
+    max-width: calc(100vw - 20px);
+    border-radius: 16px;
+  }
 }
 
 /* ── Drag-drop zone (foto-upload + offerte-upload) ───────────────────── */
