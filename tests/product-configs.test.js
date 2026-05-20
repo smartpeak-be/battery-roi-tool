@@ -98,7 +98,9 @@ describe('product config helpers', () => {
       { productId: 'acplus', qty: 2 },
       { productId: 'ab3000l', qty: 3 },
       { productId: 'install', qty: 1 },
-    ], pMap, cMap)).toBe('2x Zendure AC+ & 3x Zendure AB3000L & Installatiekost');
+      { productId: 'rail', qty: 1 },
+      { productId: 'buffer', qty: 1 },
+    ], pMap, cMap)).toBe('2x Zendure AC+ & 3x Zendure AB3000L & Installatiekost & Rail & Buffer');
   });
 
   it('calculates full config subtotal ex VAT including services', () => {

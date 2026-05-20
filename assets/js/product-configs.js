@@ -8,10 +8,14 @@ export const BATTERY_CATEGORY_SLUGS = new Set(['batterijen', 'thuisbatterij-syst
 export function productLabel(product, categoriesById = {}) {
   if (!product) return '';
   const cat = categoriesById && categoriesById[product.categoryId];
-  if (product.serviceKey || (cat && cat.slug === SERVICE_CATEGORY_SLUG)) {
+  if (product.serviceKey || (cat && (
+    cat.slug === SERVICE_CATEGORY_SLUG
+    || cat.slug === MATERIAL_CATEGORY_SLUG
+    || cat.slug === MISC_CATEGORY_SLUG
+  ))) {
     return product.model
       || product.description
-      || '(service zonder omschrijving)';
+      || '(product zonder omschrijving)';
   }
   return [product.brand, product.model].filter(Boolean).join(' ').trim()
     || product.description

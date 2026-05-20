@@ -301,6 +301,10 @@ function getCategorySlug(categoryId) {
   return cat ? (cat.slug || cat.name || '').toLowerCase() : '';
 }
 
+function isBrandlessCategorySlug(slug) {
+  return slug === 'service' || slug === 'materiaal' || slug === 'diversen';
+}
+
 let _allProducts = [];
 let _selectedProductId = null;
 
@@ -441,7 +445,7 @@ function buildDetailFormHtml(product, mode) {
   const discountFromUnit = p.discountFromUnit ?? 2;
 
   const isCustomBrand = p.brand && !ALL_BRANDS.includes(p.brand);
-  const isService = getCategorySlug(p.categoryId) === 'service';
+  const isBrandless = isBrandlessCategorySlug(getCategorySlug(p.categoryId));
 
   return `
     <div class="product-detail-form">
@@ -457,7 +461,7 @@ function buildDetailFormHtml(product, mode) {
       </div>
 
       <div class="row g-2 mb-3">
-        <div class="col-6 ${isService ? 'd-none' : ''}" data-brand-group>
+        <div class="col-6 ${isBrandless ? 'd-none' : ''}" data-brand-group>
           <label class="form-label">Merk <span class="text-danger">*</span></label>
           <select class="form-select detail-brand-select">
             ${buildBrandOptions(p.brand || '')}
@@ -468,7 +472,7 @@ function buildDetailFormHtml(product, mode) {
           <input type="text" class="form-control detail-custom-brand" value="${isCustomBrand ? escapeAttr(p.brand) : ''}" placeholder="Voer merk in">
         </div>
         <div class="col-6">
-          <label class="form-label detail-model-label">${isService ? 'Omschrijving' : 'Model'} <span class="text-danger">*</span></label>
+          <label class="form-label detail-model-label">${isBrandless ? 'Naam' : 'Model'} <span class="text-danger">*</span></label>
           <input type="text" class="form-control detail-model" value="${escapeAttr(p.model || '')}">
         </div>
       </div>
@@ -690,7 +694,7 @@ function wireDetailForm(container, product) {
     deleteBtn.addEventListener('click', async () => {
       const ok = await showConfirm({
         title: 'Product verwijderen?',
-        message: `"${product.brand} ${product.model}" wordt permanent verwijderd. Dit kan niet ongedaan worden.`,
+        message: `"${productLabel(product, categoryMap(_categories))}" wordt permanent verwijderd. Dit kan niet ongedaan worden.`,
         confirmText: 'Product verwijderen',
         variant: 'danger',
       });
@@ -710,11 +714,11 @@ function wireDetailForm(container, product) {
 }
 
 function toggleServiceProductFields(container) {
-  const isService = getCategorySlug(container.querySelector('.detail-category')?.value) === 'service';
-  container.querySelector('[data-brand-group]')?.classList.toggle('d-none', isService);
-  container.querySelector('[data-custom-brand-group]')?.classList.toggle('d-none', isService || container.querySelector('.detail-brand-select')?.value !== '__other__');
+  const isBrandless = isBrandlessCategorySlug(getCategorySlug(container.querySelector('.detail-category')?.value));
+  container.querySelector('[data-brand-group]')?.classList.toggle('d-none', isBrandless);
+  container.querySelector('[data-custom-brand-group]')?.classList.toggle('d-none', isBrandless || container.querySelector('.detail-brand-select')?.value !== '__other__');
   const label = container.querySelector('.detail-model-label');
-  if (label) label.innerHTML = `${isService ? 'Omschrijving' : 'Model'} <span class="text-danger">*</span>`;
+  if (label) label.innerHTML = `${isBrandless ? 'Naam' : 'Model'} <span class="text-danger">*</span>`;
 }
 
 // ─── PRODUCT PHOTO SECTION ────────────────────────────────────────────────────
@@ -994,11 +998,17 @@ function readProductFromForm(container) {
   const brandSelect = container.querySelector('.detail-brand-select');
   let brand = brandSelect.value;
   const categoryId = container.querySelector('.detail-category').value;
-  const isService = getCategorySlug(categoryId) === 'service';
+  const isBrandless = isBrandlessCategorySlug(getCategorySlug(categoryId));
   if (brand === '__other__') {
     brand = container.querySelector('.detail-custom-brand').value.trim();
   }
-  if (isService) brand = '';
+  let model = container.querySelector('.detail-model').value.trim();
+  if (isBrandless) {
+    if (brand && model && !model.toLowerCase().startsWith(`${brand.toLowerCase()} `)) {
+      model = `${brand} ${model}`;
+    }
+    brand = '';
+  }
 
   // Read typed specs
   const specs = {};
@@ -1027,7 +1037,7 @@ function readProductFromForm(container) {
   return {
     categoryId,
     brand,
-    model: container.querySelector('.detail-model').value.trim(),
+    model,
     description: container.querySelector('.detail-description').value.trim(),
     purchasePrice: parseFloat(container.querySelector('.detail-purchase-price').value) || 0,
     marginType: container.querySelector('.detail-margin-type')?.dataset.type || 'percent',
@@ -1066,12 +1076,13 @@ async function saveProductFromForm(container, existingProduct) {
   const data = readProductFromForm(container);
   const categorySlug = getCategorySlug(data.categoryId);
   const isService = categorySlug === 'service';
-  if (isService) data.brand = '';
+  const isBrandless = isBrandlessCategorySlug(categorySlug);
+  if (isBrandless) data.brand = '';
 
   // Validate
   if (!data.categoryId) { showToast('Kies een categorie', 'danger'); return; }
-  if (!data.brand && !isService) { showToast('Vul een merk in', 'danger'); return; }
-  if (!data.model) { showToast('Vul een model in', 'danger'); return; }
+  if (!data.brand && !isBrandless) { showToast('Vul een merk in', 'danger'); return; }
+  if (!data.model) { showToast(isBrandless ? 'Vul een naam in' : 'Vul een model in', 'danger'); return; }
   if ((!data.purchasePrice || data.purchasePrice <= 0) && !isService) { showToast('Vul een aankoopprijs in', 'danger'); return; }
 
   try {
