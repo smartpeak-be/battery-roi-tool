@@ -1583,7 +1583,7 @@ async function ensureServiceProducts() {
     if (existing.some(p => p.serviceKey === svc.serviceKey)) continue;
     await createProduct({
       categoryId: serviceCat.id,
-      brand: 'SmartPeak',
+      brand: '',
       model: svc.model,
       description: svc.description,
       purchasePrice: Number(svc.price) || 0,
@@ -1602,7 +1602,7 @@ async function ensureServiceProducts() {
   if (buffer && !existingMisc.some(p => p.serviceKey === 'buffer')) {
     await createProduct({
       categoryId: miscCat.id,
-      brand: 'SmartPeak',
+      brand: '',
       model: buffer.model,
       description: buffer.description,
       purchasePrice: Number(buffer.price) || 0,

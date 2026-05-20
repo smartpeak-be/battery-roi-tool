@@ -319,6 +319,7 @@ function renderProductList() {
   const list = document.getElementById('productList');
   const search = (document.getElementById('productSearch').value || '').toLowerCase();
   const showInactive = document.getElementById('toggleShowInactive').checked;
+  const categoriesById = categoryMap(_categories);
 
   let filtered = _allProducts;
   if (_activeCategory) {
@@ -346,11 +347,12 @@ function renderProductList() {
     const activeClass = _selectedProductId === p.id ? 'active' : '';
     const badge = p.isActive === false ? '<span class="badge text-bg-secondary ms-2">Inactief</span>' : '';
     const catName = _categories.find(c => c.id === p.categoryId)?.name || '';
+    const label = productLabel(p, categoriesById);
     return `
       <div class="card mb-2 product-card ${inactiveClass} ${activeClass}" data-id="${escapeAttr(p.id)}">
         <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
           <div class="flex-grow-1">
-            <strong>${escapeHtml(p.brand)} ${escapeHtml(p.model)}</strong>${badge}
+            <strong>${escapeHtml(label)}</strong>${badge}
             <div class="text-muted small">${escapeHtml(catName)}${p.description ? ' · ' + escapeHtml(p.description) : ''}</div>
           </div>
           <div class="text-end text-nowrap">
@@ -387,7 +389,7 @@ function openProductDetail(productId) {
     const drawerBody = document.getElementById('productDrawerBody');
     drawerBody.innerHTML = html;
     wireDetailForm(drawerBody, product);
-    document.getElementById('productDrawerTitle').textContent = `${product.brand} ${product.model}`;
+    document.getElementById('productDrawerTitle').textContent = productLabel(product, categoryMap(_categories));
     bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('productDrawer')).show();
   }
 }
@@ -439,6 +441,7 @@ function buildDetailFormHtml(product, mode) {
   const discountFromUnit = p.discountFromUnit ?? 2;
 
   const isCustomBrand = p.brand && !ALL_BRANDS.includes(p.brand);
+  const isService = getCategorySlug(p.categoryId) === 'service';
 
   return `
     <div class="product-detail-form">
@@ -454,7 +457,7 @@ function buildDetailFormHtml(product, mode) {
       </div>
 
       <div class="row g-2 mb-3">
-        <div class="col-6">
+        <div class="col-6 ${isService ? 'd-none' : ''}" data-brand-group>
           <label class="form-label">Merk <span class="text-danger">*</span></label>
           <select class="form-select detail-brand-select">
             ${buildBrandOptions(p.brand || '')}
@@ -465,7 +468,7 @@ function buildDetailFormHtml(product, mode) {
           <input type="text" class="form-control detail-custom-brand" value="${isCustomBrand ? escapeAttr(p.brand) : ''}" placeholder="Voer merk in">
         </div>
         <div class="col-6">
-          <label class="form-label">Model <span class="text-danger">*</span></label>
+          <label class="form-label detail-model-label">${isService ? 'Omschrijving' : 'Model'} <span class="text-danger">*</span></label>
           <input type="text" class="form-control detail-model" value="${escapeAttr(p.model || '')}">
         </div>
       </div>
@@ -608,6 +611,8 @@ function wireDetailForm(container, product) {
     });
   }
 
+  toggleServiceProductFields(container);
+
   // Wire toggle buttons inside the detail form
   container.querySelectorAll('.product-detail-form [data-type]').forEach(group => {
     group.querySelectorAll('button').forEach(btn => {
@@ -638,6 +643,7 @@ function wireDetailForm(container, product) {
   const catSelect = container.querySelector('.detail-category');
   catSelect.addEventListener('change', () => {
     renderSpecFields(container, catSelect.value, {});
+    toggleServiceProductFields(container);
   });
 
   // Wire custom spec add button
@@ -701,6 +707,14 @@ function wireDetailForm(container, product) {
       }
     });
   }
+}
+
+function toggleServiceProductFields(container) {
+  const isService = getCategorySlug(container.querySelector('.detail-category')?.value) === 'service';
+  container.querySelector('[data-brand-group]')?.classList.toggle('d-none', isService);
+  container.querySelector('[data-custom-brand-group]')?.classList.toggle('d-none', isService || container.querySelector('.detail-brand-select')?.value !== '__other__');
+  const label = container.querySelector('.detail-model-label');
+  if (label) label.innerHTML = `${isService ? 'Omschrijving' : 'Model'} <span class="text-danger">*</span>`;
 }
 
 // ─── PRODUCT PHOTO SECTION ────────────────────────────────────────────────────
@@ -979,9 +993,12 @@ function addCustomSpecRow(container) {
 function readProductFromForm(container) {
   const brandSelect = container.querySelector('.detail-brand-select');
   let brand = brandSelect.value;
+  const categoryId = container.querySelector('.detail-category').value;
+  const isService = getCategorySlug(categoryId) === 'service';
   if (brand === '__other__') {
     brand = container.querySelector('.detail-custom-brand').value.trim();
   }
+  if (isService) brand = '';
 
   // Read typed specs
   const specs = {};
@@ -1008,7 +1025,7 @@ function readProductFromForm(container) {
   if (Object.keys(custom).length) specs.custom = custom;
 
   return {
-    categoryId: container.querySelector('.detail-category').value,
+    categoryId,
     brand,
     model: container.querySelector('.detail-model').value.trim(),
     description: container.querySelector('.detail-description').value.trim(),
@@ -1049,7 +1066,7 @@ async function saveProductFromForm(container, existingProduct) {
   const data = readProductFromForm(container);
   const categorySlug = getCategorySlug(data.categoryId);
   const isService = categorySlug === 'service';
-  if (isService && !data.brand) data.brand = 'SmartPeak';
+  if (isService) data.brand = '';
 
   // Validate
   if (!data.categoryId) { showToast('Kies een categorie', 'danger'); return; }
@@ -1198,8 +1215,9 @@ function activeConfigProducts() {
 }
 
 function productOptionsHtml(selectedId) {
+  const categoriesById = categoryMap(_categories);
   return '<option value="">— Product kiezen —</option>' + activeConfigProducts().map(p => (
-    `<option value="${escapeAttr(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(productLabel(p))}</option>`
+    `<option value="${escapeAttr(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(productLabel(p, categoriesById))}</option>`
   )).join('');
 }
 
@@ -1542,10 +1560,10 @@ function categoryItemsByVat(baseItems, extraItems, productsById, categoriesById,
   })).filter(group => group.items.length);
 }
 
-function quoteGroupedRowsHtml(groups, productsById, prefix = '') {
+function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '') {
   return groups.map(group => {
     const exVat = configSubtotalExVat(group.items, productsById);
-    const description = generatedConfigDescription(group.items, productsById);
+    const description = generatedConfigDescription(group.items, productsById, categoriesById);
     return quoteLineHtml({
       description: `${prefix}${description}`,
       exVat,
@@ -1579,10 +1597,10 @@ function updateQuotePreview() {
   const bebatPrice = currentBebatPricePerKg();
   const bebatIncl = bebatTotalInclVat(kg, bebatPrice);
   const mainRows = mainGroups.length
-    ? quoteGroupedRowsHtml(mainGroups, productsById)
+    ? quoteGroupedRowsHtml(mainGroups, productsById, categoriesById)
     : quoteLineHtml({ description: cfg.name || 'Configuratie', exVat: 0, vat });
-  const materialRows = quoteGroupedRowsHtml(materialGroups, productsById, 'Materiaal: ');
-  const miscRows = quoteGroupedRowsHtml(miscGroups, productsById, 'Diversen: ');
+  const materialRows = quoteGroupedRowsHtml(materialGroups, productsById, categoriesById, 'Materiaal: ');
+  const miscRows = quoteGroupedRowsHtml(miscGroups, productsById, categoriesById, 'Diversen: ');
   const manualLines = readQuoteManualLines();
   const extraLines = manualLines;
   const extraRows = extraLines.map(quoteLineHtml).join('');

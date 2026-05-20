@@ -98,7 +98,7 @@ describe('product config helpers', () => {
       { productId: 'acplus', qty: 2 },
       { productId: 'ab3000l', qty: 3 },
       { productId: 'install', qty: 1 },
-    ], pMap, cMap)).toBe('2x Zendure AC+ & 3x Zendure AB3000L & SmartPeak Installatiekost');
+    ], pMap, cMap)).toBe('2x Zendure AC+ & 3x Zendure AB3000L & Installatiekost');
   });
 
   it('calculates full config subtotal ex VAT including services', () => {

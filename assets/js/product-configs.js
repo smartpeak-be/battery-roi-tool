@@ -5,8 +5,14 @@ export const MATERIAL_CATEGORY_SLUG = 'materiaal';
 export const MISC_CATEGORY_SLUG = 'diversen';
 export const BATTERY_CATEGORY_SLUGS = new Set(['batterijen', 'thuisbatterij-systemen']);
 
-export function productLabel(product) {
+export function productLabel(product, categoriesById = {}) {
   if (!product) return '';
+  const cat = categoriesById && categoriesById[product.categoryId];
+  if (product.serviceKey || (cat && cat.slug === SERVICE_CATEGORY_SLUG)) {
+    return product.model
+      || product.description
+      || '(service zonder omschrijving)';
+  }
   return [product.brand, product.model].filter(Boolean).join(' ').trim()
     || product.description
     || '(product zonder naam)';
@@ -39,12 +45,12 @@ export function normalizeConfigItems(items) {
     .filter(item => item.productId && item.qty > 0);
 }
 
-export function generatedConfigDescription(items, productsById) {
+export function generatedConfigDescription(items, productsById, categoriesById = {}) {
   const parts = normalizeConfigItems(items)
     .map(item => {
       const product = productsById && productsById[item.productId];
       if (!product) return '';
-      const label = productLabel(product);
+      const label = productLabel(product, categoriesById);
       return item.qty === 1 ? label : `${item.qty}x ${label}`;
     })
     .filter(Boolean);
