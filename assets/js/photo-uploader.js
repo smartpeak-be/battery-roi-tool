@@ -1,7 +1,7 @@
 /* global firebase, bootstrap, uploadProjectPhotoWithThumb, listProjectPhotos,
           deleteProjectPhoto, backfillThumbnail, showToast, showSpinner, updateSpinner, hideSpinner */
 
-import { escapeHtml } from './shared-helpers.js';
+import { escapeHtml, showConfirm } from './shared-helpers.js';
 
 // assets/js/photo-uploader.js
 // Shared photo-uploader component — used in dashboard.html drawer and
@@ -209,10 +209,30 @@ import { escapeHtml } from './shared-helpers.js';
         e.stopPropagation();
         const photo = state.photos[state.lightboxIdx];
         if (!photo) return;
-        if (!confirm('Deze foto verwijderen?')) return;
+        const isSerialPhoto = photo.tag === 'serial' || photo.serialEntryId || photo.ocrStatus;
+        const choice = await showConfirm({
+          title: 'Foto verwijderen?',
+          message: isSerialPhoto
+            ? 'Deze foto is gekoppeld aan een OCR-serienummer. Wat wil je verwijderen?'
+            : 'Deze foto wordt permanent verwijderd.',
+          cancelValue: 'cancel',
+          actions: isSerialPhoto
+            ? [
+                { value: 'cancel', label: 'Annuleren' },
+                { value: 'photo-only', label: 'Alleen foto verwijderen', variant: 'primary' },
+                { value: 'all', label: 'Alles verwijderen', variant: 'danger', autofocus: true },
+              ]
+            : [
+                { value: 'cancel', label: 'Annuleren' },
+                { value: 'all', label: 'Foto verwijderen', variant: 'danger', autofocus: true },
+              ],
+        });
+        if (choice === 'cancel') return;
         showSpinner();
         try {
-          await deleteProjectPhoto(options.projectId, photo.id, photo.storagePath, photo.thumbStoragePath || null);
+          await deleteProjectPhoto(options.projectId, photo.id, photo.storagePath, photo.thumbStoragePath || null, {
+            preserveSerial: choice === 'photo-only',
+          });
           await refresh();
           if (state.photos.length === 0) _closeLightbox();
           else {

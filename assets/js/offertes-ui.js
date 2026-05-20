@@ -161,7 +161,13 @@ function wireOffertesClicks(containerEl, getProjectFn, onChange) {
         }
       }
       else if (btn.classList.contains('offerte-deletepdf-btn')) {
-        if (!confirm('Alleen de offerte-PDF wissen? De configuratie zelf blijft behouden.')) return;
+        const ok = await showConfirm({
+          title: 'Offerte-PDF verwijderen?',
+          message: 'De configuratie zelf blijft behouden.',
+          confirmText: 'PDF verwijderen',
+          variant: 'danger',
+        });
+        if (!ok) return;
         showSpinner();
         try {
           await deleteProjectOfferte(project.id, type);
@@ -171,6 +177,16 @@ function wireOffertesClicks(containerEl, getProjectFn, onChange) {
         }
       }
       else if (btn.classList.contains('offerte-trash-btn')) {
+        const pdf = (project.offertes || {})[type];
+        const ok = await showConfirm({
+          title: 'Configuratie verwijderen?',
+          message: pdf && pdf.storagePath
+            ? `Config "${type}" en de gekoppelde offerte-PDF worden verwijderd. Dit kan niet ongedaan worden.`
+            : `Config "${type}" wordt verwijderd. Dit kan niet ongedaan worden.`,
+          confirmText: 'Config verwijderen',
+          variant: 'danger',
+        });
+        if (!ok) return;
         showSpinner();
         try {
           await deleteProjectConfig(project.id, type);

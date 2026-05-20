@@ -916,7 +916,26 @@ async function listProjectPhotos(projectId) {
   return docs;
 }
 
-async function deleteProjectPhoto(projectId, photoId, storagePath, thumbStoragePath) {
+async function deleteProjectPhoto(projectId, photoId, storagePath, thumbStoragePath, opts = {}) {
+  if (opts.preserveSerial) {
+    const pRef = projectDoc(projectId);
+    await firebase.firestore().runTransaction(async (txn) => {
+      const snap = await txn.get(pRef);
+      const list = snap.exists && Array.isArray(snap.data().serialNumbers) ? snap.data().serialNumbers : [];
+      const next = list.map(entry => {
+        if (!entry || entry.photoId !== photoId) return entry;
+        const { photoId: _photoId, ocrStatus: _ocrStatus, ...rest } = entry;
+        return { ...rest, source: entry.source === 'ocr' ? 'manual' : entry.source };
+      });
+      txn.update(pRef, {
+        serialNumbers: next,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      txn.update(pRef.collection('photos').doc(photoId), {
+        preserveSerialEntry: true,
+      });
+    });
+  }
   await projectDoc(projectId).collection('photos').doc(photoId).delete();
   try { await getStorage().ref(storagePath).delete(); }
   catch (e) { console.warn('Storage full-blob verwijderen mislukt', e); }

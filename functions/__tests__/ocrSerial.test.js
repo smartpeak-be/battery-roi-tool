@@ -208,6 +208,10 @@ describe('shouldRun / shouldCleanup guards', () => {
     expect(shouldCleanup({ tag: 'serial', serialEntryId: 'sn_1' }, null)).toBe(true);
   });
 
+  it('cleanup does not fire when deleting only the photo and preserving the serial', () => {
+    expect(shouldCleanup({ tag: 'serial', serialEntryId: 'sn_1', preserveSerialEntry: true }, null)).toBe(false);
+  });
+
   it('cleanup does not fire on first-time create', () => {
     expect(shouldCleanup(null, { tag: 'serial' })).toBe(false);
   });

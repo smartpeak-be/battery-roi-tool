@@ -1,6 +1,6 @@
 import { sellPrice, unitPrice } from '../product-pricing.js';
 import { specsForCategory } from '../product-specs.js';
-import { escapeHtml } from '../shared-helpers.js';
+import { escapeHtml, showConfirm } from '../shared-helpers.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
@@ -650,7 +650,13 @@ function wireDetailForm(container, product) {
   const deleteBtn = container.querySelector('.detail-btn-delete');
   if (deleteBtn && product) {
     deleteBtn.addEventListener('click', async () => {
-      if (!confirm(`Weet je zeker dat je "${product.brand} ${product.model}" wilt verwijderen? Dit kan niet ongedaan worden.`)) return;
+      const ok = await showConfirm({
+        title: 'Product verwijderen?',
+        message: `"${product.brand} ${product.model}" wordt permanent verwijderd. Dit kan niet ongedaan worden.`,
+        confirmText: 'Product verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
       try {
         await deleteProduct(product.id);
         showToast('Product verwijderd', 'success');
@@ -707,7 +713,13 @@ function wirePhotoSection(container, productId) {
       e.stopPropagation();
       const item = deleteBtn.closest('.photo-item');
       const { photoId, storagePath, thumbStoragePath } = item.dataset;
-      if (!confirm('Foto verwijderen?')) return;
+      const ok = await showConfirm({
+        title: 'Foto verwijderen?',
+        message: 'Deze productfoto wordt permanent verwijderd.',
+        confirmText: 'Foto verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
       try {
         await deleteProductPhoto(productId, photoId, storagePath, thumbStoragePath || '');
         item.remove();
@@ -810,7 +822,13 @@ function wireDatasheetSection(container, productId) {
       e.preventDefault();
       const row = deleteBtn.closest('.ds-row');
       const { dsId, storagePath } = row.dataset;
-      if (!confirm('Datasheet verwijderen?')) return;
+      const ok = await showConfirm({
+        title: 'Datasheet verwijderen?',
+        message: 'Deze datasheet wordt permanent verwijderd.',
+        confirmText: 'Datasheet verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
       try {
         await deleteProductDatasheet(productId, dsId, storagePath);
         row.remove();

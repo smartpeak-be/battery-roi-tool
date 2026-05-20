@@ -1,4 +1,4 @@
-import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner } from '../shared-helpers.js';
+import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
@@ -319,7 +319,13 @@ function wireRowActions(el) {
   });
   el.querySelectorAll('.deleteBtn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Project verwijderen? Het wordt soft-deleted en blijft herstelbaar via "Toon verwijderde".')) return;
+      const ok = await showConfirm({
+        title: 'Project verwijderen?',
+        message: 'Het project wordt soft-deleted en blijft herstelbaar via "Toon verwijderde".',
+        confirmText: 'Project verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
       await withSpinner(async () => {
         try { await softDeleteProject(btn.dataset.id); await refreshProjectList(); }
         catch (err) { showToast('Kon niet verwijderen: ' + (err && err.message ? err.message : err), 'danger'); }
@@ -338,7 +344,13 @@ function wireRowActions(el) {
     btn.addEventListener('click', async () => {
       const id   = btn.dataset.id;
       const name = btn.dataset.name || '(project)';
-      if (!confirm(`Definitief verwijderen van '${name}'?\n\nAlle gegevens, opmerkingen en foto's worden permanent gewist. Dit kan niet ongedaan worden.`)) return;
+      const ok = await showConfirm({
+        title: 'Project definitief verwijderen?',
+        message: `Alle gegevens, opmerkingen en foto's van "${name}" worden permanent gewist. Dit kan niet ongedaan worden.`,
+        confirmText: 'Definitief verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
       btn.disabled = true;
       await withSpinner(async () => {
         try {
@@ -693,7 +705,13 @@ function renderDrawer(project) {
   const delBtn = document.getElementById('drawerDeleteBtn');
   if (delBtn) {
     delBtn.addEventListener('click', async () => {
-      if (!confirm('Project verwijderen? Het wordt soft-deleted en blijft herstelbaar via "Toon verwijderde".')) return;
+      const ok = await showConfirm({
+        title: 'Project verwijderen?',
+        message: 'Het project wordt soft-deleted en blijft herstelbaar via "Toon verwijderde".',
+        confirmText: 'Project verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
       await withSpinner(async () => {
         try {
           await softDeleteProject(project.id);
@@ -1004,7 +1022,13 @@ async function precomputeLastCalcRunForLead(lead) {
 function wireLeadActions(el) {
   el.querySelectorAll('.convertLeadBtn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Lead omzetten naar een project?')) return;
+      const ok = await showConfirm({
+        title: 'Lead omzetten?',
+        message: 'Er wordt een nieuw project aangemaakt met de leadgegevens.',
+        confirmText: 'Omzetten',
+        variant: 'primary',
+      });
+      if (!ok) return;
       await withSpinner(async () => {
         try {
           const lead = await getLead(btn.dataset.id);
@@ -1021,7 +1045,13 @@ function wireLeadActions(el) {
   });
   el.querySelectorAll('.deleteLeadBtn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Lead verwijderen? Hij wordt soft-deleted en blijft herstelbaar via "Toon verwijderde".')) return;
+      const ok = await showConfirm({
+        title: 'Lead verwijderen?',
+        message: 'De lead wordt soft-deleted en blijft herstelbaar via "Toon verwijderde".',
+        confirmText: 'Lead verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
       await withSpinner(async () => {
         try { await softDeleteLead(btn.dataset.id); await refreshLeads(); }
         catch (err) { showToast('Kon niet verwijderen: ' + (err && err.message ? err.message : err), 'danger'); }
@@ -1040,7 +1070,13 @@ function wireLeadActions(el) {
     btn.addEventListener('click', async () => {
       const id   = btn.dataset.id;
       const name = btn.dataset.name || '(lead)';
-      if (!confirm(`Definitief verwijderen van lead '${name}'?\n\nDe lead-data wordt permanent gewist. Dit kan niet ongedaan worden.`)) return;
+      const ok = await showConfirm({
+        title: 'Lead definitief verwijderen?',
+        message: `Lead "${name}" wordt permanent gewist. Dit kan niet ongedaan worden.`,
+        confirmText: 'Definitief verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
       btn.disabled = true;
       await withSpinner(async () => {
         try { await hardDeleteLead(id); await refreshLeads(); }
