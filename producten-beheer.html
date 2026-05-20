@@ -293,6 +293,10 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function escapeAttr(value) {
+  return escapeHtml(String(value == null ? '' : value));
+}
+
 function showToast(message, variant = 'primary') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
@@ -438,7 +442,7 @@ function renderCategoryTabs() {
   let html = `<button class="btn btn-sm ${!_activeCategory ? 'btn-primary' : 'btn-outline-secondary'}" data-cat="">Alle</button>`;
   _categories.forEach(c => {
     const active = _activeCategory === c.id;
-    html += `<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}" data-cat="${c.id}">${escapeHtml(c.name)}</button>`;
+    html += `<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}" data-cat="${escapeAttr(c.id)}">${escapeHtml(c.name)}</button>`;
   });
   container.innerHTML = html;
 
@@ -525,9 +529,9 @@ function renderCategoryModal() {
   _categories.forEach((c, i) => {
     const isDefault = c.isDefault;
     html += `
-      <div class="cat-row d-flex align-items-center gap-2 mb-2 ${isDefault ? 'is-default' : ''}" data-id="${c.id}">
+      <div class="cat-row d-flex align-items-center gap-2 mb-2 ${isDefault ? 'is-default' : ''}" data-id="${escapeAttr(c.id)}">
         <i class="fa-solid fa-grip-vertical text-muted" style="cursor:grab;"></i>
-        <input type="text" class="form-control cat-name-input" value="${escapeHtml(c.name)}">
+        <input type="text" class="form-control cat-name-input" value="${escapeAttr(c.name)}">
         ${isDefault ? '<span class="badge text-bg-secondary">Default</span>' : ''}
         <button class="btn btn-outline-danger btn-sm btn-delete-cat" ${isDefault ? 'disabled' : ''} title="Verwijderen">
           <i class="fa-solid fa-trash"></i>
@@ -603,7 +607,7 @@ function renderProductList() {
     const badge = p.isActive === false ? '<span class="badge text-bg-secondary ms-2">Inactief</span>' : '';
     const catName = _categories.find(c => c.id === p.categoryId)?.name || '';
     return `
-      <div class="card mb-2 product-card ${inactiveClass} ${activeClass}" data-id="${p.id}">
+      <div class="card mb-2 product-card ${inactiveClass} ${activeClass}" data-id="${escapeAttr(p.id)}">
         <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
           <div class="flex-grow-1">
             <strong>${escapeHtml(p.brand)} ${escapeHtml(p.model)}</strong>${badge}
@@ -672,9 +676,9 @@ function openNewProduct() {
 function buildBrandOptions(selectedBrand) {
   let html = '<option value="">— Kies merk —</option>';
   for (const [group, brands] of Object.entries(BRAND_OPTIONS)) {
-    html += `<optgroup label="${group}">`;
+    html += `<optgroup label="${escapeAttr(group)}">`;
     brands.forEach(b => {
-      html += `<option value="${b}" ${b === selectedBrand ? 'selected' : ''}>${b}</option>`;
+      html += `<option value="${escapeAttr(b)}" ${b === selectedBrand ? 'selected' : ''}>${escapeHtml(b)}</option>`;
     });
     html += '</optgroup>';
   }
@@ -705,7 +709,7 @@ function buildDetailFormHtml(product, mode) {
         <label class="form-label">Categorie <span class="text-danger">*</span></label>
         <select class="form-select detail-category">
           <option value="">— Kies categorie —</option>
-          ${_categories.map(c => `<option value="${c.id}" ${p.categoryId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+          ${_categories.map(c => `<option value="${escapeAttr(c.id)}" ${p.categoryId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
         </select>
       </div>
 
@@ -718,11 +722,11 @@ function buildDetailFormHtml(product, mode) {
         </div>
         <div class="col-6 ${isCustomBrand ? '' : 'd-none'}" data-custom-brand-group>
           <label class="form-label">Merk (vrij)</label>
-          <input type="text" class="form-control detail-custom-brand" value="${isCustomBrand ? escapeHtml(p.brand) : ''}" placeholder="Voer merk in">
+          <input type="text" class="form-control detail-custom-brand" value="${isCustomBrand ? escapeAttr(p.brand) : ''}" placeholder="Voer merk in">
         </div>
         <div class="col-6">
           <label class="form-label">Model <span class="text-danger">*</span></label>
-          <input type="text" class="form-control detail-model" value="${escapeHtml(p.model || '')}">
+          <input type="text" class="form-control detail-model" value="${escapeAttr(p.model || '')}">
         </div>
       </div>
 
@@ -741,7 +745,7 @@ function buildDetailFormHtml(product, mode) {
           <label class="form-label">Aankoopprijs (ex BTW) <span class="text-danger">*</span></label>
           <div class="input-group">
             <span class="input-group-text">&euro;</span>
-            <input type="number" class="form-control detail-purchase-price" min="0" step="0.01" value="${p.purchasePrice || ''}">
+            <input type="number" class="form-control detail-purchase-price" min="0" step="0.01" value="${escapeAttr(p.purchasePrice || '')}">
           </div>
         </div>
         <div class="col-6">
@@ -757,11 +761,11 @@ function buildDetailFormHtml(product, mode) {
         <div class="col-8">
           <label class="form-label">Winstmarge</label>
           <div class="input-group">
-            <div class="btn-group detail-margin-type" role="group" data-type="${marginType}">
+            <div class="btn-group detail-margin-type" role="group" data-type="${escapeAttr(marginType)}">
               <button type="button" class="btn btn-outline-secondary btn-sm ${marginType === 'percent' ? 'active' : ''}" data-val="percent">%</button>
               <button type="button" class="btn btn-outline-secondary btn-sm ${marginType === 'fixed' ? 'active' : ''}" data-val="fixed">&euro;</button>
             </div>
-            <input type="number" class="form-control detail-margin-value" min="0" step="1" value="${marginValue}">
+            <input type="number" class="form-control detail-margin-value" min="0" step="1" value="${escapeAttr(marginValue)}">
           </div>
         </div>
       </div>
@@ -770,16 +774,16 @@ function buildDetailFormHtml(product, mode) {
         <div class="col-8">
           <label class="form-label">Korting</label>
           <div class="input-group">
-            <div class="btn-group detail-discount-type" role="group" data-type="${discountType}">
+            <div class="btn-group detail-discount-type" role="group" data-type="${escapeAttr(discountType)}">
               <button type="button" class="btn btn-outline-secondary btn-sm ${discountType === 'percent' ? 'active' : ''}" data-val="percent">%</button>
               <button type="button" class="btn btn-outline-secondary btn-sm ${discountType === 'fixed' ? 'active' : ''}" data-val="fixed">&euro;</button>
             </div>
-            <input type="number" class="form-control detail-discount-value" min="0" step="1" value="${discountValue}">
+            <input type="number" class="form-control detail-discount-value" min="0" step="1" value="${escapeAttr(discountValue)}">
           </div>
         </div>
         <div class="col-4">
           <label class="form-label">Vanaf eenheid</label>
-          <input type="number" class="form-control detail-discount-from-unit" min="1" step="1" value="${discountFromUnit}">
+          <input type="number" class="form-control detail-discount-from-unit" min="1" step="1" value="${escapeAttr(discountFromUnit)}">
         </div>
       </div>
 
@@ -811,8 +815,8 @@ function buildDetailFormHtml(product, mode) {
 
       <!-- Blok D: Foto's -->
       <h6 class="text-muted mb-3"><i class="fa-solid fa-images me-1"></i> Foto's</h6>
-      <div class="product-photo-grid mb-2" data-product-id="${p.id}"></div>
-      <div class="media-drop-zone photo-drop-zone mb-1" data-product-id="${p.id}">
+      <div class="product-photo-grid mb-2" data-product-id="${escapeAttr(p.id)}"></div>
+      <div class="media-drop-zone photo-drop-zone mb-1" data-product-id="${escapeAttr(p.id)}">
         <i class="fa-solid fa-cloud-arrow-up me-1"></i> Sleep foto's hierheen of klik om te uploaden
         <input type="file" accept="image/*" multiple class="photo-file-input">
       </div>
@@ -824,8 +828,8 @@ function buildDetailFormHtml(product, mode) {
 
       <!-- Blok D: Datasheets -->
       <h6 class="text-muted mb-3"><i class="fa-solid fa-file-pdf me-1"></i> Datasheets</h6>
-      <div class="datasheet-list mb-2" data-product-id="${p.id}"></div>
-      <div class="media-drop-zone datasheet-drop-zone mb-1" data-product-id="${p.id}">
+      <div class="datasheet-list mb-2" data-product-id="${escapeAttr(p.id)}"></div>
+      <div class="media-drop-zone datasheet-drop-zone mb-1" data-product-id="${escapeAttr(p.id)}">
         <i class="fa-solid fa-cloud-arrow-up me-1"></i> Sleep PDF hierheen of klik om te uploaden
         <input type="file" accept="application/pdf" class="datasheet-file-input">
       </div>
@@ -1038,8 +1042,8 @@ async function renderProductPhotos(grid, productId) {
     const photos = await listProductPhotos(productId);
     if (!photos.length) { grid.innerHTML = '<span class="text-muted small">Geen foto\'s</span>'; return; }
     grid.innerHTML = photos.map(p => `
-      <div class="photo-item" data-photo-id="${p.id}" data-storage-path="${p.storagePath || ''}" data-thumb-storage-path="${p.thumbStoragePath || ''}">
-        <img class="photo-thumb" src="${p.thumbUrl || p.downloadUrl || ''}" alt="${p.name || ''}" data-full-url="${p.downloadUrl || ''}">
+      <div class="photo-item" data-photo-id="${escapeAttr(p.id)}" data-storage-path="${escapeAttr(p.storagePath || '')}" data-thumb-storage-path="${escapeAttr(p.thumbStoragePath || '')}">
+        <img class="photo-thumb" src="${escapeAttr(p.thumbUrl || p.downloadUrl || '')}" alt="${escapeAttr(p.name || '')}" data-full-url="${escapeAttr(p.downloadUrl || '')}">
         <button type="button" class="photo-delete-btn" title="Verwijderen"><i class="fa-solid fa-xmark"></i></button>
       </div>
     `).join('');
@@ -1052,7 +1056,10 @@ async function renderProductPhotos(grid, productId) {
 function openProductLightbox(url) {
   const overlay = document.createElement('div');
   overlay.className = 'product-lightbox-overlay';
-  overlay.innerHTML = `<img src="${url}" alt="Foto">`;
+  const img = document.createElement('img');
+  img.src = url || '';
+  img.alt = 'Foto';
+  overlay.appendChild(img);
   overlay.addEventListener('click', () => overlay.remove());
   document.addEventListener('keydown', function esc(e) {
     if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', esc); }
@@ -1137,9 +1144,9 @@ async function renderProductDatasheets(list, productId) {
     list.innerHTML = docs.map(d => {
       const sizeKb = d.sizeBytes ? Math.round(d.sizeBytes / 1024) : '?';
       return `
-        <div class="ds-row" data-ds-id="${d.id}" data-storage-path="${d.storagePath || ''}">
+        <div class="ds-row" data-ds-id="${escapeAttr(d.id)}" data-storage-path="${escapeAttr(d.storagePath || '')}">
           <i class="fa-solid fa-file-pdf text-danger"></i>
-          <a href="${d.downloadUrl || '#'}" target="_blank" class="ds-name" title="${d.name || ''}">${d.name || 'Datasheet'}</a>
+          <a href="${escapeAttr(d.downloadUrl || '#')}" target="_blank" rel="noopener" class="ds-name" title="${escapeAttr(d.name || '')}">${escapeHtml(d.name || 'Datasheet')}</a>
           <span class="ds-size">${sizeKb} KB</span>
           <button type="button" class="btn btn-sm btn-outline-danger ds-delete-btn" title="Verwijderen">
             <i class="fa-solid fa-trash-can"></i>
@@ -1179,18 +1186,18 @@ function renderSpecFields(container, categoryId, existingSpecs) {
     html += `<label class="form-label small mb-1">${escapeHtml(f.label)}${f.unit ? ' <span class="text-muted">(' + escapeHtml(f.unit) + ')</span>' : ''}</label>`;
 
     if (f.type === 'number') {
-      html += `<input type="number" class="form-control form-control-sm spec-field" data-spec-key="${f.key}" step="any" value="${val != null ? val : ''}">`;
+      html += `<input type="number" class="form-control form-control-sm spec-field" data-spec-key="${escapeAttr(f.key)}" step="any" value="${val != null ? escapeAttr(val) : ''}">`;
     } else if (f.type === 'text') {
-      html += `<input type="text" class="form-control form-control-sm spec-field" data-spec-key="${f.key}" value="${val != null ? escapeHtml(String(val)) : ''}">`;
+      html += `<input type="text" class="form-control form-control-sm spec-field" data-spec-key="${escapeAttr(f.key)}" value="${val != null ? escapeAttr(val) : ''}">`;
     } else if (f.type === 'select') {
-      html += `<select class="form-select form-select-sm spec-field" data-spec-key="${f.key}">`;
+      html += `<select class="form-select form-select-sm spec-field" data-spec-key="${escapeAttr(f.key)}">`;
       html += '<option value="">—</option>';
       (f.options || []).forEach(opt => {
-        html += `<option value="${escapeHtml(String(opt))}" ${String(val) === String(opt) ? 'selected' : ''}>${escapeHtml(String(opt))}</option>`;
+        html += `<option value="${escapeAttr(opt)}" ${String(val) === String(opt) ? 'selected' : ''}>${escapeHtml(String(opt))}</option>`;
       });
       html += '</select>';
     } else if (f.type === 'boolean') {
-      html += `<div class="form-check mt-1"><input type="checkbox" class="form-check-input spec-field" data-spec-key="${f.key}" ${val ? 'checked' : ''}><label class="form-check-label small">Ja</label></div>`;
+      html += `<div class="form-check mt-1"><input type="checkbox" class="form-check-input spec-field" data-spec-key="${escapeAttr(f.key)}" ${val ? 'checked' : ''}><label class="form-check-label small">Ja</label></div>`;
     }
 
     html += '</div>';
@@ -1211,8 +1218,8 @@ function renderCustomSpecs(container, customSpecs) {
 
   list.innerHTML = entries.map(([key, value]) => `
     <div class="d-flex gap-2 mb-2 custom-spec-row">
-      <input type="text" class="form-control form-control-sm custom-spec-key" value="${escapeHtml(key)}" placeholder="Naam">
-      <input type="text" class="form-control form-control-sm custom-spec-value" value="${escapeHtml(String(value))}" placeholder="Waarde">
+      <input type="text" class="form-control form-control-sm custom-spec-key" value="${escapeAttr(key)}" placeholder="Naam">
+      <input type="text" class="form-control form-control-sm custom-spec-value" value="${escapeAttr(value)}" placeholder="Waarde">
       <button type="button" class="btn btn-outline-danger btn-sm btn-delete-custom-spec"><i class="fa-solid fa-trash"></i></button>
     </div>
   `).join('');
