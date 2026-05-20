@@ -1,6 +1,8 @@
 import { totalProductPrice } from './product-pricing.js';
 
 export const SERVICE_CATEGORY_SLUG = 'service';
+export const MATERIAL_CATEGORY_SLUG = 'materiaal';
+export const MISC_CATEGORY_SLUG = 'diversen';
 export const BATTERY_CATEGORY_SLUGS = new Set(['batterijen', 'thuisbatterij-systemen']);
 
 export function productLabel(product) {
@@ -37,23 +39,48 @@ export function normalizeConfigItems(items) {
     .filter(item => item.productId && item.qty > 0);
 }
 
-export function generatedConfigDescription(items, productsById, categoriesById = {}) {
+export function generatedConfigDescription(items, productsById) {
   const parts = normalizeConfigItems(items)
     .map(item => {
       const product = productsById && productsById[item.productId];
-      if (!product || isServiceProduct(product, categoriesById)) return '';
+      if (!product) return '';
       return `${item.qty}x ${productLabel(product)}`;
     })
     .filter(Boolean);
   return parts.join(' & ');
 }
 
-export function configSubtotalExVat(items, productsById, categoriesById = {}) {
+export function configSubtotalExVat(items, productsById) {
   return normalizeConfigItems(items).reduce((sum, item) => {
     const product = productsById && productsById[item.productId];
-    if (!product || isServiceProduct(product, categoriesById)) return sum;
+    if (!product) return sum;
     return sum + totalProductPrice(product, item.qty);
   }, 0);
+}
+
+export function configItemsForCategorySlug(items, productsById, categoriesById = {}, slug) {
+  return normalizeConfigItems(items).filter(item => {
+    const product = productsById && productsById[item.productId];
+    const cat = product && categoriesById && categoriesById[product.categoryId];
+    return !!(cat && cat.slug === slug);
+  });
+}
+
+export function configItemsExceptCategorySlug(items, productsById, categoriesById = {}, slug) {
+  return normalizeConfigItems(items).filter(item => {
+    const product = productsById && productsById[item.productId];
+    const cat = product && categoriesById && categoriesById[product.categoryId];
+    return product && (!cat || cat.slug !== slug);
+  });
+}
+
+export function configItemsExceptCategorySlugs(items, productsById, categoriesById = {}, slugs = []) {
+  const excluded = new Set(slugs);
+  return normalizeConfigItems(items).filter(item => {
+    const product = productsById && productsById[item.productId];
+    const cat = product && categoriesById && categoriesById[product.categoryId];
+    return product && (!cat || !excluded.has(cat.slug));
+  });
 }
 
 export function configBatteryWeightKg(items, productsById, categoriesById = {}) {

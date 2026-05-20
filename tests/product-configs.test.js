@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   bebatTotalInclVat,
   configBatteryWeightKg,
+  configItemsExceptCategorySlug,
+  configItemsExceptCategorySlugs,
+  configItemsForCategorySlug,
   configSubtotalExVat,
   generatedConfigDescription,
   productMap,
@@ -12,6 +15,8 @@ const categories = [
   { id: 'cat-bat', slug: 'batterijen', name: 'Batterijen' },
   { id: 'cat-system', slug: 'thuisbatterij-systemen', name: 'Systemen' },
   { id: 'cat-inv', slug: 'omvormers', name: 'Omvormers' },
+  { id: 'cat-mat', slug: 'materiaal', name: 'Materiaal' },
+  { id: 'cat-misc', slug: 'diversen', name: 'Diversen' },
   { id: 'cat-service', slug: 'service', name: 'Service' },
 ];
 
@@ -53,6 +58,26 @@ const products = [
     specs: { weightKg: 10 },
   },
   {
+    id: 'rail',
+    categoryId: 'cat-mat',
+    brand: 'SmartPeak',
+    model: 'Rail',
+    purchasePrice: 40,
+    marginType: 'fixed',
+    marginValue: 10,
+    specs: {},
+  },
+  {
+    id: 'buffer',
+    categoryId: 'cat-misc',
+    brand: 'SmartPeak',
+    model: 'Buffer',
+    purchasePrice: 100,
+    marginType: 'fixed',
+    marginValue: 0,
+    specs: {},
+  },
+  {
     id: 'install',
     categoryId: 'cat-service',
     brand: 'SmartPeak',
@@ -68,20 +93,39 @@ const pMap = productMap(products);
 const cMap = categoryMap(categories);
 
 describe('product config helpers', () => {
-  it('generates customer-facing description from non-service products', () => {
+  it('generates customer-facing description from all config products', () => {
     expect(generatedConfigDescription([
       { productId: 'acplus', qty: 2 },
       { productId: 'ab3000l', qty: 3 },
       { productId: 'install', qty: 1 },
-    ], pMap, cMap)).toBe('2x Zendure AC+ & 3x Zendure AB3000L');
+    ], pMap, cMap)).toBe('2x Zendure AC+ & 3x Zendure AB3000L & 1x SmartPeak Installatiekost');
   });
 
-  it('calculates hardware subtotal ex VAT and excludes services', () => {
+  it('calculates full config subtotal ex VAT including services', () => {
     expect(configSubtotalExVat([
       { productId: 'acplus', qty: 2 },
       { productId: 'ab3000l', qty: 2 },
       { productId: 'install', qty: 1 },
-    ], pMap, cMap)).toBeCloseTo(1200 + 1080 + 700 + 650);
+    ], pMap, cMap)).toBeCloseTo(1200 + 1080 + 700 + 650 + 250);
+  });
+
+  it('splits material items from the main quote line', () => {
+    const items = [
+      { productId: 'acplus', qty: 1 },
+      { productId: 'rail', qty: 2 },
+      { productId: 'buffer', qty: 1 },
+      { productId: 'install', qty: 1 },
+    ];
+    expect(configItemsForCategorySlug(items, pMap, cMap, 'materiaal')).toEqual([{ productId: 'rail', qty: 2 }]);
+    expect(configItemsExceptCategorySlug(items, pMap, cMap, 'materiaal')).toEqual([
+      { productId: 'acplus', qty: 1 },
+      { productId: 'buffer', qty: 1 },
+      { productId: 'install', qty: 1 },
+    ]);
+    expect(configItemsExceptCategorySlugs(items, pMap, cMap, ['materiaal', 'diversen'])).toEqual([
+      { productId: 'acplus', qty: 1 },
+      { productId: 'install', qty: 1 },
+    ]);
   });
 
   it('counts only battery/system products for Bebat weight', () => {

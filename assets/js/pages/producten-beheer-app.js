@@ -4,13 +4,14 @@ import {
   bebatTotalInclVat,
   categoryMap,
   configBatteryWeightKg,
+  configItemsExceptCategorySlugs,
+  configItemsForCategorySlug,
   configSubtotalExVat,
-  findServiceProduct,
   generatedConfigDescription,
-  isServiceProduct,
+  MATERIAL_CATEGORY_SLUG,
+  MISC_CATEGORY_SLUG,
   productLabel,
   productMap,
-  serviceProductPrice,
 } from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
@@ -152,12 +153,13 @@ let _editingConfigId = null;
 async function seedDefaultCategories() {
   const cats = await listProductCategories();
   if (cats.length > 0) return; // Already seeded
-  const defaults = [
-    { name: 'Thuisbatterij-systemen', slug: 'thuisbatterij-systemen', isDefault: false, sortOrder: 0 },
-    { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 1 },
-    { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 2 },
-    { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 3 },
-  ];
+    const defaults = [
+      { name: 'Thuisbatterij-systemen', slug: 'thuisbatterij-systemen', isDefault: false, sortOrder: 0 },
+      { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 1 },
+      { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 2 },
+      { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 3 },
+      { name: 'Diversen',    slug: 'diversen',    isDefault: false, sortOrder: 4 },
+    ];
   for (const cat of defaults) {
     await createProductCategory(cat);
   }
@@ -1163,13 +1165,12 @@ function openConfigModal(configId = null) {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('configModal')).show();
 }
 
-function activeHardwareProducts() {
-  const categoriesById = categoryMap(_categories);
-  return _allProducts.filter(p => p.isActive !== false && !isServiceProduct(p, categoriesById));
+function activeConfigProducts() {
+  return _allProducts.filter(p => p.isActive !== false);
 }
 
 function productOptionsHtml(selectedId) {
-  return '<option value="">— Product kiezen —</option>' + activeHardwareProducts().map(p => (
+  return '<option value="">— Product kiezen —</option>' + activeConfigProducts().map(p => (
     `<option value="${escapeAttr(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(productLabel(p))}</option>`
   )).join('');
 }
@@ -1268,7 +1269,7 @@ function updateConfigPreview() {
   const desc = generatedConfigDescription(data.items, productsById, categoriesById) || 'Nog geen producten gekozen.';
   const subtotal = configSubtotalExVat(data.items, productsById, categoriesById);
   const kg = configBatteryWeightKg(data.items, productsById, categoriesById);
-  const bebat = bebatTotalInclVat(kg, _settings.bebatPricePerKg || 0);
+  const bebat = bebatTotalInclVat(kg, currentBebatPricePerKg());
   el.innerHTML = `
     <h6>Preview</h6>
     <div class="small text-muted mb-2">Omschrijving</div>
@@ -1278,6 +1279,14 @@ function updateConfigPreview() {
       <dt class="col-7">Batterijgewicht</dt><dd class="col-5 text-end">${kg.toFixed(2)} kg</dd>
       <dt class="col-7">Bebat incl. 21%</dt><dd class="col-5 text-end">€${bebat.toFixed(2)}</dd>
     </dl>`;
+}
+
+function currentBebatPricePerKg() {
+  const fromInput = parseFloat(document.getElementById('settingsBebatPerKg')?.value);
+  if (!isNaN(fromInput) && fromInput > 0) return fromInput;
+  const fromSettings = parseFloat(_settings.bebatPricePerKg);
+  if (!isNaN(fromSettings) && fromSettings > 0) return fromSettings;
+  return 2.89;
 }
 
 async function saveConfigFromModal() {
@@ -1333,18 +1342,6 @@ function buildQuoteModalHtml(projects, context) {
         <label class="form-label">BTW config/services</label>
         <select class="form-select" id="quoteVat"><option value="6">6% woning 10+ jaar</option><option value="21" selected>21%</option></select>
       </div>
-      <div class="col-md-4 d-flex align-items-end">
-        <div class="form-check form-switch mb-2">
-          <input class="form-check-input" type="checkbox" id="quoteInspection">
-          <label class="form-check-label" for="quoteInspection">Keuring opnemen</label>
-        </div>
-      </div>
-      <div class="col-md-4 d-flex align-items-end">
-        <div class="form-check form-switch mb-2">
-          <input class="form-check-input" type="checkbox" id="quoteBuffer" checked>
-          <label class="form-check-label" for="quoteBuffer">Bufferlijn tonen</label>
-        </div>
-      </div>
       <div class="col-12">
         <div id="quotePreview" class="border rounded p-3 bg-light"></div>
       </div>
@@ -1352,7 +1349,7 @@ function buildQuoteModalHtml(projects, context) {
 }
 
 function wireQuoteModal() {
-  ['quoteProject', 'quoteConfig', 'quoteVat', 'quoteInspection', 'quoteBuffer'].forEach(id => {
+  ['quoteProject', 'quoteConfig', 'quoteVat'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', updateQuotePreview);
   });
 }
@@ -1366,38 +1363,52 @@ function updateQuotePreview() {
     return;
   }
   const { productsById, categoriesById } = _maps();
-  const install = findServiceProduct(_allProducts, 'installation');
-  const inspect = findServiceProduct(_allProducts, 'inspection');
-  const buffer = findServiceProduct(_allProducts, 'buffer');
   const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
-  const includeInspection = document.getElementById('quoteInspection').checked;
-  const includeBuffer = document.getElementById('quoteBuffer').checked;
-  const configEx = configSubtotalExVat(cfg.items, productsById, categoriesById);
-  const installEx = serviceProductPrice(install);
-  const inspectEx = includeInspection ? serviceProductPrice(inspect) : 0;
-  const bufferEx = includeBuffer ? serviceProductPrice(buffer) : 0;
+  const mainItems = configItemsExceptCategorySlugs(cfg.items, productsById, categoriesById, [MATERIAL_CATEGORY_SLUG, MISC_CATEGORY_SLUG]);
+  const materialItems = configItemsForCategorySlug(cfg.items, productsById, categoriesById, MATERIAL_CATEGORY_SLUG);
+  const miscItems = configItemsForCategorySlug(cfg.items, productsById, categoriesById, MISC_CATEGORY_SLUG);
+  const mainEx = configSubtotalExVat(mainItems, productsById, categoriesById);
+  const materialEx = configSubtotalExVat(materialItems, productsById, categoriesById);
+  const miscEx = configSubtotalExVat(miscItems, productsById, categoriesById);
   const kg = configBatteryWeightKg(cfg.items, productsById, categoriesById);
-  const bebatIncl = bebatTotalInclVat(kg, _settings.bebatPricePerKg || 0);
-  const serviceDesc = ['Installatiekost'];
-  if (includeInspection) serviceDesc.push('Keuring');
-  if (includeBuffer) serviceDesc.push('Buffer kleine onvoorziene kosten');
-  const line1Desc = [generatedConfigDescription(cfg.items, productsById, categoriesById), ...serviceDesc].filter(Boolean).join(' · ');
-  const line1Ex = configEx + installEx + inspectEx + bufferEx;
-  const line1Incl = line1Ex * (1 + vat / 100);
-  const totalIncl = line1Incl + bebatIncl;
+  const bebatPrice = currentBebatPricePerKg();
+  const bebatIncl = bebatTotalInclVat(kg, bebatPrice);
+  const mainDesc = generatedConfigDescription(mainItems, productsById) || cfg.name || 'Configuratie';
+  const materialDesc = generatedConfigDescription(materialItems, productsById);
+  const miscDesc = generatedConfigDescription(miscItems, productsById);
+  const mainIncl = mainEx * (1 + vat / 100);
+  const materialIncl = materialEx * (1 + vat / 100);
+  const miscIncl = miscEx * (1 + vat / 100);
+  const materialRow = materialItems.length ? `
+          <tr>
+            <td>Materiaal: ${escapeHtml(materialDesc)}</td>
+            <td class="text-end">€${materialEx.toFixed(2)}</td>
+            <td class="text-end">${vat}%</td>
+            <td class="text-end">€${materialIncl.toFixed(2)}</td>
+          </tr>` : '';
+  const miscRow = miscItems.length ? `
+          <tr>
+            <td>Diversen: ${escapeHtml(miscDesc)}</td>
+            <td class="text-end">€${miscEx.toFixed(2)}</td>
+            <td class="text-end">${vat}%</td>
+            <td class="text-end">€${miscIncl.toFixed(2)}</td>
+          </tr>` : '';
+  const totalIncl = mainIncl + materialIncl + miscIncl + bebatIncl;
   el.innerHTML = `
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-2">
         <thead><tr><th>Omschrijving</th><th class="text-end">Ex BTW</th><th class="text-end">BTW</th><th class="text-end">Incl.</th></tr></thead>
         <tbody>
           <tr>
-            <td>${escapeHtml(line1Desc)}</td>
-            <td class="text-end">€${line1Ex.toFixed(2)}</td>
+            <td>${escapeHtml(mainDesc)}</td>
+            <td class="text-end">€${mainEx.toFixed(2)}</td>
             <td class="text-end">${vat}%</td>
-            <td class="text-end">€${line1Incl.toFixed(2)}</td>
+            <td class="text-end">€${mainIncl.toFixed(2)}</td>
           </tr>
+          ${materialRow}
+          ${miscRow}
           <tr>
-            <td>Bebat bijdrage (${kg.toFixed(2)} kg)</td>
+            <td>Bebat bijdrage (${kg.toFixed(2)} kg × €${bebatPrice.toFixed(2)}/kg)</td>
             <td class="text-end">€${(bebatIncl / 1.21).toFixed(2)}</td>
             <td class="text-end">21%</td>
             <td class="text-end">€${bebatIncl.toFixed(2)}</td>

@@ -1529,9 +1529,21 @@ async function ensureServiceProducts() {
     });
     serviceCat = { id, name: 'Service', slug: 'service' };
   }
+  let miscCat = cats.find(c => c.slug === 'diversen');
+  if (!miscCat) {
+    const id = await createProductCategory({
+      name: 'Diversen',
+      slug: 'diversen',
+      isDefault: false,
+      sortOrder: cats.length + 1,
+    });
+    miscCat = { id, name: 'Diversen', slug: 'diversen' };
+  }
 
   const existingSnap = await productsCol().where('categoryId', '==', serviceCat.id).get();
   const existing = existingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const existingMiscSnap = await productsCol().where('categoryId', '==', miscCat.id).get();
+  const existingMisc = existingMiscSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const specs = [
     {
       serviceKey: 'installation',
@@ -1556,7 +1568,7 @@ async function ensureServiceProducts() {
     },
   ];
 
-  for (const svc of specs) {
+  for (const svc of specs.filter(s => s.serviceKey !== 'buffer')) {
     if (existing.some(p => p.serviceKey === svc.serviceKey)) continue;
     await createProduct({
       categoryId: serviceCat.id,
@@ -1572,6 +1584,25 @@ async function ensureServiceProducts() {
       specs: { serviceKey: svc.serviceKey },
       serviceKey: svc.serviceKey,
       sortOrder: svc.sortOrder,
+    });
+  }
+
+  const buffer = specs.find(s => s.serviceKey === 'buffer');
+  if (buffer && !existingMisc.some(p => p.serviceKey === 'buffer')) {
+    await createProduct({
+      categoryId: miscCat.id,
+      brand: 'SmartPeak',
+      model: buffer.model,
+      description: buffer.description,
+      purchasePrice: Number(buffer.price) || 0,
+      marginType: 'fixed',
+      marginValue: 0,
+      discountType: 'fixed',
+      discountValue: 0,
+      discountFromUnit: 2,
+      specs: { serviceKey: 'buffer' },
+      serviceKey: 'buffer',
+      sortOrder: buffer.sortOrder,
     });
   }
 
