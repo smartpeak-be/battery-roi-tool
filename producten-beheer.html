@@ -47,6 +47,11 @@
           <li class="nav-item">
             <a href="dashboard.html" class="btn btn-outline-primary btn-sm"><i class="fa-solid fa-arrow-left me-1"></i> Dashboard</a>
           </li>
+          <li class="nav-item">
+            <button type="button" class="btn btn-primary btn-sm" id="btnOpenQuoteModal">
+              <i class="fa-solid fa-file-invoice-dollar me-1"></i> Offerte-preview
+            </button>
+          </li>
           <li class="nav-item">Hallo, <strong id="userDisplayName">…</strong></li>
           <li class="nav-item">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSignOut">Uitloggen</button>
@@ -120,7 +125,7 @@
             <label class="form-label">Bebat prijs/kg</label>
             <div class="input-group">
               <span class="input-group-text">€</span>
-              <input type="number" class="form-control" id="settingsBebatPerKg" min="0" step="0.01" value="0.50">
+              <input type="number" class="form-control" id="settingsBebatPerKg" min="0" step="0.01" value="2.89">
             </div>
           </div>
 
@@ -147,6 +152,21 @@
           <button class="btn btn-primary" id="btnSaveSettings">
             <i class="fa-solid fa-floppy-disk me-1"></i> Opslaan
           </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3" id="configsCard">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <h6 class="mb-0"><i class="fa-solid fa-layer-group me-2"></i>Configuraties</h6>
+        <button type="button" class="btn btn-primary btn-sm" id="btnNewConfig">
+          <i class="fa-solid fa-plus me-1"></i> Nieuwe configuratie
+        </button>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">Bundels van producten die later de Excel-configs vervangen. Installatie, keuring en buffer blijven service-lijnen in de offerte-preview.</p>
+        <div id="configList">
+          <p class="text-muted mb-0">Laden...</p>
         </div>
       </div>
     </div>
@@ -193,6 +213,42 @@
       </div>
     </div>
   </main>
+</div>
+
+<!-- Product configurations -->
+<div class="modal fade" id="configModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="configModalTitle">Configuratie</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="configModalBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+        <button type="button" class="btn btn-primary" id="btnSaveConfig">
+          <i class="fa-solid fa-floppy-disk me-1"></i> Opslaan
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quote prototype modal -->
+<div class="modal fade" id="quoteModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fa-solid fa-file-invoice-dollar me-2"></i>Offerte-preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="quoteModalBody"></div>
+      <div class="modal-footer">
+        <span class="text-muted small me-auto">Prototype: nog geen offerte wordt opgeslagen of verzonden.</span>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Sluiten</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Category Modal -->

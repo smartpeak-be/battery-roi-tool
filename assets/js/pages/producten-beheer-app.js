@@ -1,5 +1,18 @@
 import { sellPrice, unitPrice } from '../product-pricing.js';
 import { specsForCategory } from '../product-specs.js';
+import {
+  bebatTotalInclVat,
+  categoryMap,
+  configBatteryWeightKg,
+  configItemsExceptCategorySlugs,
+  configItemsForCategorySlug,
+  configSubtotalExVat,
+  generatedConfigDescription,
+  MATERIAL_CATEGORY_SLUG,
+  MISC_CATEGORY_SLUG,
+  productLabel,
+  productMap,
+} from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
 
@@ -61,6 +74,7 @@ function wireToggleButtons() {
 async function loadSettings() {
   try {
     const s = await getSettings();
+    _settings = s || {};
     if (s.defaultMarginType) setToggle('marginTypeToggle', s.defaultMarginType);
     if (s.defaultMarginValue != null) document.getElementById('settingsMarginValue').value = s.defaultMarginValue;
     if (s.defaultDiscountType) setToggle('discountTypeToggle', s.defaultDiscountType);
@@ -69,9 +83,23 @@ async function loadSettings() {
     if (s.defaultInstallCost != null) document.getElementById('settingsInstallCost').value = s.defaultInstallCost;
     if (s.defaultInspectCost != null) document.getElementById('settingsInspectCost').value = s.defaultInspectCost;
     if (s.bebatPricePerKg != null) document.getElementById('settingsBebatPerKg').value = s.bebatPricePerKg;
+    markLegacyServiceSettings();
   } catch (e) {
     console.warn('loadSettings failed:', e);
   }
+}
+
+function markLegacyServiceSettings() {
+  ['settingsInstallCost', 'settingsInspectCost'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = true;
+    el.title = 'Beheer deze kost voortaan als product in de categorie Service.';
+    const group = el.closest('.col-md-6');
+    if (group && !group.querySelector('.service-setting-note')) {
+      group.insertAdjacentHTML('beforeend', '<div class="form-text service-setting-note">Legacy: beheer voortaan via Service-producten.</div>');
+    }
+  });
 }
 
 function wireSaveSettings() {
@@ -83,8 +111,6 @@ function wireSaveSettings() {
         defaultDiscountType:    readToggle('discountTypeToggle'),
         defaultDiscountValue:   parseFloat(document.getElementById('settingsDiscountValue').value) || 0,
         defaultDiscountFromUnit: parseInt(document.getElementById('settingsDiscountFromUnit').value) || 2,
-        defaultInstallCost:     parseFloat(document.getElementById('settingsInstallCost').value) || 0,
-        defaultInspectCost:     parseFloat(document.getElementById('settingsInspectCost').value) || 0,
         bebatPricePerKg:        parseFloat(document.getElementById('settingsBebatPerKg').value) || 0,
       });
       showToast('Instellingen opgeslagen', 'success');
@@ -120,16 +146,20 @@ function wireSettingsCollapse() {
 
 let _categories = [];
 let _activeCategory = null;
+let _settings = {};
+let _allConfigs = [];
+let _editingConfigId = null;
 
 async function seedDefaultCategories() {
   const cats = await listProductCategories();
   if (cats.length > 0) return; // Already seeded
-  const defaults = [
-    { name: 'Thuisbatterij-systemen', slug: 'thuisbatterij-systemen', isDefault: false, sortOrder: 0 },
-    { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 1 },
-    { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 2 },
-    { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 3 },
-  ];
+    const defaults = [
+      { name: 'Thuisbatterij-systemen', slug: 'thuisbatterij-systemen', isDefault: false, sortOrder: 0 },
+      { name: 'Batterijen',  slug: 'batterijen',  isDefault: false, sortOrder: 1 },
+      { name: 'Omvormers',   slug: 'omvormers',   isDefault: false, sortOrder: 2 },
+      { name: 'Materiaal',   slug: 'materiaal',   isDefault: true,  sortOrder: 3 },
+      { name: 'Diversen',    slug: 'diversen',    isDefault: false, sortOrder: 4 },
+    ];
   for (const cat of defaults) {
     await createProductCategory(cat);
   }
@@ -260,6 +290,7 @@ function renderCategoryModal() {
 // ─── PRODUCT MANAGEMENT ──────────────────────────────────────────────────
 
 const BRAND_OPTIONS = {
+  'SmartPeak': ['SmartPeak'],
   'Plug & Play': ['Marstek', 'Zendure', 'Growatt', 'EcoFlow', 'Anker Solix', 'Hoymiles', 'Sunpura', 'Bluetti'],
   'Installatie': ['Huawei', 'BYD', 'Dyness', 'Sigenergy', 'Enphase', 'Tesla', 'Sonnen', 'LG', 'Solarwatt', 'Pylontech', 'Alpha ESS', 'SAJ', 'Sungrow', 'Sessy'],
 };
@@ -270,6 +301,10 @@ function getCategorySlug(categoryId) {
   return cat ? (cat.slug || cat.name || '').toLowerCase() : '';
 }
 
+function isBrandlessCategorySlug(slug) {
+  return slug === 'service' || slug === 'materiaal' || slug === 'diversen';
+}
+
 let _allProducts = [];
 let _selectedProductId = null;
 
@@ -277,6 +312,7 @@ async function loadProducts() {
   try {
     _allProducts = await listProducts();
     renderProductList();
+    renderConfigList();
   } catch (e) {
     console.error('loadProducts error:', e);
     showToast('Kon producten niet laden: ' + e.message, 'danger');
@@ -287,6 +323,7 @@ function renderProductList() {
   const list = document.getElementById('productList');
   const search = (document.getElementById('productSearch').value || '').toLowerCase();
   const showInactive = document.getElementById('toggleShowInactive').checked;
+  const categoriesById = categoryMap(_categories);
 
   let filtered = _allProducts;
   if (_activeCategory) {
@@ -314,11 +351,12 @@ function renderProductList() {
     const activeClass = _selectedProductId === p.id ? 'active' : '';
     const badge = p.isActive === false ? '<span class="badge text-bg-secondary ms-2">Inactief</span>' : '';
     const catName = _categories.find(c => c.id === p.categoryId)?.name || '';
+    const label = productLabel(p, categoriesById);
     return `
       <div class="card mb-2 product-card ${inactiveClass} ${activeClass}" data-id="${escapeAttr(p.id)}">
         <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
           <div class="flex-grow-1">
-            <strong>${escapeHtml(p.brand)} ${escapeHtml(p.model)}</strong>${badge}
+            <strong>${escapeHtml(label)}</strong>${badge}
             <div class="text-muted small">${escapeHtml(catName)}${p.description ? ' · ' + escapeHtml(p.description) : ''}</div>
           </div>
           <div class="text-end text-nowrap">
@@ -355,7 +393,7 @@ function openProductDetail(productId) {
     const drawerBody = document.getElementById('productDrawerBody');
     drawerBody.innerHTML = html;
     wireDetailForm(drawerBody, product);
-    document.getElementById('productDrawerTitle').textContent = `${product.brand} ${product.model}`;
+    document.getElementById('productDrawerTitle').textContent = productLabel(product, categoryMap(_categories));
     bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('productDrawer')).show();
   }
 }
@@ -407,6 +445,7 @@ function buildDetailFormHtml(product, mode) {
   const discountFromUnit = p.discountFromUnit ?? 2;
 
   const isCustomBrand = p.brand && !ALL_BRANDS.includes(p.brand);
+  const isBrandless = isBrandlessCategorySlug(getCategorySlug(p.categoryId));
 
   return `
     <div class="product-detail-form">
@@ -422,7 +461,7 @@ function buildDetailFormHtml(product, mode) {
       </div>
 
       <div class="row g-2 mb-3">
-        <div class="col-6">
+        <div class="col-6 ${isBrandless ? 'd-none' : ''}" data-brand-group>
           <label class="form-label">Merk <span class="text-danger">*</span></label>
           <select class="form-select detail-brand-select">
             ${buildBrandOptions(p.brand || '')}
@@ -433,7 +472,7 @@ function buildDetailFormHtml(product, mode) {
           <input type="text" class="form-control detail-custom-brand" value="${isCustomBrand ? escapeAttr(p.brand) : ''}" placeholder="Voer merk in">
         </div>
         <div class="col-6">
-          <label class="form-label">Model <span class="text-danger">*</span></label>
+          <label class="form-label detail-model-label">${isBrandless ? 'Naam' : 'Model'} <span class="text-danger">*</span></label>
           <input type="text" class="form-control detail-model" value="${escapeAttr(p.model || '')}">
         </div>
       </div>
@@ -576,6 +615,8 @@ function wireDetailForm(container, product) {
     });
   }
 
+  toggleServiceProductFields(container);
+
   // Wire toggle buttons inside the detail form
   container.querySelectorAll('.product-detail-form [data-type]').forEach(group => {
     group.querySelectorAll('button').forEach(btn => {
@@ -606,6 +647,7 @@ function wireDetailForm(container, product) {
   const catSelect = container.querySelector('.detail-category');
   catSelect.addEventListener('change', () => {
     renderSpecFields(container, catSelect.value, {});
+    toggleServiceProductFields(container);
   });
 
   // Wire custom spec add button
@@ -652,7 +694,7 @@ function wireDetailForm(container, product) {
     deleteBtn.addEventListener('click', async () => {
       const ok = await showConfirm({
         title: 'Product verwijderen?',
-        message: `"${product.brand} ${product.model}" wordt permanent verwijderd. Dit kan niet ongedaan worden.`,
+        message: `"${productLabel(product, categoryMap(_categories))}" wordt permanent verwijderd. Dit kan niet ongedaan worden.`,
         confirmText: 'Product verwijderen',
         variant: 'danger',
       });
@@ -669,6 +711,14 @@ function wireDetailForm(container, product) {
       }
     });
   }
+}
+
+function toggleServiceProductFields(container) {
+  const isBrandless = isBrandlessCategorySlug(getCategorySlug(container.querySelector('.detail-category')?.value));
+  container.querySelector('[data-brand-group]')?.classList.toggle('d-none', isBrandless);
+  container.querySelector('[data-custom-brand-group]')?.classList.toggle('d-none', isBrandless || container.querySelector('.detail-brand-select')?.value !== '__other__');
+  const label = container.querySelector('.detail-model-label');
+  if (label) label.innerHTML = `${isBrandless ? 'Naam' : 'Model'} <span class="text-danger">*</span>`;
 }
 
 // ─── PRODUCT PHOTO SECTION ────────────────────────────────────────────────────
@@ -947,8 +997,17 @@ function addCustomSpecRow(container) {
 function readProductFromForm(container) {
   const brandSelect = container.querySelector('.detail-brand-select');
   let brand = brandSelect.value;
+  const categoryId = container.querySelector('.detail-category').value;
+  const isBrandless = isBrandlessCategorySlug(getCategorySlug(categoryId));
   if (brand === '__other__') {
     brand = container.querySelector('.detail-custom-brand').value.trim();
+  }
+  let model = container.querySelector('.detail-model').value.trim();
+  if (isBrandless) {
+    if (brand && model && !model.toLowerCase().startsWith(`${brand.toLowerCase()} `)) {
+      model = `${brand} ${model}`;
+    }
+    brand = '';
   }
 
   // Read typed specs
@@ -976,9 +1035,9 @@ function readProductFromForm(container) {
   if (Object.keys(custom).length) specs.custom = custom;
 
   return {
-    categoryId: container.querySelector('.detail-category').value,
+    categoryId,
     brand,
-    model: container.querySelector('.detail-model').value.trim(),
+    model,
     description: container.querySelector('.detail-description').value.trim(),
     purchasePrice: parseFloat(container.querySelector('.detail-purchase-price').value) || 0,
     marginType: container.querySelector('.detail-margin-type')?.dataset.type || 'percent',
@@ -987,6 +1046,7 @@ function readProductFromForm(container) {
     discountValue: parseFloat(container.querySelector('.detail-discount-value').value) || 0,
     discountFromUnit: parseInt(container.querySelector('.detail-discount-from-unit').value) || 2,
     specs,
+    serviceKey: specs.serviceKey || null,
   };
 }
 
@@ -1014,12 +1074,16 @@ function updatePricePreview(container) {
 
 async function saveProductFromForm(container, existingProduct) {
   const data = readProductFromForm(container);
+  const categorySlug = getCategorySlug(data.categoryId);
+  const isService = categorySlug === 'service';
+  const isBrandless = isBrandlessCategorySlug(categorySlug);
+  if (isBrandless) data.brand = '';
 
   // Validate
   if (!data.categoryId) { showToast('Kies een categorie', 'danger'); return; }
-  if (!data.brand) { showToast('Vul een merk in', 'danger'); return; }
-  if (!data.model) { showToast('Vul een model in', 'danger'); return; }
-  if (!data.purchasePrice || data.purchasePrice <= 0) { showToast('Vul een aankoopprijs in', 'danger'); return; }
+  if (!data.brand && !isBrandless) { showToast('Vul een merk in', 'danger'); return; }
+  if (!data.model) { showToast(isBrandless ? 'Vul een naam in' : 'Vul een model in', 'danger'); return; }
+  if ((!data.purchasePrice || data.purchasePrice <= 0) && !isService) { showToast('Vul een aankoopprijs in', 'danger'); return; }
 
   try {
     if (existingProduct) {
@@ -1047,10 +1111,544 @@ function resetDetailPanel() {
   document.getElementById('productDrawerBody').innerHTML = '';
 }
 
+// ─── PRODUCT CONFIGURATIONS ───────────────────────────────────────────────
+
+async function loadConfigs() {
+  try {
+    _allConfigs = await listProductConfigs();
+    renderConfigList();
+  } catch (e) {
+    console.error('loadConfigs error:', e);
+    showToast('Kon configuraties niet laden: ' + e.message, 'danger');
+  }
+}
+
+function _maps() {
+  return {
+    productsById: productMap(_allProducts),
+    categoriesById: categoryMap(_categories),
+  };
+}
+
+function renderConfigList() {
+  const el = document.getElementById('configList');
+  if (!el) return;
+  const { productsById, categoriesById } = _maps();
+  if (!_allConfigs.length) {
+    el.innerHTML = '<p class="text-muted mb-0">Nog geen configuraties.</p>';
+    return;
+  }
+  el.innerHTML = _allConfigs.map(cfg => {
+    const desc = generatedConfigDescription(cfg.items, productsById, categoriesById) || cfg.description || 'Geen producten';
+    const subtotal = configSubtotalExVat(cfg.items, productsById, categoriesById);
+    const inactive = cfg.isActive === false ? '<span class="badge text-bg-secondary ms-2">Inactief</span>' : '';
+    return `
+      <div class="border rounded p-2 mb-2 config-row" data-config-id="${escapeAttr(cfg.id)}">
+        <div class="d-flex gap-2 align-items-start">
+          <div class="flex-grow-1">
+            <strong>${escapeHtml(cfg.name || '(zonder naam)')}</strong>${inactive}
+            <div class="text-muted small">${escapeHtml(desc)}</div>
+          </div>
+          <div class="text-end text-nowrap">
+            <strong>€${subtotal.toFixed(2)}</strong>
+            <div class="text-muted small">ex BTW</div>
+          </div>
+          <button class="btn btn-sm btn-outline-primary" data-config-edit="${escapeAttr(cfg.id)}" title="Bewerken"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-sm btn-outline-secondary" data-config-duplicate="${escapeAttr(cfg.id)}" title="Dupliceren"><i class="fa-solid fa-copy"></i></button>
+          <button class="btn btn-sm btn-outline-danger" data-config-delete="${escapeAttr(cfg.id)}"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-config-edit]').forEach(btn => {
+    btn.addEventListener('click', () => openConfigModal(btn.dataset.configEdit));
+  });
+  el.querySelectorAll('[data-config-duplicate]').forEach(btn => {
+    btn.addEventListener('click', () => openConfigDuplicateModal(btn.dataset.configDuplicate));
+  });
+  el.querySelectorAll('[data-config-delete]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cfg = _allConfigs.find(c => c.id === btn.dataset.configDelete);
+      const ok = await showConfirm({
+        title: 'Configuratie verwijderen?',
+        message: `"${cfg?.name || 'Deze configuratie'}" wordt permanent verwijderd.`,
+        confirmText: 'Verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
+      try {
+        await deleteProductConfig(btn.dataset.configDelete);
+        await loadConfigs();
+        showToast('Configuratie verwijderd', 'success');
+      } catch (e) {
+        showToast('Verwijderen mislukt: ' + e.message, 'danger');
+      }
+    });
+  });
+}
+
+function duplicateConfigDraft(cfg) {
+  return {
+    name: `${cfg.name || 'Configuratie'} (kopie)`,
+    description: cfg.description || '',
+    sortOrder: cfg.sortOrder ?? 0,
+    isActive: cfg.isActive !== false,
+    items: (cfg.items || []).map(item => ({
+      productId: item.productId,
+      qty: item.qty,
+    })),
+  };
+}
+
+function openConfigDuplicateModal(configId) {
+  const cfg = _allConfigs.find(c => c.id === configId);
+  if (!cfg) {
+    showToast('Configuratie niet gevonden', 'danger');
+    return;
+  }
+  openConfigModal(null, duplicateConfigDraft(cfg));
+}
+
+function openConfigModal(configId = null, draftConfig = null) {
+  _editingConfigId = configId;
+  const cfg = configId ? _allConfigs.find(c => c.id === configId) : draftConfig;
+  document.getElementById('configModalTitle').textContent = configId
+    ? 'Configuratie bewerken'
+    : (draftConfig ? 'Configuratie dupliceren' : 'Nieuwe configuratie');
+  document.getElementById('configModalBody').innerHTML = buildConfigFormHtml(cfg);
+  wireConfigForm();
+  updateConfigPreview();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('configModal')).show();
+}
+
+function activeConfigProducts() {
+  return _allProducts.filter(p => p.isActive !== false);
+}
+
+function productOptionsHtml(selectedId) {
+  const categoriesById = categoryMap(_categories);
+  return '<option value="">— Product kiezen —</option>' + activeConfigProducts().map(p => (
+    `<option value="${escapeAttr(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(productLabel(p, categoriesById))}</option>`
+  )).join('');
+}
+
+function configItemRowHtml(item = {}) {
+  return `
+    <div class="row g-2 align-items-end mb-2 config-item-row">
+      <div class="col-8">
+        <label class="form-label small mb-1">Product</label>
+        <select class="form-select config-item-product">${productOptionsHtml(item.productId || '')}</select>
+      </div>
+      <div class="col-2">
+        <label class="form-label small mb-1">Aantal</label>
+        <input type="number" min="1" step="1" class="form-control config-item-qty" value="${escapeAttr(item.qty || 1)}">
+      </div>
+      <div class="col-2">
+        <button type="button" class="btn btn-outline-danger w-100 config-item-remove"><i class="fa-solid fa-trash"></i></button>
+      </div>
+    </div>`;
+}
+
+function buildConfigFormHtml(cfg) {
+  const items = (cfg && cfg.items && cfg.items.length) ? cfg.items : [{ qty: 1 }];
+  return `
+    <div class="row g-3">
+      <div class="col-md-7">
+        <label class="form-label">Naam <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" id="configName" value="${escapeAttr(cfg?.name || '')}" placeholder="bv. Zendure AC+ 1 hub + 3 batterijen">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Sortering</label>
+        <input type="number" class="form-control" id="configSortOrder" value="${escapeAttr(cfg?.sortOrder ?? 0)}">
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="configIsActive" ${cfg?.isActive === false ? '' : 'checked'}>
+          <label class="form-check-label" for="configIsActive">Actief</label>
+        </div>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Interne omschrijving</label>
+        <textarea class="form-control" id="configDescription" rows="2">${escapeHtml(cfg?.description || '')}</textarea>
+      </div>
+      <div class="col-lg-7">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">Producten</h6>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddConfigItem"><i class="fa-solid fa-plus me-1"></i>Product toevoegen</button>
+        </div>
+        <div id="configItems">${items.map(configItemRowHtml).join('')}</div>
+      </div>
+      <div class="col-lg-5">
+        <div class="alert alert-light border h-100 mb-0" id="configPreview"></div>
+      </div>
+    </div>`;
+}
+
+function wireConfigForm() {
+  const body = document.getElementById('configModalBody');
+  body.querySelector('#btnAddConfigItem').addEventListener('click', () => {
+    body.querySelector('#configItems').insertAdjacentHTML('beforeend', configItemRowHtml());
+    wireConfigFormRows();
+    updateConfigPreview();
+  });
+  ['input', 'change'].forEach(evt => body.addEventListener(evt, updateConfigPreview));
+  wireConfigFormRows();
+}
+
+function wireConfigFormRows() {
+  document.querySelectorAll('#configItems .config-item-remove').forEach(btn => {
+    btn.onclick = () => {
+      btn.closest('.config-item-row').remove();
+      updateConfigPreview();
+    };
+  });
+}
+
+function readConfigForm() {
+  const items = Array.from(document.querySelectorAll('#configItems .config-item-row')).map(row => ({
+    productId: row.querySelector('.config-item-product').value,
+    qty: parseInt(row.querySelector('.config-item-qty').value, 10) || 0,
+  })).filter(item => item.productId && item.qty > 0);
+  return {
+    name: document.getElementById('configName').value.trim(),
+    description: document.getElementById('configDescription').value.trim(),
+    sortOrder: parseInt(document.getElementById('configSortOrder').value, 10) || 0,
+    isActive: document.getElementById('configIsActive').checked,
+    items,
+  };
+}
+
+function updateConfigPreview() {
+  const el = document.getElementById('configPreview');
+  if (!el) return;
+  const data = readConfigForm();
+  const { productsById, categoriesById } = _maps();
+  const desc = generatedConfigDescription(data.items, productsById, categoriesById) || 'Nog geen producten gekozen.';
+  const subtotal = configSubtotalExVat(data.items, productsById, categoriesById);
+  const kg = configBatteryWeightKg(data.items, productsById, categoriesById);
+  const bebat = bebatTotalInclVat(kg, currentBebatPricePerKg());
+  el.innerHTML = `
+    <h6>Preview</h6>
+    <div class="small text-muted mb-2">Omschrijving</div>
+    <div class="mb-3">${escapeHtml(desc)}</div>
+    <dl class="row small mb-0">
+      <dt class="col-7">Config ex BTW</dt><dd class="col-5 text-end">€${subtotal.toFixed(2)}</dd>
+      <dt class="col-7">Batterijgewicht</dt><dd class="col-5 text-end">${kg.toFixed(2)} kg</dd>
+      <dt class="col-7">Bebat incl. 21%</dt><dd class="col-5 text-end">€${bebat.toFixed(2)}</dd>
+    </dl>`;
+}
+
+function currentBebatPricePerKg() {
+  const fromInput = parseFloat(document.getElementById('settingsBebatPerKg')?.value);
+  if (!isNaN(fromInput) && fromInput > 0) return fromInput;
+  const fromSettings = parseFloat(_settings.bebatPricePerKg);
+  if (!isNaN(fromSettings) && fromSettings > 0) return fromSettings;
+  return 2.89;
+}
+
+async function saveConfigFromModal() {
+  const data = readConfigForm();
+  if (!data.name) { showToast('Vul een configuratienaam in', 'danger'); return; }
+  if (!data.items.length) { showToast('Voeg minstens één product toe', 'danger'); return; }
+  try {
+    if (_editingConfigId) await updateProductConfig(_editingConfigId, data);
+    else await createProductConfig(data);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('configModal')).hide();
+    await loadConfigs();
+    showToast('Configuratie opgeslagen', 'success');
+  } catch (e) {
+    showToast('Configuratie opslaan mislukt: ' + e.message, 'danger');
+  }
+}
+
+// ─── QUOTE PREVIEW PROTOTYPE ────────────────────────────────────────────────
+
+async function openQuoteModal(context = {}) {
+  const body = document.getElementById('quoteModalBody');
+  body.innerHTML = '<p class="text-muted">Laden...</p>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('quoteModal')).show();
+  let projects = [];
+  try {
+    projects = await listActiveProjects();
+  } catch (e) {
+    console.warn('Projecten laden voor offerte-preview mislukt', e);
+  }
+  body.innerHTML = buildQuoteModalHtml(projects, context);
+  wireQuoteModal();
+  updateQuotePreview();
+}
+
+function buildQuoteModalHtml(projects, context) {
+  const configOptions = _allConfigs.filter(c => c.isActive !== false).map(c => (
+    `<option value="${escapeAttr(c.id)}" ${context.configId === c.id ? 'selected' : ''}>${escapeHtml(c.name || '(zonder naam)')}</option>`
+  )).join('');
+  const projectOptions = (projects || []).map(p => (
+    `<option value="${escapeAttr(p.id)}" ${context.projectId === p.id ? 'selected' : ''}>${escapeHtml(p.projectName || p.customerName || '(zonder naam)')}</option>`
+  )).join('');
+  return `
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Klant/project</label>
+        <select class="form-select" id="quoteProject"><option value="">— Nog geen klantcontext —</option>${projectOptions}</select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Configuratie</label>
+        <select class="form-select" id="quoteConfig"><option value="">— Kies configuratie —</option>${configOptions}</select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">BTW config/services</label>
+        <select class="form-select" id="quoteVat"><option value="6">6% woning 10+ jaar</option><option value="21" selected>21%</option></select>
+      </div>
+      <div class="col-12">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h6 class="mb-0">Extra producten</h6>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddQuoteProduct">
+            <i class="fa-solid fa-plus me-1"></i>Productlijn toevoegen
+          </button>
+        </div>
+        <div id="quoteExtraProducts"></div>
+      </div>
+      <div class="col-12">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h6 class="mb-0">Manuele lijnen</h6>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddQuoteManualLine">
+            <i class="fa-solid fa-plus me-1"></i>Manuele lijn toevoegen
+          </button>
+        </div>
+        <div id="quoteManualLines"></div>
+      </div>
+      <div class="col-12">
+        <div id="quotePreview" class="border rounded p-3 bg-light"></div>
+      </div>
+    </div>`;
+}
+
+function wireQuoteModal() {
+  ['quoteProject', 'quoteConfig', 'quoteVat'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', updateQuotePreview);
+  });
+  document.getElementById('btnAddQuoteProduct')?.addEventListener('click', () => {
+    const vat = parseFloat(document.getElementById('quoteVat')?.value) || 21;
+    document.getElementById('quoteExtraProducts').insertAdjacentHTML('beforeend', quoteExtraProductRowHtml({ vat }));
+    wireQuoteDynamicRows();
+    updateQuotePreview();
+  });
+  document.getElementById('btnAddQuoteManualLine')?.addEventListener('click', () => {
+    document.getElementById('quoteManualLines').insertAdjacentHTML('beforeend', quoteManualLineRowHtml());
+    wireQuoteDynamicRows();
+    updateQuotePreview();
+  });
+  wireQuoteDynamicRows();
+}
+
+function quoteExtraProductRowHtml(row = {}) {
+  return `
+    <div class="row g-2 align-items-end mb-2 quote-extra-product-row">
+      <div class="col-md-7">
+        <label class="form-label small mb-1">Product</label>
+        <select class="form-select quote-extra-product-id">${productOptionsHtml(row.productId || '')}</select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">Aantal</label>
+        <input type="number" class="form-control quote-extra-product-qty" min="1" step="1" value="${escapeAttr(row.qty || 1)}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">BTW</label>
+        <select class="form-select quote-extra-product-vat">
+          <option value="6" ${row.vat === 6 ? 'selected' : ''}>6%</option>
+          <option value="21" ${row.vat === 21 || row.vat == null ? 'selected' : ''}>21%</option>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <button type="button" class="btn btn-outline-danger w-100 quote-row-remove"><i class="fa-solid fa-trash"></i></button>
+      </div>
+    </div>`;
+}
+
+function quoteManualLineRowHtml(row = {}) {
+  return `
+    <div class="row g-2 align-items-end mb-2 quote-manual-line-row">
+      <div class="col-md-6">
+        <label class="form-label small mb-1">Omschrijving</label>
+        <input type="text" class="form-control quote-manual-desc" value="${escapeAttr(row.description || '')}" placeholder="Omschrijving">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Prijs ex BTW</label>
+        <div class="input-group">
+          <span class="input-group-text">€</span>
+          <input type="number" class="form-control quote-manual-price" min="0" step="0.01" value="${escapeAttr(row.priceExVat ?? '')}">
+        </div>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">BTW</label>
+        <select class="form-select quote-manual-vat">
+          <option value="6" ${row.vat === 6 ? 'selected' : ''}>6%</option>
+          <option value="21" ${row.vat === 21 || row.vat == null ? 'selected' : ''}>21%</option>
+        </select>
+      </div>
+      <div class="col-md-1">
+        <button type="button" class="btn btn-outline-danger w-100 quote-row-remove"><i class="fa-solid fa-trash"></i></button>
+      </div>
+    </div>`;
+}
+
+function wireQuoteDynamicRows() {
+  document.querySelectorAll('#quoteModalBody .quote-row-remove').forEach(btn => {
+    btn.onclick = () => {
+      btn.closest('.quote-extra-product-row, .quote-manual-line-row').remove();
+      updateQuotePreview();
+    };
+  });
+  document.querySelectorAll('#quoteExtraProducts select, #quoteExtraProducts input, #quoteManualLines input, #quoteManualLines select').forEach(el => {
+    el.oninput = updateQuotePreview;
+    el.onchange = updateQuotePreview;
+  });
+}
+
+function readQuoteExtraProductItems() {
+  const { productsById } = _maps();
+  return Array.from(document.querySelectorAll('#quoteExtraProducts .quote-extra-product-row')).map(row => {
+    const productId = row.querySelector('.quote-extra-product-id').value;
+    const product = productsById[productId];
+    const qty = parseInt(row.querySelector('.quote-extra-product-qty').value, 10) || 0;
+    const vat = parseFloat(row.querySelector('.quote-extra-product-vat').value) || 21;
+    if (!product || qty <= 0) return null;
+    return { productId, qty, vat };
+  }).filter(Boolean);
+}
+
+function readQuoteManualLines() {
+  return Array.from(document.querySelectorAll('#quoteManualLines .quote-manual-line-row')).map(row => {
+    const description = row.querySelector('.quote-manual-desc').value.trim();
+    const exVat = parseFloat(row.querySelector('.quote-manual-price').value) || 0;
+    const vat = parseFloat(row.querySelector('.quote-manual-vat').value) || 21;
+    if (!description || exVat <= 0) return null;
+    return { description, exVat, vat };
+  }).filter(Boolean);
+}
+
+function quoteLineHtml(line) {
+  const incl = line.exVat * (1 + line.vat / 100);
+  return `
+          <tr>
+            <td>${escapeHtml(line.description)}</td>
+            <td class="text-end">€${line.exVat.toFixed(2)}</td>
+            <td class="text-end">${line.vat}%</td>
+            <td class="text-end">€${incl.toFixed(2)}</td>
+          </tr>`;
+}
+
+function mergeConfigItems(items) {
+  const byProduct = new Map();
+  (items || []).forEach(item => {
+    if (!item.productId || !item.qty) return;
+    byProduct.set(item.productId, (byProduct.get(item.productId) || 0) + item.qty);
+  });
+  return Array.from(byProduct, ([productId, qty]) => ({ productId, qty }));
+}
+
+function categoryItemsByVat(baseItems, extraItems, productsById, categoriesById, categorySlug, quoteVat) {
+  const groups = new Map();
+  const isMatch = (item) => {
+    if (!categorySlug) {
+      return configItemsExceptCategorySlugs([item], productsById, categoriesById, [MATERIAL_CATEGORY_SLUG, MISC_CATEGORY_SLUG]).length > 0;
+    }
+    return configItemsForCategorySlug([item], productsById, categoriesById, categorySlug).length > 0;
+  };
+
+  const push = (vat, item) => {
+    if (!isMatch(item)) return;
+    const key = String(vat);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ productId: item.productId, qty: item.qty });
+  };
+
+  (baseItems || []).forEach(item => push(quoteVat, item));
+  (extraItems || []).forEach(item => push(item.vat, item));
+  return Array.from(groups, ([vat, items]) => ({
+    vat: Number(vat),
+    items: mergeConfigItems(items),
+  })).filter(group => group.items.length);
+}
+
+function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '') {
+  return groups.map(group => {
+    const exVat = configSubtotalExVat(group.items, productsById);
+    const description = generatedConfigDescription(group.items, productsById, categoriesById);
+    return quoteLineHtml({
+      description: `${prefix}${description}`,
+      exVat,
+      vat: group.vat,
+    });
+  }).join('');
+}
+
+function groupedQuoteIncl(groups, productsById) {
+  return groups.reduce((sum, group) => {
+    const exVat = configSubtotalExVat(group.items, productsById);
+    return sum + exVat * (1 + group.vat / 100);
+  }, 0);
+}
+
+function updateQuotePreview() {
+  const el = document.getElementById('quotePreview');
+  if (!el) return;
+  const cfg = _allConfigs.find(c => c.id === document.getElementById('quoteConfig')?.value);
+  if (!cfg) {
+    el.innerHTML = '<p class="text-muted mb-0">Kies een configuratie om de offerte-lijnen te bekijken.</p>';
+    return;
+  }
+  const { productsById, categoriesById } = _maps();
+  const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
+  const extraProductItems = readQuoteExtraProductItems();
+  const mainGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, null, vat);
+  const materialGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MATERIAL_CATEGORY_SLUG, vat);
+  const miscGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MISC_CATEGORY_SLUG, vat);
+  const kg = configBatteryWeightKg([...cfg.items, ...extraProductItems], productsById, categoriesById);
+  const bebatPrice = currentBebatPricePerKg();
+  const bebatIncl = bebatTotalInclVat(kg, bebatPrice);
+  const mainRows = mainGroups.length
+    ? quoteGroupedRowsHtml(mainGroups, productsById, categoriesById)
+    : quoteLineHtml({ description: cfg.name || 'Configuratie', exVat: 0, vat });
+  const materialRows = quoteGroupedRowsHtml(materialGroups, productsById, categoriesById, 'Materiaal: ');
+  const miscRows = quoteGroupedRowsHtml(miscGroups, productsById, categoriesById, 'Diversen: ');
+  const manualLines = readQuoteManualLines();
+  const extraLines = manualLines;
+  const extraRows = extraLines.map(quoteLineHtml).join('');
+  const extraIncl = extraLines.reduce((sum, line) => sum + line.exVat * (1 + line.vat / 100), 0);
+  const groupedIncl = groupedQuoteIncl(mainGroups, productsById)
+    + groupedQuoteIncl(materialGroups, productsById)
+    + groupedQuoteIncl(miscGroups, productsById);
+  const totalIncl = groupedIncl + bebatIncl + extraIncl;
+  el.innerHTML = `
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-2">
+        <thead><tr><th>Omschrijving</th><th class="text-end">Ex BTW</th><th class="text-end">BTW</th><th class="text-end">Incl.</th></tr></thead>
+        <tbody>
+          ${mainRows}
+          ${materialRows}
+          ${miscRows}
+          ${extraRows}
+          <tr>
+            <td>Bebat bijdrage (${kg.toFixed(2)} kg × €${bebatPrice.toFixed(2)}/kg)</td>
+            <td class="text-end">€${(bebatIncl / 1.21).toFixed(2)}</td>
+            <td class="text-end">21%</td>
+            <td class="text-end">€${bebatIncl.toFixed(2)}</td>
+          </tr>
+        </tbody>
+        <tfoot><tr><th colspan="3" class="text-end">Totaal incl. BTW</th><th class="text-end">€${totalIncl.toFixed(2)}</th></tr></tfoot>
+      </table>
+    </div>
+    <p class="text-muted small mb-0">Deze preview maakt nog geen offerte-document aan; hij test alleen UX en berekening.</p>`;
+}
+
 function wireProductInteractions() {
   document.getElementById('btnNewProduct').addEventListener('click', () => openNewProduct());
   document.getElementById('productSearch').addEventListener('input', () => renderProductList());
   document.getElementById('toggleShowInactive').addEventListener('change', () => renderProductList());
+  document.getElementById('btnNewConfig').addEventListener('click', () => openConfigModal());
+  document.getElementById('btnSaveConfig').addEventListener('click', saveConfigFromModal);
+  document.getElementById('btnOpenQuoteModal').addEventListener('click', () => openQuoteModal());
 }
 
 // ─── AUTH STATE HANDLING ─────────────────────────────────────────────────
@@ -1105,10 +1703,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       await seedDefaultCategories();
+      await ensureServiceProducts();
       await loadCategories();
       await loadProducts();
+      await loadConfigs();
     } catch (e) {
-      console.error('seedDefaultCategories/loadCategories/loadProducts error:', e);
+      console.error('seedDefaultCategories/loadCategories/loadProducts/loadConfigs error:', e);
     }
 
     // Signal that initialization is complete (used by E2E tests)
