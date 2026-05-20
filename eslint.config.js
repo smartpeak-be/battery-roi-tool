@@ -82,6 +82,7 @@ export default [
       'assets/js/shared-helpers.js',
       'assets/js/lead-calc.js',
       'assets/js/serial-extract.js',
+      'assets/js/index/scenario-card.js',
     ],
     languageOptions: {
       ecmaVersion: 'latest',
