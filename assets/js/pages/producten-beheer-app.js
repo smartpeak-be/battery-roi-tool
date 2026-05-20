@@ -1,5 +1,17 @@
 import { sellPrice, unitPrice } from '../product-pricing.js';
 import { specsForCategory } from '../product-specs.js';
+import {
+  bebatTotalInclVat,
+  categoryMap,
+  configBatteryWeightKg,
+  configSubtotalExVat,
+  findServiceProduct,
+  generatedConfigDescription,
+  isServiceProduct,
+  productLabel,
+  productMap,
+  serviceProductPrice,
+} from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
 
@@ -61,6 +73,7 @@ function wireToggleButtons() {
 async function loadSettings() {
   try {
     const s = await getSettings();
+    _settings = s || {};
     if (s.defaultMarginType) setToggle('marginTypeToggle', s.defaultMarginType);
     if (s.defaultMarginValue != null) document.getElementById('settingsMarginValue').value = s.defaultMarginValue;
     if (s.defaultDiscountType) setToggle('discountTypeToggle', s.defaultDiscountType);
@@ -69,9 +82,23 @@ async function loadSettings() {
     if (s.defaultInstallCost != null) document.getElementById('settingsInstallCost').value = s.defaultInstallCost;
     if (s.defaultInspectCost != null) document.getElementById('settingsInspectCost').value = s.defaultInspectCost;
     if (s.bebatPricePerKg != null) document.getElementById('settingsBebatPerKg').value = s.bebatPricePerKg;
+    markLegacyServiceSettings();
   } catch (e) {
     console.warn('loadSettings failed:', e);
   }
+}
+
+function markLegacyServiceSettings() {
+  ['settingsInstallCost', 'settingsInspectCost'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = true;
+    el.title = 'Beheer deze kost voortaan als product in de categorie Service.';
+    const group = el.closest('.col-md-6');
+    if (group && !group.querySelector('.service-setting-note')) {
+      group.insertAdjacentHTML('beforeend', '<div class="form-text service-setting-note">Legacy: beheer voortaan via Service-producten.</div>');
+    }
+  });
 }
 
 function wireSaveSettings() {
@@ -83,8 +110,6 @@ function wireSaveSettings() {
         defaultDiscountType:    readToggle('discountTypeToggle'),
         defaultDiscountValue:   parseFloat(document.getElementById('settingsDiscountValue').value) || 0,
         defaultDiscountFromUnit: parseInt(document.getElementById('settingsDiscountFromUnit').value) || 2,
-        defaultInstallCost:     parseFloat(document.getElementById('settingsInstallCost').value) || 0,
-        defaultInspectCost:     parseFloat(document.getElementById('settingsInspectCost').value) || 0,
         bebatPricePerKg:        parseFloat(document.getElementById('settingsBebatPerKg').value) || 0,
       });
       showToast('Instellingen opgeslagen', 'success');
@@ -120,6 +145,9 @@ function wireSettingsCollapse() {
 
 let _categories = [];
 let _activeCategory = null;
+let _settings = {};
+let _allConfigs = [];
+let _editingConfigId = null;
 
 async function seedDefaultCategories() {
   const cats = await listProductCategories();
@@ -260,6 +288,7 @@ function renderCategoryModal() {
 // ─── PRODUCT MANAGEMENT ──────────────────────────────────────────────────
 
 const BRAND_OPTIONS = {
+  'SmartPeak': ['SmartPeak'],
   'Plug & Play': ['Marstek', 'Zendure', 'Growatt', 'EcoFlow', 'Anker Solix', 'Hoymiles', 'Sunpura', 'Bluetti'],
   'Installatie': ['Huawei', 'BYD', 'Dyness', 'Sigenergy', 'Enphase', 'Tesla', 'Sonnen', 'LG', 'Solarwatt', 'Pylontech', 'Alpha ESS', 'SAJ', 'Sungrow', 'Sessy'],
 };
@@ -277,6 +306,7 @@ async function loadProducts() {
   try {
     _allProducts = await listProducts();
     renderProductList();
+    renderConfigList();
   } catch (e) {
     console.error('loadProducts error:', e);
     showToast('Kon producten niet laden: ' + e.message, 'danger');
@@ -987,6 +1017,7 @@ function readProductFromForm(container) {
     discountValue: parseFloat(container.querySelector('.detail-discount-value').value) || 0,
     discountFromUnit: parseInt(container.querySelector('.detail-discount-from-unit').value) || 2,
     specs,
+    serviceKey: specs.serviceKey || null,
   };
 }
 
@@ -1014,12 +1045,15 @@ function updatePricePreview(container) {
 
 async function saveProductFromForm(container, existingProduct) {
   const data = readProductFromForm(container);
+  const categorySlug = getCategorySlug(data.categoryId);
+  const isService = categorySlug === 'service';
+  if (isService && !data.brand) data.brand = 'SmartPeak';
 
   // Validate
   if (!data.categoryId) { showToast('Kies een categorie', 'danger'); return; }
-  if (!data.brand) { showToast('Vul een merk in', 'danger'); return; }
+  if (!data.brand && !isService) { showToast('Vul een merk in', 'danger'); return; }
   if (!data.model) { showToast('Vul een model in', 'danger'); return; }
-  if (!data.purchasePrice || data.purchasePrice <= 0) { showToast('Vul een aankoopprijs in', 'danger'); return; }
+  if ((!data.purchasePrice || data.purchasePrice <= 0) && !isService) { showToast('Vul een aankoopprijs in', 'danger'); return; }
 
   try {
     if (existingProduct) {
@@ -1047,10 +1081,341 @@ function resetDetailPanel() {
   document.getElementById('productDrawerBody').innerHTML = '';
 }
 
+// ─── PRODUCT CONFIGURATIONS ───────────────────────────────────────────────
+
+async function loadConfigs() {
+  try {
+    _allConfigs = await listProductConfigs();
+    renderConfigList();
+  } catch (e) {
+    console.error('loadConfigs error:', e);
+    showToast('Kon configuraties niet laden: ' + e.message, 'danger');
+  }
+}
+
+function _maps() {
+  return {
+    productsById: productMap(_allProducts),
+    categoriesById: categoryMap(_categories),
+  };
+}
+
+function renderConfigList() {
+  const el = document.getElementById('configList');
+  if (!el) return;
+  const { productsById, categoriesById } = _maps();
+  if (!_allConfigs.length) {
+    el.innerHTML = '<p class="text-muted mb-0">Nog geen configuraties.</p>';
+    return;
+  }
+  el.innerHTML = _allConfigs.map(cfg => {
+    const desc = generatedConfigDescription(cfg.items, productsById, categoriesById) || cfg.description || 'Geen producten';
+    const subtotal = configSubtotalExVat(cfg.items, productsById, categoriesById);
+    const inactive = cfg.isActive === false ? '<span class="badge text-bg-secondary ms-2">Inactief</span>' : '';
+    return `
+      <div class="border rounded p-2 mb-2 config-row" data-config-id="${escapeAttr(cfg.id)}">
+        <div class="d-flex gap-2 align-items-start">
+          <div class="flex-grow-1">
+            <strong>${escapeHtml(cfg.name || '(zonder naam)')}</strong>${inactive}
+            <div class="text-muted small">${escapeHtml(desc)}</div>
+          </div>
+          <div class="text-end text-nowrap">
+            <strong>€${subtotal.toFixed(2)}</strong>
+            <div class="text-muted small">ex BTW</div>
+          </div>
+          <button class="btn btn-sm btn-outline-primary" data-config-edit="${escapeAttr(cfg.id)}"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-sm btn-outline-danger" data-config-delete="${escapeAttr(cfg.id)}"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-config-edit]').forEach(btn => {
+    btn.addEventListener('click', () => openConfigModal(btn.dataset.configEdit));
+  });
+  el.querySelectorAll('[data-config-delete]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cfg = _allConfigs.find(c => c.id === btn.dataset.configDelete);
+      const ok = await showConfirm({
+        title: 'Configuratie verwijderen?',
+        message: `"${cfg?.name || 'Deze configuratie'}" wordt permanent verwijderd.`,
+        confirmText: 'Verwijderen',
+        variant: 'danger',
+      });
+      if (!ok) return;
+      try {
+        await deleteProductConfig(btn.dataset.configDelete);
+        await loadConfigs();
+        showToast('Configuratie verwijderd', 'success');
+      } catch (e) {
+        showToast('Verwijderen mislukt: ' + e.message, 'danger');
+      }
+    });
+  });
+}
+
+function openConfigModal(configId = null) {
+  _editingConfigId = configId;
+  const cfg = configId ? _allConfigs.find(c => c.id === configId) : null;
+  document.getElementById('configModalTitle').textContent = cfg ? 'Configuratie bewerken' : 'Nieuwe configuratie';
+  document.getElementById('configModalBody').innerHTML = buildConfigFormHtml(cfg);
+  wireConfigForm();
+  updateConfigPreview();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('configModal')).show();
+}
+
+function activeHardwareProducts() {
+  const categoriesById = categoryMap(_categories);
+  return _allProducts.filter(p => p.isActive !== false && !isServiceProduct(p, categoriesById));
+}
+
+function productOptionsHtml(selectedId) {
+  return '<option value="">— Product kiezen —</option>' + activeHardwareProducts().map(p => (
+    `<option value="${escapeAttr(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(productLabel(p))}</option>`
+  )).join('');
+}
+
+function configItemRowHtml(item = {}) {
+  return `
+    <div class="row g-2 align-items-end mb-2 config-item-row">
+      <div class="col-8">
+        <label class="form-label small mb-1">Product</label>
+        <select class="form-select config-item-product">${productOptionsHtml(item.productId || '')}</select>
+      </div>
+      <div class="col-2">
+        <label class="form-label small mb-1">Aantal</label>
+        <input type="number" min="1" step="1" class="form-control config-item-qty" value="${escapeAttr(item.qty || 1)}">
+      </div>
+      <div class="col-2">
+        <button type="button" class="btn btn-outline-danger w-100 config-item-remove"><i class="fa-solid fa-trash"></i></button>
+      </div>
+    </div>`;
+}
+
+function buildConfigFormHtml(cfg) {
+  const items = (cfg && cfg.items && cfg.items.length) ? cfg.items : [{ qty: 1 }];
+  return `
+    <div class="row g-3">
+      <div class="col-md-7">
+        <label class="form-label">Naam <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" id="configName" value="${escapeAttr(cfg?.name || '')}" placeholder="bv. Zendure AC+ 1 hub + 3 batterijen">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Sortering</label>
+        <input type="number" class="form-control" id="configSortOrder" value="${escapeAttr(cfg?.sortOrder ?? 0)}">
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="configIsActive" ${cfg?.isActive === false ? '' : 'checked'}>
+          <label class="form-check-label" for="configIsActive">Actief</label>
+        </div>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Interne omschrijving</label>
+        <textarea class="form-control" id="configDescription" rows="2">${escapeHtml(cfg?.description || '')}</textarea>
+      </div>
+      <div class="col-lg-7">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">Producten</h6>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddConfigItem"><i class="fa-solid fa-plus me-1"></i>Product toevoegen</button>
+        </div>
+        <div id="configItems">${items.map(configItemRowHtml).join('')}</div>
+      </div>
+      <div class="col-lg-5">
+        <div class="alert alert-light border h-100 mb-0" id="configPreview"></div>
+      </div>
+    </div>`;
+}
+
+function wireConfigForm() {
+  const body = document.getElementById('configModalBody');
+  body.querySelector('#btnAddConfigItem').addEventListener('click', () => {
+    body.querySelector('#configItems').insertAdjacentHTML('beforeend', configItemRowHtml());
+    wireConfigFormRows();
+    updateConfigPreview();
+  });
+  ['input', 'change'].forEach(evt => body.addEventListener(evt, updateConfigPreview));
+  wireConfigFormRows();
+}
+
+function wireConfigFormRows() {
+  document.querySelectorAll('#configItems .config-item-remove').forEach(btn => {
+    btn.onclick = () => {
+      btn.closest('.config-item-row').remove();
+      updateConfigPreview();
+    };
+  });
+}
+
+function readConfigForm() {
+  const items = Array.from(document.querySelectorAll('#configItems .config-item-row')).map(row => ({
+    productId: row.querySelector('.config-item-product').value,
+    qty: parseInt(row.querySelector('.config-item-qty').value, 10) || 0,
+  })).filter(item => item.productId && item.qty > 0);
+  return {
+    name: document.getElementById('configName').value.trim(),
+    description: document.getElementById('configDescription').value.trim(),
+    sortOrder: parseInt(document.getElementById('configSortOrder').value, 10) || 0,
+    isActive: document.getElementById('configIsActive').checked,
+    items,
+  };
+}
+
+function updateConfigPreview() {
+  const el = document.getElementById('configPreview');
+  if (!el) return;
+  const data = readConfigForm();
+  const { productsById, categoriesById } = _maps();
+  const desc = generatedConfigDescription(data.items, productsById, categoriesById) || 'Nog geen producten gekozen.';
+  const subtotal = configSubtotalExVat(data.items, productsById, categoriesById);
+  const kg = configBatteryWeightKg(data.items, productsById, categoriesById);
+  const bebat = bebatTotalInclVat(kg, _settings.bebatPricePerKg || 0);
+  el.innerHTML = `
+    <h6>Preview</h6>
+    <div class="small text-muted mb-2">Omschrijving</div>
+    <div class="mb-3">${escapeHtml(desc)}</div>
+    <dl class="row small mb-0">
+      <dt class="col-7">Config ex BTW</dt><dd class="col-5 text-end">€${subtotal.toFixed(2)}</dd>
+      <dt class="col-7">Batterijgewicht</dt><dd class="col-5 text-end">${kg.toFixed(2)} kg</dd>
+      <dt class="col-7">Bebat incl. 21%</dt><dd class="col-5 text-end">€${bebat.toFixed(2)}</dd>
+    </dl>`;
+}
+
+async function saveConfigFromModal() {
+  const data = readConfigForm();
+  if (!data.name) { showToast('Vul een configuratienaam in', 'danger'); return; }
+  if (!data.items.length) { showToast('Voeg minstens één product toe', 'danger'); return; }
+  try {
+    if (_editingConfigId) await updateProductConfig(_editingConfigId, data);
+    else await createProductConfig(data);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('configModal')).hide();
+    await loadConfigs();
+    showToast('Configuratie opgeslagen', 'success');
+  } catch (e) {
+    showToast('Configuratie opslaan mislukt: ' + e.message, 'danger');
+  }
+}
+
+// ─── QUOTE PREVIEW PROTOTYPE ────────────────────────────────────────────────
+
+async function openQuoteModal(context = {}) {
+  const body = document.getElementById('quoteModalBody');
+  body.innerHTML = '<p class="text-muted">Laden...</p>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('quoteModal')).show();
+  let projects = [];
+  try {
+    projects = await listActiveProjects();
+  } catch (e) {
+    console.warn('Projecten laden voor offerte-preview mislukt', e);
+  }
+  body.innerHTML = buildQuoteModalHtml(projects, context);
+  wireQuoteModal();
+  updateQuotePreview();
+}
+
+function buildQuoteModalHtml(projects, context) {
+  const configOptions = _allConfigs.filter(c => c.isActive !== false).map(c => (
+    `<option value="${escapeAttr(c.id)}" ${context.configId === c.id ? 'selected' : ''}>${escapeHtml(c.name || '(zonder naam)')}</option>`
+  )).join('');
+  const projectOptions = (projects || []).map(p => (
+    `<option value="${escapeAttr(p.id)}" ${context.projectId === p.id ? 'selected' : ''}>${escapeHtml(p.projectName || p.customerName || '(zonder naam)')}</option>`
+  )).join('');
+  return `
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Klant/project</label>
+        <select class="form-select" id="quoteProject"><option value="">— Nog geen klantcontext —</option>${projectOptions}</select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Configuratie</label>
+        <select class="form-select" id="quoteConfig"><option value="">— Kies configuratie —</option>${configOptions}</select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">BTW config/services</label>
+        <select class="form-select" id="quoteVat"><option value="6">6% woning 10+ jaar</option><option value="21" selected>21%</option></select>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="quoteInspection">
+          <label class="form-check-label" for="quoteInspection">Keuring opnemen</label>
+        </div>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="quoteBuffer" checked>
+          <label class="form-check-label" for="quoteBuffer">Bufferlijn tonen</label>
+        </div>
+      </div>
+      <div class="col-12">
+        <div id="quotePreview" class="border rounded p-3 bg-light"></div>
+      </div>
+    </div>`;
+}
+
+function wireQuoteModal() {
+  ['quoteProject', 'quoteConfig', 'quoteVat', 'quoteInspection', 'quoteBuffer'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', updateQuotePreview);
+  });
+}
+
+function updateQuotePreview() {
+  const el = document.getElementById('quotePreview');
+  if (!el) return;
+  const cfg = _allConfigs.find(c => c.id === document.getElementById('quoteConfig')?.value);
+  if (!cfg) {
+    el.innerHTML = '<p class="text-muted mb-0">Kies een configuratie om de offerte-lijnen te bekijken.</p>';
+    return;
+  }
+  const { productsById, categoriesById } = _maps();
+  const install = findServiceProduct(_allProducts, 'installation');
+  const inspect = findServiceProduct(_allProducts, 'inspection');
+  const buffer = findServiceProduct(_allProducts, 'buffer');
+  const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
+  const includeInspection = document.getElementById('quoteInspection').checked;
+  const includeBuffer = document.getElementById('quoteBuffer').checked;
+  const configEx = configSubtotalExVat(cfg.items, productsById, categoriesById);
+  const installEx = serviceProductPrice(install);
+  const inspectEx = includeInspection ? serviceProductPrice(inspect) : 0;
+  const bufferEx = includeBuffer ? serviceProductPrice(buffer) : 0;
+  const kg = configBatteryWeightKg(cfg.items, productsById, categoriesById);
+  const bebatIncl = bebatTotalInclVat(kg, _settings.bebatPricePerKg || 0);
+  const serviceDesc = ['Installatiekost'];
+  if (includeInspection) serviceDesc.push('Keuring');
+  if (includeBuffer) serviceDesc.push('Buffer kleine onvoorziene kosten');
+  const line1Desc = [generatedConfigDescription(cfg.items, productsById, categoriesById), ...serviceDesc].filter(Boolean).join(' · ');
+  const line1Ex = configEx + installEx + inspectEx + bufferEx;
+  const line1Incl = line1Ex * (1 + vat / 100);
+  const totalIncl = line1Incl + bebatIncl;
+  el.innerHTML = `
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-2">
+        <thead><tr><th>Omschrijving</th><th class="text-end">Ex BTW</th><th class="text-end">BTW</th><th class="text-end">Incl.</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>${escapeHtml(line1Desc)}</td>
+            <td class="text-end">€${line1Ex.toFixed(2)}</td>
+            <td class="text-end">${vat}%</td>
+            <td class="text-end">€${line1Incl.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td>Bebat bijdrage (${kg.toFixed(2)} kg)</td>
+            <td class="text-end">€${(bebatIncl / 1.21).toFixed(2)}</td>
+            <td class="text-end">21%</td>
+            <td class="text-end">€${bebatIncl.toFixed(2)}</td>
+          </tr>
+        </tbody>
+        <tfoot><tr><th colspan="3" class="text-end">Totaal incl. BTW</th><th class="text-end">€${totalIncl.toFixed(2)}</th></tr></tfoot>
+      </table>
+    </div>
+    <p class="text-muted small mb-0">Deze preview maakt nog geen offerte-document aan; hij test alleen UX en berekening.</p>`;
+}
+
 function wireProductInteractions() {
   document.getElementById('btnNewProduct').addEventListener('click', () => openNewProduct());
   document.getElementById('productSearch').addEventListener('input', () => renderProductList());
   document.getElementById('toggleShowInactive').addEventListener('change', () => renderProductList());
+  document.getElementById('btnNewConfig').addEventListener('click', () => openConfigModal());
+  document.getElementById('btnSaveConfig').addEventListener('click', saveConfigFromModal);
+  document.getElementById('btnOpenQuoteModal').addEventListener('click', () => openQuoteModal());
 }
 
 // ─── AUTH STATE HANDLING ─────────────────────────────────────────────────
@@ -1105,10 +1470,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       await seedDefaultCategories();
+      await ensureServiceProducts();
       await loadCategories();
       await loadProducts();
+      await loadConfigs();
     } catch (e) {
-      console.error('seedDefaultCategories/loadCategories/loadProducts error:', e);
+      console.error('seedDefaultCategories/loadCategories/loadProducts/loadConfigs error:', e);
     }
 
     // Signal that initialization is complete (used by E2E tests)

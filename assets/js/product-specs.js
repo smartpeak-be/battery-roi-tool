@@ -33,6 +33,9 @@ export const SPEC_FIELDS = [
   { key: 'widthMm',            label: 'Breedte',             unit: 'mm',   type: 'number', categories: ['batterijen', 'omvormers', 'thuisbatterij-systemen', 'materiaal'] },
   { key: 'depthMm',            label: 'Diepte',              unit: 'mm',   type: 'number', categories: ['batterijen', 'omvormers', 'thuisbatterij-systemen', 'materiaal'] },
 
+  // Service products used by quote/invoice composition
+  { key: 'serviceKey',          label: 'Service-type',        unit: '',     type: 'select', options: ['installation', 'inspection', 'buffer'], categories: ['service'] },
+
   // Shared: batterijen + omvormers + thuisbatterij-systemen
   { key: 'ipRating',           label: 'IP-bescherming',      unit: '',     type: 'text',   categories: ['batterijen', 'omvormers', 'thuisbatterij-systemen'] },
   { key: 'operatingTempMin',   label: 'Bedrijfstemp. min',   unit: '\u00b0C',  type: 'number', categories: ['batterijen', 'omvormers', 'thuisbatterij-systemen'] },

@@ -1458,6 +1458,8 @@ async function saveSettings(data) {
 // ─── PRODUCT CATEGORIES ──────────────────────────────────────────────────────
 
 function categoriesCol() { return getDb().collection('productCategories'); }
+function productsCol() { return getDb().collection('products'); }
+function productConfigsCol() { return getDb().collection('productConfigs'); }
 
 async function listProductCategories() {
   const snap = await categoriesCol().orderBy('sortOrder').get();
@@ -1514,9 +1516,69 @@ async function getDefaultCategory() {
   return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
-// ─── PRODUCTS ────────────────────────────────────────────────────────────────
+async function ensureServiceProducts() {
+  const settings = await getSettings();
+  const cats = await listProductCategories();
+  let serviceCat = cats.find(c => c.slug === 'service');
+  if (!serviceCat) {
+    const id = await createProductCategory({
+      name: 'Service',
+      slug: 'service',
+      isDefault: false,
+      sortOrder: cats.length,
+    });
+    serviceCat = { id, name: 'Service', slug: 'service' };
+  }
 
-function productsCol() { return getDb().collection('products'); }
+  const existingSnap = await productsCol().where('categoryId', '==', serviceCat.id).get();
+  const existing = existingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const specs = [
+    {
+      serviceKey: 'installation',
+      model: 'Installatiekost',
+      description: 'Installatiekost',
+      price: settings.defaultInstallCost ?? 250,
+      sortOrder: 10,
+    },
+    {
+      serviceKey: 'inspection',
+      model: 'Keuring',
+      description: 'Keuring',
+      price: settings.defaultInspectCost ?? 250,
+      sortOrder: 20,
+    },
+    {
+      serviceKey: 'buffer',
+      model: 'Buffer kleine extra kosten',
+      description: 'Buffer voor kleine onvoorziene kosten',
+      price: settings.defaultBufferCost ?? 0,
+      sortOrder: 30,
+    },
+  ];
+
+  for (const svc of specs) {
+    if (existing.some(p => p.serviceKey === svc.serviceKey)) continue;
+    await createProduct({
+      categoryId: serviceCat.id,
+      brand: 'SmartPeak',
+      model: svc.model,
+      description: svc.description,
+      purchasePrice: Number(svc.price) || 0,
+      marginType: 'fixed',
+      marginValue: 0,
+      discountType: 'fixed',
+      discountValue: 0,
+      discountFromUnit: 2,
+      specs: { serviceKey: svc.serviceKey },
+      serviceKey: svc.serviceKey,
+      sortOrder: svc.sortOrder,
+    });
+  }
+
+  return serviceCat.id;
+}
+
+// ─── PRODUCTS ────────────────────────────────────────────────────────────────
 
 async function listProducts(filters) {
   // Fetch all products and filter/sort client-side to avoid composite indexes
@@ -1553,6 +1615,7 @@ async function createProduct(data) {
     discountValue:   data.discountValue ?? 10,
     discountFromUnit: data.discountFromUnit ?? 2,
     specs:           data.specs || {},
+    serviceKey:      data.serviceKey || (data.specs && data.specs.serviceKey) || null,
     isActive:        true,
     sortOrder:       data.sortOrder ?? 0,
     createdAt:       now,
@@ -1571,6 +1634,72 @@ async function updateProduct(id, data) {
     ...data,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedBy: email,
+  });
+}
+
+// ─── PRODUCT CONFIGS ─────────────────────────────────────────────────────────
+
+function _normalizeProductConfigData(data) {
+  const items = Array.isArray(data.items) ? data.items : [];
+  return {
+    name:        data.name || '',
+    description: data.description || '',
+    items:       items
+      .map(item => ({
+        productId: item && item.productId ? String(item.productId) : '',
+        qty: Math.max(0, parseInt(item && item.qty, 10) || 0),
+      }))
+      .filter(item => item.productId && item.qty > 0),
+    isActive:    data.isActive !== false,
+    sortOrder:   data.sortOrder ?? 0,
+  };
+}
+
+async function listProductConfigs() {
+  const snap = await productConfigsCol().get();
+  const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  list.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || (a.name || '').localeCompare(b.name || ''));
+  return list;
+}
+
+async function getProductConfig(id) {
+  const snap = await productConfigsCol().doc(id).get();
+  return snap.exists ? { id: snap.id, ...snap.data() } : null;
+}
+
+async function createProductConfig(data) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const ref = await productConfigsCol().add({
+    ..._normalizeProductConfigData(data),
+    createdAt: now,
+    updatedAt: now,
+    createdBy: email,
+    updatedBy: email,
+  });
+  return ref.id;
+}
+
+async function updateProductConfig(id, data) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  await productConfigsCol().doc(id).update({
+    ..._normalizeProductConfigData(data),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: email,
+  });
+}
+
+async function deleteProductConfig(id) {
+  await productConfigsCol().doc(id).delete();
+}
+
+async function toggleProductConfigActive(id, isActive) {
+  await productConfigsCol().doc(id).update({
+    isActive,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: currentUserEmail() || null,
   });
 }
 
@@ -1763,12 +1892,19 @@ window.createProductCategory = createProductCategory;
 window.updateProductCategory = updateProductCategory;
 window.deleteProductCategory = deleteProductCategory;
 window.getDefaultCategory = getDefaultCategory;
+window.ensureServiceProducts = ensureServiceProducts;
 window.listProducts = listProducts;
 window.getProduct = getProduct;
 window.createProduct = createProduct;
 window.updateProduct = updateProduct;
 window.deleteProduct = deleteProduct;
 window.toggleProductActive = toggleProductActive;
+window.listProductConfigs = listProductConfigs;
+window.getProductConfig = getProductConfig;
+window.createProductConfig = createProductConfig;
+window.updateProductConfig = updateProductConfig;
+window.deleteProductConfig = deleteProductConfig;
+window.toggleProductConfigActive = toggleProductConfigActive;
 window.uploadProductPhoto = uploadProductPhoto;
 window.listProductPhotos = listProductPhotos;
 window.deleteProductPhoto = deleteProductPhoto;
