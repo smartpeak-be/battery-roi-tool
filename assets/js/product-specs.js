@@ -34,6 +34,7 @@ export const SPEC_FIELDS = [
   { key: 'depthMm',            label: 'Diepte',              unit: 'mm',   type: 'number', categories: ['batterijen', 'omvormers', 'thuisbatterij-systemen', 'materiaal'] },
 
   // Service/diverse products used by quote/invoice composition
+  { key: 'purchaseCostExVat',   label: 'Inkoopprijs',        unit: '€ ex BTW', type: 'number', categories: ['service'] },
   { key: 'serviceKey',          label: 'Service-type',        unit: '',     type: 'select', options: ['installation', 'inspection', 'buffer'], categories: ['service'] },
   { key: 'serviceKey',          label: 'Diverse-type',        unit: '',     type: 'select', options: ['buffer'], categories: ['diversen'] },
 
