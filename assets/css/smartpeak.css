@@ -601,14 +601,14 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
 
 /* dashboard.html: desktop layout keeps leads pinned below the project list. */
 @media (min-width: 992px) {
-  #stateAuthorized {
+  .sp-dashboard-page #stateAuthorized {
     display: flex;
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
   }
-  #stateAuthorized > nav { flex-shrink: 0; }
-  #stateAuthorized > main {
+  .sp-dashboard-page #stateAuthorized > nav { flex-shrink: 0; }
+  .sp-dashboard-page #stateAuthorized > main {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -616,13 +616,13 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
     overflow: hidden;
     padding-bottom: 0 !important;
   }
-  #stateAuthorized > main > .card.mb-3 { flex-shrink: 0; }
-  #stateAuthorized > main > .card:not(.mb-3):not(#leadsCard) {
+  .sp-dashboard-page #stateAuthorized > main > .card.mb-3 { flex-shrink: 0; }
+  .sp-dashboard-page #stateAuthorized > main > .card:not(.mb-3):not(#leadsCard) {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
   }
-  #leadsCard {
+  .sp-dashboard-page #leadsCard {
     flex-shrink: 0;
     max-height: 33vh;
     overflow-y: auto;
