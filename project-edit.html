@@ -214,8 +214,7 @@ function _subscribeSerials() {
     const next  = fresh.serialNumbers || [];
     if (_serialListEqual(cur, next)) return;
     _project.serialNumbers = next;
-    // TODO(race): full-block re-render clobbers in-progress typed input
-    rerenderBlokD();
+    rerenderBlokD({ preserveSerialInputs: true });
   }, err => {
     console.warn('serial onSnapshot error', err);
   });
@@ -1033,9 +1032,47 @@ function wireBlokD() {
 
 }
 
-function rerenderBlokD() {
+function _snapshotSerialInputs() {
+  const active = document.activeElement;
+  const activeRow = active && active.closest ? active.closest('#peSerialList .serial-row') : null;
+  const values = {};
+  document.querySelectorAll('#peSerialList .serial-row').forEach(row => {
+    const input = row.querySelector('[data-serial-field="value"]');
+    const id = row.getAttribute('data-serial-id');
+    if (id && input) values[id] = input.value;
+  });
+  return {
+    values,
+    activeId: activeRow ? activeRow.getAttribute('data-serial-id') : null,
+    selectionStart: active && typeof active.selectionStart === 'number' ? active.selectionStart : null,
+    selectionEnd: active && typeof active.selectionEnd === 'number' ? active.selectionEnd : null,
+  };
+}
+
+function _restoreSerialInputs(snapshot) {
+  if (!snapshot) return;
+  Object.entries(snapshot.values || {}).forEach(([id, value]) => {
+    const row = document.querySelector(`#peSerialList .serial-row[data-serial-id="${CSS.escape(id)}"]`);
+    const input = row && row.querySelector('[data-serial-field="value"]');
+    if (input) input.value = value;
+  });
+  if (snapshot.activeId) {
+    const row = document.querySelector(`#peSerialList .serial-row[data-serial-id="${CSS.escape(snapshot.activeId)}"]`);
+    const input = row && row.querySelector('[data-serial-field="value"]');
+    if (input) {
+      input.focus();
+      if (snapshot.selectionStart != null && snapshot.selectionEnd != null) {
+        input.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+      }
+    }
+  }
+}
+
+function rerenderBlokD(opts = {}) {
+  const snapshot = opts.preserveSerialInputs ? _snapshotSerialInputs() : null;
   document.getElementById('blokD-slot').innerHTML = sectionBlokD();
   wireBlokD();
+  _restoreSerialInputs(snapshot);
 }
 
 let _blokDUploader    = null;
