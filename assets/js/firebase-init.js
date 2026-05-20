@@ -1519,6 +1519,10 @@ async function getDefaultCategory() {
 async function ensureServiceProducts() {
   const settings = await getSettings();
   const cats = await listProductCategories();
+  if (settings.serviceProductsSeeded === true) {
+    return (cats.find(c => c.slug === 'service') || {}).id || null;
+  }
+
   let serviceCat = cats.find(c => c.slug === 'service');
   if (!serviceCat) {
     const id = await createProductCategory({
@@ -1544,6 +1548,13 @@ async function ensureServiceProducts() {
   const existing = existingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const existingMiscSnap = await productsCol().where('categoryId', '==', miscCat.id).get();
   const existingMisc = existingMiscSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const knownSeedKeys = new Set(['installation', 'inspection', 'buffer']);
+  const hasSeededProducts = [...existing, ...existingMisc].some(p => knownSeedKeys.has(p.serviceKey));
+  if (hasSeededProducts) {
+    await saveSettings({ serviceProductsSeeded: true });
+    return serviceCat.id;
+  }
+
   const specs = [
     {
       serviceKey: 'installation',
@@ -1606,6 +1617,7 @@ async function ensureServiceProducts() {
     });
   }
 
+  await saveSettings({ serviceProductsSeeded: true });
   return serviceCat.id;
 }
 
@@ -1735,6 +1747,13 @@ async function toggleProductConfigActive(id, isActive) {
 }
 
 async function deleteProduct(id) {
+  const productSnap = await productsCol().doc(id).get();
+  const productData = productSnap.exists ? productSnap.data() : null;
+  const seedKeys = new Set(['installation', 'inspection', 'buffer']);
+  if (productData && seedKeys.has(productData.serviceKey)) {
+    await saveSettings({ serviceProductsSeeded: true });
+  }
+
   // Cascade: delete photos subcollection
   const photosSnap = await productsCol().doc(id).collection('photos').get();
   if (!photosSnap.empty) {
