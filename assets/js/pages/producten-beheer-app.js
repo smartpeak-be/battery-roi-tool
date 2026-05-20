@@ -1125,7 +1125,8 @@ function renderConfigList() {
             <strong>€${subtotal.toFixed(2)}</strong>
             <div class="text-muted small">ex BTW</div>
           </div>
-          <button class="btn btn-sm btn-outline-primary" data-config-edit="${escapeAttr(cfg.id)}"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-sm btn-outline-primary" data-config-edit="${escapeAttr(cfg.id)}" title="Bewerken"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-sm btn-outline-secondary" data-config-duplicate="${escapeAttr(cfg.id)}" title="Dupliceren"><i class="fa-solid fa-copy"></i></button>
           <button class="btn btn-sm btn-outline-danger" data-config-delete="${escapeAttr(cfg.id)}"><i class="fa-solid fa-trash"></i></button>
         </div>
       </div>`;
@@ -1133,6 +1134,9 @@ function renderConfigList() {
 
   el.querySelectorAll('[data-config-edit]').forEach(btn => {
     btn.addEventListener('click', () => openConfigModal(btn.dataset.configEdit));
+  });
+  el.querySelectorAll('[data-config-duplicate]').forEach(btn => {
+    btn.addEventListener('click', () => openConfigDuplicateModal(btn.dataset.configDuplicate));
   });
   el.querySelectorAll('[data-config-delete]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -1155,10 +1159,34 @@ function renderConfigList() {
   });
 }
 
-function openConfigModal(configId = null) {
+function duplicateConfigDraft(cfg) {
+  return {
+    name: `${cfg.name || 'Configuratie'} (kopie)`,
+    description: cfg.description || '',
+    sortOrder: cfg.sortOrder ?? 0,
+    isActive: cfg.isActive !== false,
+    items: (cfg.items || []).map(item => ({
+      productId: item.productId,
+      qty: item.qty,
+    })),
+  };
+}
+
+function openConfigDuplicateModal(configId) {
+  const cfg = _allConfigs.find(c => c.id === configId);
+  if (!cfg) {
+    showToast('Configuratie niet gevonden', 'danger');
+    return;
+  }
+  openConfigModal(null, duplicateConfigDraft(cfg));
+}
+
+function openConfigModal(configId = null, draftConfig = null) {
   _editingConfigId = configId;
-  const cfg = configId ? _allConfigs.find(c => c.id === configId) : null;
-  document.getElementById('configModalTitle').textContent = cfg ? 'Configuratie bewerken' : 'Nieuwe configuratie';
+  const cfg = configId ? _allConfigs.find(c => c.id === configId) : draftConfig;
+  document.getElementById('configModalTitle').textContent = configId
+    ? 'Configuratie bewerken'
+    : (draftConfig ? 'Configuratie dupliceren' : 'Nieuwe configuratie');
   document.getElementById('configModalBody').innerHTML = buildConfigFormHtml(cfg);
   wireConfigForm();
   updateConfigPreview();
