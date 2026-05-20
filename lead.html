@@ -323,6 +323,8 @@ document.getElementById('btnSubmit').addEventListener('click', async () => {
         </td></tr>` : '';
 
       await createMailDoc({
+        kind: 'lead_result',
+        leadId,
         to: leadDoc.email,
         message: {
           subject: 'Je batterij-analyse is klaar — SmartPeak',

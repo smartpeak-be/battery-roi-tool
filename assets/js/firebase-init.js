@@ -455,7 +455,14 @@ async function getProductsConfig() {
 
 // ─── SHARES (customer-facing read-only snapshots) ────────────────────────────
 // Each share doc holds a full v:5 state payload (inputs + results + dailyCompact).
-// Firestore rules: read = public (customers have no login), write = isWhitelisted().
+// Firestore rules: bearer-link read until expiresAt, write = isWhitelisted().
+const SHARE_LINK_TTL_DAYS = 180;
+const LEAD_RESULT_TTL_DAYS = 30;
+
+function futureTimestamp(days) {
+  return firebase.firestore.Timestamp.fromDate(new Date(Date.now() + days * 24 * 60 * 60 * 1000));
+}
+
 async function createShare(payload, projectId) {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd — alleen ingelogde gebruikers mogen deellinks maken.');
@@ -464,6 +471,7 @@ async function createShare(payload, projectId) {
     projectId:  projectId || null,
     createdBy:  email,
     createdAt:  firebase.firestore.FieldValue.serverTimestamp(),
+    expiresAt:  futureTimestamp(SHARE_LINK_TTL_DAYS),
   };
   return getDb().collection('shares').add(doc);
 }
@@ -1144,7 +1152,8 @@ async function createLead(leadData) {
     status: 'cold_lead',
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     hotLeadAt: null,
-    deletedAt: null
+    deletedAt: null,
+    resultExpiresAt: futureTimestamp(LEAD_RESULT_TTL_DAYS),
   };
   const ref = await db.collection('leads').add(doc);
   return ref.id;
@@ -1205,7 +1214,14 @@ async function updateLeadToHot(leadId) {
 /** Write a document to the mail collection (triggers Firebase email extension). */
 async function createMailDoc(mailData) {
   const db = getDb();
-  await db.collection('mail').add(mailData);
+  if (!mailData || !mailData.kind || !mailData.leadId) {
+    throw new Error('Mail mist verplichte metadata.');
+  }
+  const mailId = `${mailData.kind}_${mailData.leadId}`;
+  await db.collection('mail').doc(mailId).set({
+    ...mailData,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
 }
 
 /**

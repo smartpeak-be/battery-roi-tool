@@ -9,6 +9,170 @@ service cloud.firestore {
              request.auth.token.email in ['kevin@bloxit.be', 'ledsrepair@gmail.com'];
     }
 
+    function leadPath(leadId) {
+      return /databases/$(database)/documents/leads/$(leadId);
+    }
+
+    function isShortString(value, maxLen) {
+      return value is string && value.size() > 0 && value.size() <= maxLen;
+    }
+
+    function isOptionalShortString(data, key, maxLen) {
+      return !(key in data) || data[key] == null || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isOptionalNumber(data, key, min, max) {
+      return !(key in data) || data[key] == null || (data[key] is number && data[key] >= min && data[key] <= max);
+    }
+
+    function isOptionalBool(data, key) {
+      return !(key in data) || data[key] == null || data[key] is bool;
+    }
+
+    function isOptionalNumberOrRange(data, key, min, max) {
+      return !(key in data)
+        || (data[key] is number && data[key] >= min && data[key] <= max)
+        || (
+          data[key] is map
+          && data[key].keys().hasOnly(['min', 'max'])
+          && data[key].min is number
+          && data[key].max is number
+          && data[key].min >= min
+          && data[key].max <= max
+        );
+    }
+
+    function isValidDailyCompact(daily) {
+      return daily is map
+        && daily.keys().hasOnly(['startDate', 'afname', 'injectie', 'afnamedag', 'afnamenacht', 'injectiedag', 'injectienacht'])
+        && isShortString(daily.startDate, 10)
+        && daily.afname is list && daily.afname.size() <= 3660
+        && daily.injectie is list && daily.injectie.size() <= 3660
+        && daily.afnamedag is list && daily.afnamedag.size() <= 3660
+        && daily.afnamenacht is list && daily.afnamenacht.size() <= 3660
+        && daily.injectiedag is list && daily.injectiedag.size() <= 3660
+        && daily.injectienacht is list && daily.injectienacht.size() <= 3660;
+    }
+
+    function isOptionalLeadResult(data) {
+      return !('result' in data)
+        || data.result == null
+        || (
+          data.result is map
+          && data.result.keys().hasOnly([
+            'isRange', 'bestConfigType', 'configTypes', 'configs',
+            'batteryCapKwh', 'batteryInverterKw', 'roiYears',
+            'recoveryPctFull', 'recoveryPctPartial', 'qualifyingDays',
+            'partialDays', 'annualSavingEur', 'daysInWindow', 'isFullYear'
+          ])
+          && isOptionalBool(data.result, 'isRange')
+          && isOptionalShortString(data.result, 'bestConfigType', 80)
+          && (!('configTypes' in data.result) || (data.result.configTypes is list && data.result.configTypes.size() <= 5))
+          && (!('configs' in data.result) || (data.result.configs is list && data.result.configs.size() <= 5))
+          && isOptionalNumberOrRange(data.result, 'batteryCapKwh', 0, 200)
+          && isOptionalNumberOrRange(data.result, 'batteryInverterKw', 0, 100)
+          && isOptionalNumberOrRange(data.result, 'roiYears', 0, 100)
+          && isOptionalNumberOrRange(data.result, 'recoveryPctFull', 0, 100)
+          && isOptionalNumberOrRange(data.result, 'recoveryPctPartial', 0, 100)
+          && isOptionalNumberOrRange(data.result, 'qualifyingDays', 0, 3660)
+          && isOptionalNumberOrRange(data.result, 'partialDays', 0, 3660)
+          && isOptionalNumberOrRange(data.result, 'annualSavingEur', 0, 100000)
+          && isOptionalNumber(data.result, 'daysInWindow', 0, 3660)
+          && isOptionalBool(data.result, 'isFullYear')
+        );
+    }
+
+    function isValidLeadCreate() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'customerName', 'email', 'csvDailyCompact', 'pvInverterKw', 'pricePerKwh',
+          'houseAgeOver10Years', 'defaultsUsed', 'notes', 'result', 'effectiveBtw',
+          'keuring', 'status', 'createdAt', 'hotLeadAt', 'deletedAt', 'resultExpiresAt'
+        ])
+        && isShortString(data.customerName, 120)
+        && data.email is string
+        && data.email.size() >= 3
+        && data.email.size() <= 254
+        && data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+        && (!('csvDailyCompact' in data) || isValidDailyCompact(data.csvDailyCompact))
+        && isOptionalNumber(data, 'pvInverterKw', 0.1, 100)
+        && isOptionalNumber(data, 'pricePerKwh', 0.01, 2)
+        && isOptionalBool(data, 'houseAgeOver10Years')
+        && (!('defaultsUsed' in data) || data.defaultsUsed is map)
+        && isOptionalShortString(data, 'notes', 2000)
+        && isOptionalLeadResult(data)
+        && isOptionalNumber(data, 'effectiveBtw', 0, 21)
+        && isOptionalBool(data, 'keuring')
+        && data.status == 'cold_lead'
+        && data.createdAt == request.time
+        && data.hotLeadAt == null
+        && data.deletedAt == null
+        && data.resultExpiresAt is timestamp
+        && data.resultExpiresAt > request.time
+        && data.resultExpiresAt <= request.time + duration.value(30, 'd');
+    }
+
+    function isPublicLeadGet() {
+      return resource.data.deletedAt == null
+        && (!('resultExpiresAt' in resource.data) || resource.data.resultExpiresAt > request.time);
+    }
+
+    function isPublicHotLeadUpdate() {
+      return resource.data.status == 'cold_lead'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'hotLeadAt'])
+        && request.resource.data.status == 'hot_lead'
+        && request.resource.data.hotLeadAt == request.time;
+    }
+
+    function hasValidMailEnvelope(kind) {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['kind', 'leadId', 'to', 'message', 'createdAt'])
+        && data.kind == kind
+        && data.leadId is string
+        && data.leadId.size() > 0
+        && data.leadId.size() <= 128
+        && data.createdAt == request.time
+        && data.message is map
+        && data.message.keys().hasOnly(['subject', 'html'])
+        && data.message.subject is string
+        && data.message.subject.size() > 0
+        && data.message.subject.size() <= 200
+        && data.message.html is string
+        && data.message.html.size() > 0
+        && data.message.html.size() <= 50000
+        && exists(leadPath(data.leadId));
+    }
+
+    function isValidLeadResultMail() {
+      let data = request.resource.data;
+      return hasValidMailEnvelope('lead_result')
+        && data.to is string
+        && data.to == get(leadPath(data.leadId)).data.email
+        && data.message.subject == 'Je batterij-analyse is klaar — SmartPeak';
+    }
+
+    function isValidLeadContactMail() {
+      let data = request.resource.data;
+      return hasValidMailEnvelope('lead_contact')
+        && data.to is list
+        && data.to.size() == 2
+        && 'kevin@bloxit.be' in data.to
+        && 'ledsrepair@gmail.com' in data.to
+        && data.message.subject.matches('^Nieuwe contactaanvraag:.*$');
+    }
+
+    function isValidShareCreate() {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['payload', 'projectId', 'createdBy', 'createdAt', 'expiresAt'])
+        && data.payload is map
+        && (data.projectId == null || data.projectId is string)
+        && data.createdBy is string
+        && data.createdAt == request.time
+        && data.expiresAt is timestamp
+        && data.expiresAt > request.time
+        && data.expiresAt <= request.time + duration.value(180, 'd');
+    }
+
     // ─── Projects ──────────────────────────────────────────────────
     match /projects/{projectId} {
       allow read, write: if isWhitelisted();
@@ -24,8 +188,9 @@ service cloud.firestore {
 
     // ─── Shares (public read, whitelisted create/delete) ─────────
     match /shares/{shareId} {
-      allow read:   if true;
-      allow create, delete: if isWhitelisted();
+      allow read:   if !('expiresAt' in resource.data) || resource.data.expiresAt > request.time;
+      allow create: if isWhitelisted() && isValidShareCreate();
+      allow delete: if isWhitelisted();
       allow update: if false;
     }
 
@@ -40,16 +205,17 @@ service cloud.firestore {
 
     // ─── Leads (public create, public read by ID, whitelisted list) ─
     match /leads/{leadId} {
-      allow get:    if true;
+      allow get:    if isWhitelisted() || isPublicLeadGet();
       allow list:   if isWhitelisted();
-      allow create: if true;
-      allow update: if isWhitelisted();
+      allow create: if isValidLeadCreate();
+      allow update: if isWhitelisted() || isPublicHotLeadUpdate();
       allow delete: if isWhitelisted();
     }
 
     // ─── Mail (trigger email extension) ──────────────────────────
     match /mail/{mailId} {
-      allow create: if true;
+      allow create: if mailId == request.resource.data.kind + '_' + request.resource.data.leadId
+        && (isValidLeadResultMail() || isValidLeadContactMail());
       allow read, update, delete: if false;
     }
 
