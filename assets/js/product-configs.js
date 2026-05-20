@@ -44,7 +44,8 @@ export function generatedConfigDescription(items, productsById) {
     .map(item => {
       const product = productsById && productsById[item.productId];
       if (!product) return '';
-      return `${item.qty}x ${productLabel(product)}`;
+      const label = productLabel(product);
+      return item.qty === 1 ? label : `${item.qty}x ${label}`;
     })
     .filter(Boolean);
   return parts.join(' & ');
