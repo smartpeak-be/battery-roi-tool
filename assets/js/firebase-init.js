@@ -632,17 +632,11 @@ async function _resizeToJpeg(source, MAX_SIDE, QUALITY) {
     naturalWidth  = source.naturalWidth;
     naturalHeight = source.naturalHeight;
   } else if (source instanceof Blob) {
-    if (source.size === 0) throw new Error('Decoder-output is leeg (0 bytes).');
-    if (typeof createImageBitmap !== 'function') {
-      throw new Error('createImageBitmap niet ondersteund in deze browser.');
-    }
-    let bitmap;
-    try { bitmap = await createImageBitmap(source); }
-    catch (e) { throw new Error('Kan afbeelding niet decoderen: ' + (e && e.message ? e.message : e), { cause: e }); }
-    drawable = bitmap;
-    naturalWidth  = bitmap.width;
-    naturalHeight = bitmap.height;
-    cleanup = () => { if (typeof bitmap.close === 'function') bitmap.close(); };
+    const decoded = await _decodeBlobForCanvas(source);
+    drawable = decoded.drawable;
+    naturalWidth = decoded.width;
+    naturalHeight = decoded.height;
+    cleanup = decoded.cleanup;
   } else {
     throw new Error('makeThumbnail: source moet File/Blob of HTMLImageElement zijn');
   }
@@ -665,6 +659,54 @@ async function _resizeToJpeg(source, MAX_SIDE, QUALITY) {
   cleanup();
   if (!blob) throw new Error('Thumbnail-aanmaak mislukt (canvas.toBlob)');
   return { blob, width: naturalWidth, height: naturalHeight };
+}
+
+async function _decodeBlobForCanvas(blob) {
+  if (blob.size === 0) throw new Error('Decoder-output is leeg (0 bytes).');
+
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      return {
+        drawable: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        cleanup: () => { if (typeof bitmap.close === 'function') bitmap.close(); },
+      };
+    } catch (bitmapErr) {
+      console.warn('[image-decode] createImageBitmap failed, falling back to <img>:', bitmapErr);
+    }
+  }
+
+  return _decodeBlobViaImageElement(blob);
+}
+
+async function _decodeBlobViaImageElement(blob) {
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = url;
+
+  try {
+    if (typeof img.decode === 'function') {
+      await img.decode();
+    } else {
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+    }
+  } catch (imgErr) {
+    URL.revokeObjectURL(url);
+    throw new Error('Kan afbeelding niet decoderen: ' + (imgErr && imgErr.message ? imgErr.message : imgErr), { cause: imgErr });
+  }
+
+  return {
+    drawable: img,
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+    cleanup: () => URL.revokeObjectURL(url),
+  };
 }
 
 function getStorage() {
