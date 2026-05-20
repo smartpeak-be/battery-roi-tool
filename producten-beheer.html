@@ -236,18 +236,10 @@
 <script type="module">
 import { sellPrice, unitPrice } from './assets/js/product-pricing.js';
 import { specsForCategory } from './assets/js/product-specs.js';
+import { escapeHtml } from './assets/js/shared-helpers.js';
+import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from './assets/js/producten-beheer/renderers.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
-}
-
-function escapeAttr(value) {
-  return escapeHtml(String(value == null ? '' : value));
-}
 
 function showToast(message, variant = 'primary') {
   const container = document.getElementById('toastContainer');
@@ -993,12 +985,7 @@ async function renderProductPhotos(grid, productId) {
   try {
     const photos = await listProductPhotos(productId);
     if (!photos.length) { grid.innerHTML = '<span class="text-muted small">Geen foto\'s</span>'; return; }
-    grid.innerHTML = photos.map(p => `
-      <div class="photo-item" data-photo-id="${escapeAttr(p.id)}" data-storage-path="${escapeAttr(p.storagePath || '')}" data-thumb-storage-path="${escapeAttr(p.thumbStoragePath || '')}">
-        <img class="photo-thumb" src="${escapeAttr(p.thumbUrl || p.downloadUrl || '')}" alt="${escapeAttr(p.name || '')}" data-full-url="${escapeAttr(p.downloadUrl || '')}">
-        <button type="button" class="photo-delete-btn" title="Verwijderen"><i class="fa-solid fa-xmark"></i></button>
-      </div>
-    `).join('');
+    grid.innerHTML = productPhotosHtml(photos);
   } catch (err) {
     grid.innerHTML = '<span class="text-danger small">Fout bij laden foto\'s</span>';
     console.error('renderProductPhotos', err);
@@ -1093,19 +1080,7 @@ async function renderProductDatasheets(list, productId) {
   try {
     const docs = await listProductDatasheets(productId);
     if (!docs.length) { list.innerHTML = '<span class="text-muted small">Geen datasheets</span>'; return; }
-    list.innerHTML = docs.map(d => {
-      const sizeKb = d.sizeBytes ? Math.round(d.sizeBytes / 1024) : '?';
-      return `
-        <div class="ds-row" data-ds-id="${escapeAttr(d.id)}" data-storage-path="${escapeAttr(d.storagePath || '')}">
-          <i class="fa-solid fa-file-pdf text-danger"></i>
-          <a href="${escapeAttr(d.downloadUrl || '#')}" target="_blank" rel="noopener" class="ds-name" title="${escapeAttr(d.name || '')}">${escapeHtml(d.name || 'Datasheet')}</a>
-          <span class="ds-size">${sizeKb} KB</span>
-          <button type="button" class="btn btn-sm btn-outline-danger ds-delete-btn" title="Verwijderen">
-            <i class="fa-solid fa-trash-can"></i>
-          </button>
-        </div>
-      `;
-    }).join('');
+    list.innerHTML = productDatasheetsHtml(docs);
   } catch (err) {
     list.innerHTML = '<span class="text-danger small">Fout bij laden datasheets</span>';
     console.error('renderProductDatasheets', err);
