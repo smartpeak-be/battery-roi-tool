@@ -271,10 +271,28 @@ export default [
     },
   },
 
+  // ── Firebase Cloud Functions ───────────────────────────────────────────────
+  {
+    files: ['functions/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      'no-console': 'off',
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+
   // ── Ignore patterns ───────────────────────────────────────────────────────
   {
     ignores: [
       'node_modules/',
+      'functions/node_modules/',
       'style.css',
       'script.js',
     ],

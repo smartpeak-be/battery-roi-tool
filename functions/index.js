@@ -4,8 +4,16 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 
 if (!admin.apps.length) admin.initializeApp();
 
-// Vision client — singleton, EU endpoint.
-const visionClient = new ImageAnnotatorClient({ apiEndpoint: 'eu-vision.googleapis.com' });
+// Vision client — lazy singleton. Firebase CLI loads this module during deploy
+// analysis; constructing the client eagerly can trigger local ADC/metadata
+// lookups and make deployment time out before the backend spec is discovered.
+let visionClient = null;
+function getVisionClient() {
+  if (!visionClient) {
+    visionClient = new ImageAnnotatorClient({ apiEndpoint: 'eu-vision.googleapis.com' });
+  }
+  return visionClient;
+}
 
 // Mirrors assets/js/serial-extract.js exactly. If this diverges, the
 // browser and server will pick different serials from the same photo.
@@ -51,7 +59,7 @@ export function shouldCleanup(before, after) {
 }
 
 async function runOcr(buffer) {
-  const [result] = await visionClient.textDetection({ image: { content: buffer } });
+  const [result] = await getVisionClient().textDetection({ image: { content: buffer } });
   return result.textAnnotations || [];
 }
 
@@ -181,7 +189,7 @@ async function cleanupSerialEntry(projectId, photoId, serialEntryId) {
       ocrCandidates: admin.firestore.FieldValue.delete(),
       ocrError: admin.firestore.FieldValue.delete(),
     });
-  } catch (_) { /* photo deleted */ }
+  } catch { /* photo deleted */ }
 }
 
 export const ocrSerial = functions.firestore.onDocumentWritten(
