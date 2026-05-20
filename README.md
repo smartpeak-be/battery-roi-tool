@@ -60,17 +60,50 @@ npx vitest run
 npx playwright test --config=e2e/playwright.config.js
 ```
 
+## Firebase security hardening
+
+Deze site draait volledig statisch op GitHub Pages. Alles in de browser
+(`assets/js/firebase-init.js`, inclusief de Firebase `apiKey`) is publiek
+zichtbaar. De web `apiKey` is geen secret; beveiliging moet gebeuren via
+Firestore/Storage rules, Google Auth, domeinrestricties en abuse-limieten.
+
+Aanbevolen Firebase/Google Cloud instellingen:
+
+1. Beperk de **Browser key** in Google Cloud Console met HTTP referrers:
+   `https://smartpeak-be.github.io/battery-roi-tool/*`, eventuele preview-
+   domeinen die bewust gebruikt worden, en lokale development origins alleen
+   indien nodig.
+2. Beperk de key tot de Firebase APIs die deze app nodig heeft
+   (Identity Toolkit/Firebase Auth, Firestore, Storage en Firebase Installations
+   wanneer App Check actief is).
+3. Houd Firebase Auth authorized domains minimaal: `smartpeak-be.github.io` en
+   expliciete test/preview-domeinen. Verwijder ongebruikte domeinen.
+4. Schakel **Firebase App Check** voor Web in (bijv. reCAPTCHA Enterprise) en
+   start in monitor-mode. Enforce daarna minstens Firestore en Storage zodra de
+   legitieme clients stabiel groen zijn.
+5. Publieke writes blijven beperkt tot de lead-flow:
+   - `/leads` create is in rules gevalideerd op shape, types, status en TTL.
+   - `/mail` create accepteert alleen vaste lead-result/contact mailvormen met
+     deterministische document-ID per lead/type.
+   - share-links en nieuwe lead-result links hebben een expiry timestamp.
+6. Voor echte rate limiting/CAPTCHA op lead-submit is een backendlaag nodig
+   (Cloud Function/Callable of eigen endpoint). De huidige rules beperken shape
+   en misbruikimpact, maar kunnen geen IP-based quotas afdwingen.
+7. GitHub Pages publiceert via Jekyll met `_config.yml`; dev-bestanden zoals
+   `docs/`, `e2e/`, `scripts/`, Firebase rules en package metadata worden niet
+   mee gepubliceerd.
+
 ## Firestore rules deployen
 
-`firebase deploy --only firestore:rules` (CLI v15) deployt **niet** naar de
-named database (`smartpeak-battery-roi-be`). Gebruik in plaats daarvan:
+Gebruik het project-specifieke deployscript zodat Firestore én Storage rules naar
+`smartpeak-projects` gaan:
 
 ```bash
-node e2e/deploy-rules-default.cjs
+node scripts/deploy-rules-smartpeak-projects.cjs
 ```
 
-Dit deployt `firestore.rules` naar zowel de default als named database release
-via de REST API.
+Het script vereist `scripts/sa-dest.json` lokaal. Dat bestand is gitignored en
+mag nooit gecommit worden.
 
 ## Bestandsstructuur
 
