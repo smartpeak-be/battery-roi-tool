@@ -83,6 +83,7 @@ export default [
       'assets/js/lead-calc.js',
       'assets/js/serial-extract.js',
       'assets/js/index/scenario-card.js',
+      'assets/js/index/energy-chart.js',
     ],
     languageOptions: {
       ecmaVersion: 'latest',
