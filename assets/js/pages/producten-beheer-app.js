@@ -1399,7 +1399,8 @@ function wireQuoteModal() {
     document.getElementById(id)?.addEventListener('change', updateQuotePreview);
   });
   document.getElementById('btnAddQuoteProduct')?.addEventListener('click', () => {
-    document.getElementById('quoteExtraProducts').insertAdjacentHTML('beforeend', quoteExtraProductRowHtml());
+    const vat = parseFloat(document.getElementById('quoteVat')?.value) || 21;
+    document.getElementById('quoteExtraProducts').insertAdjacentHTML('beforeend', quoteExtraProductRowHtml({ vat }));
     wireQuoteDynamicRows();
     updateQuotePreview();
   });
@@ -1475,7 +1476,7 @@ function wireQuoteDynamicRows() {
   });
 }
 
-function readQuoteExtraProductLines() {
+function readQuoteExtraProductItems() {
   const { productsById } = _maps();
   return Array.from(document.querySelectorAll('#quoteExtraProducts .quote-extra-product-row')).map(row => {
     const productId = row.querySelector('.quote-extra-product-id').value;
@@ -1483,12 +1484,7 @@ function readQuoteExtraProductLines() {
     const qty = parseInt(row.querySelector('.quote-extra-product-qty').value, 10) || 0;
     const vat = parseFloat(row.querySelector('.quote-extra-product-vat').value) || 21;
     if (!product || qty <= 0) return null;
-    const exVat = configSubtotalExVat([{ productId, qty }], productsById);
-    return {
-      description: `${qty}x ${productLabel(product)}`,
-      exVat,
-      vat,
-    };
+    return { productId, qty, vat };
   }).filter(Boolean);
 }
 
@@ -1513,6 +1509,58 @@ function quoteLineHtml(line) {
           </tr>`;
 }
 
+function mergeConfigItems(items) {
+  const byProduct = new Map();
+  (items || []).forEach(item => {
+    if (!item.productId || !item.qty) return;
+    byProduct.set(item.productId, (byProduct.get(item.productId) || 0) + item.qty);
+  });
+  return Array.from(byProduct, ([productId, qty]) => ({ productId, qty }));
+}
+
+function categoryItemsByVat(baseItems, extraItems, productsById, categoriesById, categorySlug, quoteVat) {
+  const groups = new Map();
+  const isMatch = (item) => {
+    if (!categorySlug) {
+      return configItemsExceptCategorySlugs([item], productsById, categoriesById, [MATERIAL_CATEGORY_SLUG, MISC_CATEGORY_SLUG]).length > 0;
+    }
+    return configItemsForCategorySlug([item], productsById, categoriesById, categorySlug).length > 0;
+  };
+
+  const push = (vat, item) => {
+    if (!isMatch(item)) return;
+    const key = String(vat);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ productId: item.productId, qty: item.qty });
+  };
+
+  (baseItems || []).forEach(item => push(quoteVat, item));
+  (extraItems || []).forEach(item => push(item.vat, item));
+  return Array.from(groups, ([vat, items]) => ({
+    vat: Number(vat),
+    items: mergeConfigItems(items),
+  })).filter(group => group.items.length);
+}
+
+function quoteGroupedRowsHtml(groups, productsById, prefix = '') {
+  return groups.map(group => {
+    const exVat = configSubtotalExVat(group.items, productsById);
+    const description = generatedConfigDescription(group.items, productsById);
+    return quoteLineHtml({
+      description: `${prefix}${description}`,
+      exVat,
+      vat: group.vat,
+    });
+  }).join('');
+}
+
+function groupedQuoteIncl(groups, productsById) {
+  return groups.reduce((sum, group) => {
+    const exVat = configSubtotalExVat(group.items, productsById);
+    return sum + exVat * (1 + group.vat / 100);
+  }, 0);
+}
+
 function updateQuotePreview() {
   const el = document.getElementById('quotePreview');
   if (!el) return;
@@ -1523,52 +1571,34 @@ function updateQuotePreview() {
   }
   const { productsById, categoriesById } = _maps();
   const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
-  const mainItems = configItemsExceptCategorySlugs(cfg.items, productsById, categoriesById, [MATERIAL_CATEGORY_SLUG, MISC_CATEGORY_SLUG]);
-  const materialItems = configItemsForCategorySlug(cfg.items, productsById, categoriesById, MATERIAL_CATEGORY_SLUG);
-  const miscItems = configItemsForCategorySlug(cfg.items, productsById, categoriesById, MISC_CATEGORY_SLUG);
-  const mainEx = configSubtotalExVat(mainItems, productsById, categoriesById);
-  const materialEx = configSubtotalExVat(materialItems, productsById, categoriesById);
-  const miscEx = configSubtotalExVat(miscItems, productsById, categoriesById);
-  const kg = configBatteryWeightKg(cfg.items, productsById, categoriesById);
+  const extraProductItems = readQuoteExtraProductItems();
+  const mainGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, null, vat);
+  const materialGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MATERIAL_CATEGORY_SLUG, vat);
+  const miscGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MISC_CATEGORY_SLUG, vat);
+  const kg = configBatteryWeightKg([...cfg.items, ...extraProductItems], productsById, categoriesById);
   const bebatPrice = currentBebatPricePerKg();
   const bebatIncl = bebatTotalInclVat(kg, bebatPrice);
-  const mainDesc = generatedConfigDescription(mainItems, productsById) || cfg.name || 'Configuratie';
-  const materialDesc = generatedConfigDescription(materialItems, productsById);
-  const miscDesc = generatedConfigDescription(miscItems, productsById);
-  const mainIncl = mainEx * (1 + vat / 100);
-  const materialIncl = materialEx * (1 + vat / 100);
-  const miscIncl = miscEx * (1 + vat / 100);
-  const materialRow = materialItems.length ? `
-          <tr>
-            <td>Materiaal: ${escapeHtml(materialDesc)}</td>
-            <td class="text-end">€${materialEx.toFixed(2)}</td>
-            <td class="text-end">${vat}%</td>
-            <td class="text-end">€${materialIncl.toFixed(2)}</td>
-          </tr>` : '';
-  const miscRow = miscItems.length ? `
-          <tr>
-            <td>Diversen: ${escapeHtml(miscDesc)}</td>
-            <td class="text-end">€${miscEx.toFixed(2)}</td>
-            <td class="text-end">${vat}%</td>
-            <td class="text-end">€${miscIncl.toFixed(2)}</td>
-          </tr>` : '';
-  const extraLines = [...readQuoteExtraProductLines(), ...readQuoteManualLines()];
+  const mainRows = mainGroups.length
+    ? quoteGroupedRowsHtml(mainGroups, productsById)
+    : quoteLineHtml({ description: cfg.name || 'Configuratie', exVat: 0, vat });
+  const materialRows = quoteGroupedRowsHtml(materialGroups, productsById, 'Materiaal: ');
+  const miscRows = quoteGroupedRowsHtml(miscGroups, productsById, 'Diversen: ');
+  const manualLines = readQuoteManualLines();
+  const extraLines = manualLines;
   const extraRows = extraLines.map(quoteLineHtml).join('');
   const extraIncl = extraLines.reduce((sum, line) => sum + line.exVat * (1 + line.vat / 100), 0);
-  const totalIncl = mainIncl + materialIncl + miscIncl + bebatIncl + extraIncl;
+  const groupedIncl = groupedQuoteIncl(mainGroups, productsById)
+    + groupedQuoteIncl(materialGroups, productsById)
+    + groupedQuoteIncl(miscGroups, productsById);
+  const totalIncl = groupedIncl + bebatIncl + extraIncl;
   el.innerHTML = `
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-2">
         <thead><tr><th>Omschrijving</th><th class="text-end">Ex BTW</th><th class="text-end">BTW</th><th class="text-end">Incl.</th></tr></thead>
         <tbody>
-          <tr>
-            <td>${escapeHtml(mainDesc)}</td>
-            <td class="text-end">€${mainEx.toFixed(2)}</td>
-            <td class="text-end">${vat}%</td>
-            <td class="text-end">€${mainIncl.toFixed(2)}</td>
-          </tr>
-          ${materialRow}
-          ${miscRow}
+          ${mainRows}
+          ${materialRows}
+          ${miscRows}
           ${extraRows}
           <tr>
             <td>Bebat bijdrage (${kg.toFixed(2)} kg × €${bebatPrice.toFixed(2)}/kg)</td>
