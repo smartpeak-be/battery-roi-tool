@@ -393,7 +393,7 @@ import { escapeHtml } from './shared-helpers.js';
                   <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-r" value="serial" />
                   <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-r"><i class="fa-solid fa-barcode me-1"></i>Serieel</label>
                 </div>
-                <div class="btn-group btn-group-sm pu-serial-cat" role="group" data-pu-cat-row="${escapeHtml(id)}" style="display:none;">
+                <div class="btn-group btn-group-sm pu-serial-cat w-100 flex-wrap mt-2" role="group" data-pu-cat-row hidden>
                   <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-b" value="batterij" checked />
                   <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-b">Batterij</label>
                   <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-o" value="omvormer" />
@@ -408,16 +408,12 @@ import { escapeHtml } from './shared-helpers.js';
 
       // Show category row only when this photo is tagged as serial.
       list.querySelectorAll('[data-pu-modal-row]').forEach(row => {
-        const id = row.getAttribute('data-photo-id');
-        if (!id) return;
-        ['s', 'r'].forEach(suffix => {
-          const radio = row.querySelector(`#tag-${CSS.escape(id)}-${suffix}`);
-          if (!radio) return;
+        row.querySelectorAll('input[type="radio"][name^="tag-"]').forEach(radio => {
           radio.addEventListener('change', () => {
-            const catRow = row.querySelector(`[data-pu-cat-row="${CSS.escape(id)}"]`);
-            if (catRow) catRow.style.display = (suffix === 'r') ? '' : 'none';
+            _syncSerialCategoryVisibility(row);
           });
         });
+        _syncSerialCategoryVisibility(row);
       });
 
       // Bulk handlers
@@ -425,21 +421,21 @@ import { escapeHtml } from './shared-helpers.js';
         btn.onclick = () => {
           const target = btn.getAttribute('data-pu-bulk');
           list.querySelectorAll('[data-pu-modal-row]').forEach(row => {
-            const id = row.getAttribute('data-photo-id');
-            const radio = row.querySelector(`input[name="tag-${CSS.escape(id)}"][value="${target}"]`);
+            const radio = row.querySelector(`input[type="radio"][name^="tag-"][value="${target}"]`);
             if (radio) radio.checked = true;
+            _syncSerialCategoryVisibility(row);
           });
           // When bulk-tagging as serial, also reveal the category row and reset
           // each one to the default Batterij selection.
           if (target === 'serial') {
             list.querySelectorAll(`[data-pu-cat-row]`).forEach(catRow => {
-              catRow.style.display = '';
+              catRow.hidden = false;
               const def = catRow.querySelector(`input[value="batterij"]`);
               if (def) def.checked = true;
             });
           } else {
             list.querySelectorAll(`[data-pu-cat-row]`).forEach(catRow => {
-              catRow.style.display = 'none';
+              catRow.hidden = true;
             });
           }
         };
@@ -457,11 +453,12 @@ import { escapeHtml } from './shared-helpers.js';
           const batch = db.batch();
           let patches = 0;
           uploadedIds.forEach(id => {
-            const tagChecked = list.querySelector(`input[name="tag-${CSS.escape(id)}"]:checked`);
+            const row = list.querySelector(`[data-photo-id="${CSS.escape(id)}"]`);
+            const tagChecked = row && row.querySelector(`input[type="radio"][name^="tag-"]:checked`);
             const isSerial = tagChecked && tagChecked.value === 'serial';
             const ref = db.collection('projects').doc(options.projectId).collection('photos').doc(id);
             if (isSerial) {
-              const catChecked = list.querySelector(`input[name="cat-${CSS.escape(id)}"]:checked`);
+              const catChecked = row.querySelector(`input[type="radio"][name^="cat-"]:checked`);
               const category = (catChecked && catChecked.value) || 'batterij';
               batch.update(ref, {
                 tag: 'serial',
@@ -492,6 +489,18 @@ import { escapeHtml } from './shared-helpers.js';
       el.addEventListener('hidden.bs.modal', onHidden);
 
       bootstrap.Modal.getOrCreateInstance(el).show();
+    }
+
+    function _syncSerialCategoryVisibility(row) {
+      const tagChecked = row.querySelector(`input[type="radio"][name^="tag-"]:checked`);
+      const catRow = row.querySelector('[data-pu-cat-row]');
+      if (!catRow) return;
+      const isSerial = tagChecked && tagChecked.value === 'serial';
+      catRow.hidden = !isSerial;
+      if (isSerial && !catRow.querySelector('input[type="radio"]:checked')) {
+        const def = catRow.querySelector('input[value="batterij"]');
+        if (def) def.checked = true;
+      }
     }
 
     function destroy() {

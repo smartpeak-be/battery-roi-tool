@@ -245,7 +245,7 @@ export async function handleOcrSerial(event) {
       const newEntry = {
         id: entryId,
         value,
-        category: after.serialCategory || null,
+        category: after.serialCategory || 'batterij',
         source: 'ocr',
         photoId,
         ocrStatus: value ? 'ok' : 'failed',
@@ -280,7 +280,7 @@ export async function handleOcrSerial(event) {
         const newEntry = {
           id: entryId,
           value: '',
-          category: after.serialCategory || null,
+          category: after.serialCategory || 'batterij',
           source: 'ocr',
           photoId,
           ocrStatus: 'failed',
