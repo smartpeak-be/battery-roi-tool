@@ -568,7 +568,7 @@ function buildDetailFormHtml(product, mode) {
           <label class="form-label">Aankoopprijs (ex BTW) <span class="text-danger">*</span></label>
           <div class="input-group">
             <span class="input-group-text">&euro;</span>
-            <input type="number" class="form-control detail-purchase-price" min="0" step="0.01" value="${escapeAttr(p.purchasePrice || '')}">
+            <input type="number" class="form-control detail-purchase-price" min="0" step="0.01" value="${escapeAttr(p.purchasePrice ?? '')}">
           </div>
         </div>
         <div class="col-6">
@@ -1135,6 +1135,7 @@ function readProductFromForm(container) {
 function updatePricePreview(container) {
   const data = readProductFromForm(container);
   const pp = data.purchasePrice || 0;
+  const hasPurchasePrice = container.querySelector('.detail-purchase-price').value.trim() !== '';
   const sp = sellPrice(data);
   const fromUnit = data.discountFromUnit || 2;
   const kp = unitPrice(data, fromUnit);
@@ -1146,11 +1147,11 @@ function updatePricePreview(container) {
   const previewU2Winst = container.querySelector('.detail-preview-u2-winst');
   const kortingLabel = container.querySelector('.detail-preview-korting-label');
 
-  if (previewSp) previewSp.textContent = pp ? `€${sp.toFixed(2)}` : '—';
-  if (previewU2) previewU2.textContent = pp ? `€${kp.toFixed(2)}` : '—';
-  if (previewSellPrice) previewSellPrice.value = pp ? sp.toFixed(2) : '—';
-  if (previewSpWinst) previewSpWinst.textContent = pp ? `(winst €${(sp - pp).toFixed(2)})` : '';
-  if (previewU2Winst) previewU2Winst.textContent = pp ? `(winst €${(kp - pp).toFixed(2)})` : '';
+  if (previewSp) previewSp.textContent = hasPurchasePrice ? `€${sp.toFixed(2)}` : '—';
+  if (previewU2) previewU2.textContent = hasPurchasePrice ? `€${kp.toFixed(2)}` : '—';
+  if (previewSellPrice) previewSellPrice.value = hasPurchasePrice ? sp.toFixed(2) : '—';
+  if (previewSpWinst) previewSpWinst.textContent = hasPurchasePrice ? `(winst €${(sp - pp).toFixed(2)})` : '';
+  if (previewU2Winst) previewU2Winst.textContent = hasPurchasePrice ? `(winst €${(kp - pp).toFixed(2)})` : '';
   if (kortingLabel) kortingLabel.textContent = `(vanaf ${fromUnit}e)`;
 }
 
@@ -1165,7 +1166,12 @@ async function saveProductFromForm(container, existingProduct) {
   if (!data.categoryId) { showToast('Kies een categorie', 'danger'); return; }
   if (!data.brand && !isBrandless) { showToast('Vul een merk in', 'danger'); return; }
   if (!data.model) { showToast(isBrandless ? 'Vul een naam in' : 'Vul een model in', 'danger'); return; }
-  if ((!data.purchasePrice || data.purchasePrice <= 0) && !isService) { showToast('Vul een aankoopprijs in', 'danger'); return; }
+  const purchaseInput = container.querySelector('.detail-purchase-price').value.trim();
+  if (!purchaseInput && !isService) { showToast('Vul een aankoopprijs in', 'danger'); return; }
+  if (data.purchasePrice < 0) { showToast('Aankoopprijs mag niet negatief zijn', 'danger'); return; }
+  if (data.marginValue < 0) { showToast('Winstmarge mag niet negatief zijn', 'danger'); return; }
+  if (data.discountValue < 0) { showToast('Korting mag niet negatief zijn', 'danger'); return; }
+  if (data.discountFromUnit < 1) { showToast('Korting vanaf eenheid moet minstens 1 zijn', 'danger'); return; }
 
   try {
     if (existingProduct) {

@@ -31,6 +31,16 @@ describe('sellPrice', () => {
     expect(sellPrice(p)).toBeCloseTo(500);
   });
 
+  it('allows zero purchase price with 0% margin', () => {
+    const p = { purchasePrice: 0, marginType: 'percent', marginValue: 0 };
+    expect(sellPrice(p)).toBeCloseTo(0);
+  });
+
+  it('allows zero purchase price with a fixed profit amount', () => {
+    const p = { purchasePrice: 0, marginType: 'fixed', marginValue: 125 };
+    expect(sellPrice(p)).toBeCloseTo(125);
+  });
+
   it('handles missing purchasePrice', () => {
     const p = { marginType: 'percent', marginValue: 30 };
     expect(sellPrice(p)).toBe(0);
