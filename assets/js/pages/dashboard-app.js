@@ -629,10 +629,15 @@ function renderDrawer(project) {
     const safeMapsUrl = mapsUrl && /^https:\/\//.test(mapsUrl) ? mapsUrl : '';
     const safeWazeUrl = wazeUrl && /^https:\/\//.test(wazeUrl) ? wazeUrl : '';
     contactLines.push(`
-      <div class="mb-1 sp-pre-wrap">
-        <i class="fa-solid fa-location-dot text-primary me-1" aria-hidden="true"></i>
-        ${safeMapsUrl ? `<a href="${escapeHtml(safeMapsUrl)}" target="_blank" rel="noopener">${escapeHtml(addressText)}</a>` : escapeHtml(addressText)}
-        ${safeWazeUrl ? `<a href="${escapeHtml(safeWazeUrl)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary ms-2 py-0">Waze</a>` : ''}
+      <div class="d-flex gap-2 align-items-start mb-2">
+        <i class="fa-solid fa-location-dot text-primary flex-shrink-0 mt-1" aria-hidden="true"></i>
+        <div class="min-w-0">
+          <div class="sp-pre-wrap">${escapeHtml(addressText)}</div>
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            ${safeMapsUrl ? `<a href="${escapeHtml(safeMapsUrl)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-map-location-dot me-1" aria-hidden="true"></i>Maps</a>` : ''}
+            ${safeWazeUrl ? `<a href="${escapeHtml(safeWazeUrl)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-route me-1" aria-hidden="true"></i>Waze</a>` : ''}
+          </div>
+        </div>
       </div>`);
   }
   if (m.customer.phone)   contactLines.push(`<div class="mb-1">📞 <a href="tel:${escapeHtml(m.customer.phone)}">${escapeHtml(m.customer.phone)}</a></div>`);
