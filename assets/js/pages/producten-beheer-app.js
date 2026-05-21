@@ -182,7 +182,7 @@ function renderCategoryTabs() {
   let html = `<button class="btn btn-sm ${!_activeCategory ? 'btn-primary' : 'btn-outline-secondary'}" data-cat="">Alle</button>`;
   _categories.forEach(c => {
     const active = _activeCategory === c.id;
-    html += `<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}" data-cat="${escapeAttr(c.id)}">${escapeHtml(c.name)}</button>`;
+    html += `<button class="btn btn-sm sp-category-filter ${active ? 'btn-primary' : 'btn-outline-secondary'}" style="--sp-cat-color:${escapeAttr(categoryColor(c))}" data-cat="${escapeAttr(c.id)}">${categoryDotHtml(c)}${escapeHtml(c.name)}</button>`;
   });
   container.innerHTML = html;
 
@@ -328,6 +328,23 @@ function getCategorySlug(categoryId) {
   return cat ? (cat.slug || cat.name || '').toLowerCase() : '';
 }
 
+function categoryColor(slugOrCategory) {
+  const slug = typeof slugOrCategory === 'string'
+    ? slugOrCategory
+    : (slugOrCategory && (slugOrCategory.slug || slugOrCategory.name) || '');
+  const normalized = String(slug || '').toLowerCase();
+  if (normalized === 'service') return '#16a34a';
+  if (normalized === 'materiaal') return '#f59e0b';
+  if (normalized === 'diversen') return '#8b5cf6';
+  if (normalized.includes('batterij') || normalized.includes('thuisbatterij')) return '#dc2626';
+  if (normalized.includes('omvormer')) return '#2563eb';
+  return '#64748b';
+}
+
+function categoryDotHtml(category, extraClass = '') {
+  return `<span class="sp-category-dot ${extraClass}" style="--sp-cat-color:${escapeAttr(categoryColor(category))}"></span>`;
+}
+
 function isBrandlessCategorySlug(slug) {
   return slug === 'service' || slug === 'materiaal' || slug === 'diversen';
 }
@@ -406,14 +423,15 @@ function renderProductList() {
     const inactiveClass = p.isActive === false ? 'inactive' : '';
     const activeClass = _selectedProductId === p.id ? 'active' : '';
     const badge = p.isActive === false ? '<span class="badge text-bg-secondary ms-2">Inactief</span>' : '';
-    const catName = _categories.find(c => c.id === p.categoryId)?.name || '';
+    const cat = _categories.find(c => c.id === p.categoryId);
+    const catName = cat?.name || '';
     const label = productLabel(p, categoriesById);
     return `
-      <div class="card mb-2 product-card ${inactiveClass} ${activeClass}" data-id="${escapeAttr(p.id)}">
+      <div class="card mb-2 product-card sp-product-card ${inactiveClass} ${activeClass}" style="--sp-cat-color:${escapeAttr(categoryColor(cat))}" data-id="${escapeAttr(p.id)}">
         <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
           <div class="flex-grow-1">
             <strong>${escapeHtml(label)}</strong>${badge}
-            <div class="text-muted small">${escapeHtml(catName)}${p.description ? ' · ' + escapeHtml(p.description) : ''}</div>
+            <div class="text-muted small">${cat ? categoryDotHtml(cat, 'sp-category-dot-xs') : ''}${escapeHtml(catName)}${p.description ? ' · ' + escapeHtml(p.description) : ''}</div>
           </div>
           <div class="text-end text-nowrap">
             <strong>&euro;${sp.toFixed(2)}</strong>
@@ -1290,7 +1308,7 @@ function activeConfigProducts() {
 function productOptionsHtml(selectedId) {
   const categoriesById = categoryMap(_categories);
   return '<option value="">— Product kiezen —</option>' + activeConfigProducts().map(p => (
-    `<option value="${escapeAttr(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(productLabel(p, categoriesById))}</option>`
+    `<option value="${escapeAttr(p.id)}" style="color:${escapeAttr(categoryColor(categoriesById[p.categoryId]))}" ${p.id === selectedId ? 'selected' : ''}>● ${escapeHtml(productLabel(p, categoriesById))}</option>`
   )).join('');
 }
 
@@ -1602,9 +1620,10 @@ function readQuoteManualLines() {
 
 function quoteLineHtml(line) {
   const incl = line.exVat * (1 + line.vat / 100);
+  const colorStyle = line.color ? ` style="border-left:4px solid ${escapeAttr(line.color)}"` : '';
   return `
           <tr>
-            <td>${escapeHtml(line.description)}</td>
+            <td${colorStyle}>${escapeHtml(line.description)}</td>
             <td class="text-end">€${line.exVat.toFixed(2)}</td>
             <td class="text-end">${line.vat}%</td>
             <td class="text-end">€${incl.toFixed(2)}</td>
@@ -1644,16 +1663,32 @@ function categoryItemsByVat(baseItems, extraItems, productsById, categoriesById,
   })).filter(group => group.items.length);
 }
 
+function quoteGroupColor(group, productsById, categoriesById, fallbackSlug) {
+  if (fallbackSlug) return categoryColor(fallbackSlug);
+  if ((!group.items || group.items.length === 0) && Number(group.extraExVat) > 0) return categoryColor('service');
+  const slugs = new Set((group.items || []).map(item => {
+    const product = productsById[item.productId];
+    const cat = product && categoriesById[product.categoryId];
+    return cat && cat.slug;
+  }).filter(Boolean));
+  if (slugs.size === 1) return categoryColor([...slugs][0]);
+  if (slugs.has('service') && slugs.size === 1) return categoryColor('service');
+  return categoryColor('thuisbatterij-systemen');
+}
+
 function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '') {
   return groups.map(group => {
     const exVat = quoteGroupSubtotalExVat(group, productsById);
     const description = generatedConfigDescription(group.items, productsById, categoriesById)
       || group.description
       || 'Extra installatiekost';
+    const fallbackSlug = prefix.startsWith('Materiaal') ? MATERIAL_CATEGORY_SLUG
+      : (prefix.startsWith('Diversen') ? MISC_CATEGORY_SLUG : '');
     return quoteLineHtml({
       description: `${prefix}${description}`,
       exVat,
       vat: group.vat,
+      color: quoteGroupColor(group, productsById, categoriesById, fallbackSlug),
     });
   }).join('');
 }
@@ -1814,7 +1849,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       await seedDefaultCategories();
-      await ensureServiceProducts();
       await loadCategories();
       await loadProducts();
       await loadConfigs();
