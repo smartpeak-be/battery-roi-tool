@@ -419,13 +419,9 @@ function sanitizeBillitOrder(input) {
 }
 
 async function postBillitOrder(order, apiKey, wrapArray = false, authMode = 'apiKey-header') {
-  const headers = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
-  if (authMode === 'apiKey-header') {
-    headers.apiKey = apiKey;
-  } else {
+  const headers = billitHeaders(apiKey);
+  if (authMode !== 'apiKey-header') {
+    delete headers.apiKey;
     headers.Authorization = `${authMode} ${apiKey}`;
   }
   const response = await fetch(`${BILLIT_BASE_URL}/v1/orders`, {
@@ -433,6 +429,18 @@ async function postBillitOrder(order, apiKey, wrapArray = false, authMode = 'api
     headers,
     body: JSON.stringify(wrapArray ? [order] : order),
   });
+  return readBillitResponse(response);
+}
+
+function billitHeaders(apiKey) {
+  return {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    apiKey,
+  };
+}
+
+async function readBillitResponse(response) {
   const text = await response.text();
   let data = text;
   try { data = text ? JSON.parse(text) : null; } catch { /* Billit may return plain text */ }
@@ -459,6 +467,57 @@ async function createBillitOrder(order, apiKey) {
   return billit;
 }
 
+function extractBillitOrderId(data) {
+  if (Number.isFinite(Number(data))) return Number(data);
+  if (!data || typeof data !== 'object') return null;
+  return Number(data.OrderID || data.OrderId || data.ID || data.Id || data.id) || null;
+}
+
+async function getBillitOrder(orderId, apiKey) {
+  const response = await fetch(`${BILLIT_BASE_URL}/v1/orders/${encodeURIComponent(orderId)}`, {
+    method: 'GET',
+    headers: billitHeaders(apiKey),
+  });
+  return readBillitResponse(response);
+}
+
+async function getBillitFile(fileId, apiKey) {
+  const response = await fetch(`${BILLIT_BASE_URL}/v1/files/${encodeURIComponent(fileId)}`, {
+    method: 'GET',
+    headers: billitHeaders(apiKey),
+  });
+  return readBillitResponse(response);
+}
+
+function normalizeBillitPdf(file) {
+  if (!file || typeof file !== 'object' || !file.FileContent) return null;
+  return {
+    fileName: cleanString(file.FileName || 'billit-offerte.pdf', 180) || 'billit-offerte.pdf',
+    mimeType: cleanString(file.MimeType || 'application/pdf', 80) || 'application/pdf',
+    fileContent: file.FileContent,
+  };
+}
+
+async function getBillitPdf(orderId, apiKey) {
+  const order = await getBillitOrder(orderId, apiKey);
+  if (!order.ok) {
+    if ([400, 404].includes(order.status)) return { ready: false, status: order.status };
+    return { ready: false, errorStatus: order.status, details: order.data };
+  }
+  const pdf = order.data && order.data.OrderPDF;
+  const inlinePdf = normalizeBillitPdf(pdf);
+  if (inlinePdf) return { ready: true, file: inlinePdf };
+  const fileId = pdf && (pdf.FileID || pdf.FileId || pdf.fileID || pdf.id);
+  if (!fileId) return { ready: false, status: 202 };
+  const file = await getBillitFile(fileId, apiKey);
+  if (!file.ok) {
+    if ([400, 404].includes(file.status)) return { ready: false, status: file.status };
+    return { ready: false, errorStatus: file.status, details: file.data };
+  }
+  const fetchedPdf = normalizeBillitPdf(file.data);
+  return fetchedPdf ? { ready: true, file: fetchedPdf } : { ready: false, status: 202 };
+}
+
 export const createBillitOffer = functions.https.onRequest(
   { region: 'europe-west1', secrets: [billitApiKey] },
   async (req, res) => {
@@ -476,13 +535,24 @@ export const createBillitOffer = functions.https.onRequest(
       await requireWhitelistedUser(req);
       const apiKey = billitApiKey.value().trim();
       if (!apiKey) throw new Error('BILLIT_API_KEY secret is not configured');
+      if (req.body && req.body.action === 'pdf-status') {
+        const orderId = Number(req.body.orderId);
+        if (!Number.isFinite(orderId) || orderId <= 0) throw new Error('Valid orderId is required');
+        const pdf = await getBillitPdf(orderId, apiKey);
+        if (pdf.errorStatus) {
+          res.status(502).json({ error: 'Billit PDF request failed', status: pdf.errorStatus, details: pdf.details });
+          return;
+        }
+        res.json(pdf);
+        return;
+      }
       const order = sanitizeBillitOrder(req.body && req.body.order);
       const billit = await createBillitOrder(order, apiKey);
       if (!billit.ok) {
         res.status(502).json({ error: 'Billit request failed', status: billit.status, details: billit.data });
         return;
       }
-      res.json({ ok: true, billit: billit.data, order });
+      res.json({ ok: true, billit: billit.data, orderId: extractBillitOrderId(billit.data), order });
     } catch (err) {
       const status = err.status || 400;
       res.status(status).json({ error: err.message || String(err) });

@@ -1869,7 +1869,8 @@ function updateQuotePreview() {
       </button>
       <span class="text-muted small" id="billitOfferStatus">Maakt een concept-offerte in Billit sandbox.</span>
     </div>`;
-  document.getElementById('btnCreateBillitOffer')?.addEventListener('click', createBillitOfferFromPreview);
+  const billitBtn = document.getElementById('btnCreateBillitOffer');
+  if (billitBtn) billitBtn.onclick = createBillitOfferFromPreview;
 }
 
 function isoDatePlusDays(days) {
@@ -1941,10 +1942,12 @@ async function createBillitOfferFromPreview() {
     const user = firebase.auth().currentUser;
     if (!user) throw new Error('Niet ingelogd.');
     btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Billit-offerte maken...';
     status.textContent = 'Billit-offerte wordt aangemaakt...';
     const token = await user.getIdToken();
     const projectId = firebase.app().options.projectId;
-    const response = await fetch(`https://europe-west1-${projectId}.cloudfunctions.net/createBillitOffer`, {
+    const endpoint = `https://europe-west1-${projectId}.cloudfunctions.net/createBillitOffer`;
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -1954,15 +1957,65 @@ async function createBillitOfferFromPreview() {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || 'Billit request mislukt.');
-    const billitId = result.billit && (result.billit.ID || result.billit.Id || result.billit.id || result.billit);
-    status.textContent = billitId ? `Billit-offerte aangemaakt (#${billitId}).` : 'Billit-offerte aangemaakt.';
-    showToast(status.textContent, 'success');
+    const billitId = result.orderId || (result.billit && (result.billit.ID || result.billit.Id || result.billit.id || result.billit));
+    if (!billitId) throw new Error('Billit maakte de offerte aan, maar gaf geen order-ID terug.');
+    status.textContent = `Billit-offerte aangemaakt (#${billitId}). PDF wordt voorbereid...`;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> PDF voorbereiden...';
+    const pdf = await waitForBillitPdf(endpoint, token, billitId, status);
+    wireBillitPdfDownloadButton(btn, status, pdf, billitId);
+    showToast(`Billit-offerte #${billitId} is klaar om te downloaden.`, 'success');
   } catch (e) {
     if (status) status.textContent = e.message || String(e);
     showToast('Billit-offerte maken mislukt: ' + (e.message || e), 'danger');
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i> Maak Billit-offerte';
   } finally {
-    if (btn) btn.disabled = false;
+    if (btn && !btn.dataset.pdfReady) btn.disabled = false;
   }
+}
+
+async function waitForBillitPdf(endpoint, token, orderId, statusEl) {
+  const maxAttempts = 30;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'pdf-status', orderId }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Billit PDF-status ophalen mislukt.');
+    if (result.ready && result.file && result.file.fileContent) return result.file;
+    if (statusEl) statusEl.textContent = `PDF wordt voorbereid... (${attempt}/${maxAttempts})`;
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  throw new Error('PDF is nog niet beschikbaar. Probeer straks opnieuw.');
+}
+
+function wireBillitPdfDownloadButton(btn, status, pdf, orderId) {
+  btn.disabled = false;
+  btn.dataset.pdfReady = '1';
+  btn.innerHTML = '<i class="fa-solid fa-file-arrow-down me-1"></i> Download PDF';
+  status.textContent = `PDF voor Billit-offerte #${orderId} is beschikbaar.`;
+  btn.onclick = () => downloadBase64File(pdf.fileContent, pdf.mimeType || 'application/pdf', pdf.fileName || `billit-offerte-${orderId}.pdf`);
+}
+
+function downloadBase64File(base64, mimeType, fileName) {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNumbers[i] = byteChars.charCodeAt(i);
+  }
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function wireProductInteractions() {
