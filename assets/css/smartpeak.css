@@ -337,6 +337,22 @@
 .sp-drop-zone.uploading { cursor: progress; }
 .sp-drop-zone input[type=file] { display: none; }
 
+/* ── Speech-to-text buttons ─────────────────────────────────────────── */
+
+.sp-speech-btn {
+  flex: 0 0 auto;
+}
+.sp-speech-btn.recording {
+  color: #fff;
+  background: var(--sp-danger);
+  border-color: var(--sp-danger);
+}
+.sp-speech-btn.recording:hover {
+  color: #fff;
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
 /* ── Readonly mode (share-link viewers) ──────────────────────────────── */
 /* Only referenced by index.html but lives here so all backoffice files   */
 /* can safely share snippets that become embedded in share-links later.   */
