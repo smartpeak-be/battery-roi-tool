@@ -418,13 +418,13 @@ function sanitizeBillitOrder(input) {
   };
 }
 
-async function postBillitOrder(order, apiKey, wrapArray = false, authMode = 'api-key-header') {
+async function postBillitOrder(order, apiKey, wrapArray = false, authMode = 'apiKey-header') {
   const headers = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
   };
-  if (authMode === 'api-key-header') {
-    headers['api-key'] = apiKey;
+  if (authMode === 'apiKey-header') {
+    headers.apiKey = apiKey;
   } else {
     headers.Authorization = `${authMode} ${apiKey}`;
   }
@@ -440,7 +440,7 @@ async function postBillitOrder(order, apiKey, wrapArray = false, authMode = 'api
 }
 
 async function createBillitOrder(order, apiKey) {
-  let billit = await postBillitOrder(order, apiKey, false, 'api-key-header');
+  let billit = await postBillitOrder(order, apiKey, false, 'apiKey-header');
   if (!billit.ok && [401, 403].includes(billit.status)) {
     billit = await postBillitOrder(order, apiKey, false, 'api-key');
   }
@@ -448,7 +448,7 @@ async function createBillitOrder(order, apiKey) {
     billit = await postBillitOrder(order, apiKey, false, 'Bearer');
   }
   if (!billit.ok && billit.status === 400) {
-    billit = await postBillitOrder(order, apiKey, true, 'api-key-header');
+    billit = await postBillitOrder(order, apiKey, true, 'apiKey-header');
     if (!billit.ok && [401, 403].includes(billit.status)) {
       billit = await postBillitOrder(order, apiKey, true, 'api-key');
     }
