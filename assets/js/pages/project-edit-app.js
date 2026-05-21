@@ -18,6 +18,8 @@ let _initialHouseAge = null;
 // Unsubscribe handle for the project-doc onSnapshot listener (Task 9).
 // Module-scoped so the beforeunload cleanup can reach it across calls.
 let _serialUnsub = null;
+let _mapsLoaderPromise = null;
+let _suppressAddressSearchInput = false;
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function showError(msg) {
@@ -38,6 +40,179 @@ function clearFieldError(fieldId) {
   const el = document.getElementById(fieldId);
   if (!el) return;
   el.classList.remove('is-invalid');
+}
+
+function addressGoogleApiKey(settings) {
+  return (settings && (
+    settings.addressAutocompleteGoogleMapsApiKey
+    || settings.googleMapsApiKey
+    || settings.googlePlacesApiKey
+  )) || '';
+}
+
+async function fetchGoogleMapsApiKeyFromFunction() {
+  const user = firebase.auth().currentUser;
+  if (!user) throw new Error('Niet ingelogd.');
+  const token = await user.getIdToken();
+  const projectId = firebase.app().options.projectId;
+  const response = await fetch(`https://europe-west1-${projectId}.cloudfunctions.net/getGoogleMapsApiKey`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Google Maps API-key ophalen mislukt.');
+  return data.apiKey || '';
+}
+
+function loadGooglePlaces(apiKey) {
+  if (window.google && window.google.maps && window.google.maps.places) {
+    return Promise.resolve(window.google.maps.places);
+  }
+  if (_mapsLoaderPromise) return _mapsLoaderPromise;
+  _mapsLoaderPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    const params = new URLSearchParams({
+      key: apiKey,
+      libraries: 'places',
+      language: 'nl',
+      region: 'BE',
+    });
+    script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (window.google && window.google.maps && window.google.maps.places) resolve(window.google.maps.places);
+      else reject(new Error('Google Places is niet beschikbaar.'));
+    };
+    script.onerror = () => reject(new Error('Google Maps script laden mislukt.'));
+    document.head.appendChild(script);
+  });
+  return _mapsLoaderPromise;
+}
+
+function getPlaceComponent(place, type, useShort = false) {
+  const comp = (place.address_components || []).find(c => (c.types || []).includes(type));
+  if (!comp) return '';
+  return useShort ? comp.short_name || comp.long_name || '' : comp.long_name || comp.short_name || '';
+}
+
+function placeToAddressStructured(place) {
+  const route = getPlaceComponent(place, 'route');
+  const number = getPlaceComponent(place, 'street_number');
+  const postalCode = getPlaceComponent(place, 'postal_code', true);
+  const city = getPlaceComponent(place, 'locality')
+    || getPlaceComponent(place, 'postal_town')
+    || getPlaceComponent(place, 'administrative_area_level_4')
+    || getPlaceComponent(place, 'administrative_area_level_3');
+  const countryCode = getPlaceComponent(place, 'country', true) || 'BE';
+  const loc = place.geometry && place.geometry.location;
+  return {
+    street: route,
+    houseNumber: number,
+    bus: '',
+    postalCode,
+    city,
+    countryCode,
+    placeId: place.place_id || '',
+    provider: 'google',
+    lat: loc && typeof loc.lat === 'function' ? loc.lat() : null,
+    lng: loc && typeof loc.lng === 'function' ? loc.lng() : null,
+  };
+}
+
+function updateAddressFields(structured) {
+  const s = structured || {};
+  const values = {
+    fAddressStreet: s.street || '',
+    fAddressHouseNumber: s.houseNumber || '',
+    fAddressBus: s.bus || '',
+    fAddressPostalCode: s.postalCode || '',
+    fAddressCity: s.city || '',
+    fAddressCountry: s.countryCode || 'BE',
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  });
+}
+
+function readAddressFields() {
+  return {
+    street: document.getElementById('fAddressStreet')?.value.trim() || '',
+    houseNumber: document.getElementById('fAddressHouseNumber')?.value.trim() || '',
+    bus: document.getElementById('fAddressBus')?.value.trim() || '',
+    postalCode: document.getElementById('fAddressPostalCode')?.value.trim() || '',
+    city: document.getElementById('fAddressCity')?.value.trim() || '',
+    countryCode: (document.getElementById('fAddressCountry')?.value.trim() || 'BE').toUpperCase(),
+    provider: 'manual',
+  };
+}
+
+function syncManualAddressFields() {
+  _project.customer = _project.customer || {};
+  const structured = readAddressFields();
+  const hasStructured = [structured.street, structured.houseNumber, structured.bus, structured.postalCode, structured.city].some(Boolean);
+  _project.customer.addressStructured = hasStructured ? structured : null;
+  _project.customer.address = hasStructured ? formatStructuredAddress(structured) : (document.getElementById('fAddressSearch')?.value.trim() || '');
+  const search = document.getElementById('fAddressSearch');
+  if (search && search.value !== _project.customer.address) {
+    _suppressAddressSearchInput = true;
+    search.value = _project.customer.address;
+    _suppressAddressSearchInput = false;
+  }
+  updateAddressValidationBadge();
+}
+
+function updateAddressValidationBadge() {
+  const badge = document.getElementById('addressValidationBadge');
+  if (!badge) return;
+  const structured = normalizedAddressStructured(_project.customer || {});
+  const isGoogle = structured && structured.provider === 'google' && structured.placeId;
+  badge.className = `badge ${isGoogle ? 'text-bg-success' : 'text-bg-secondary'}`;
+  badge.textContent = isGoogle ? 'Gevalideerd via Google' : 'Niet gevalideerd';
+}
+
+async function initAddressAutocomplete() {
+  const input = document.getElementById('fAddressSearch');
+  const hint = document.getElementById('addressAutocompleteHint');
+  if (!input || !hint) return;
+  try {
+    const settings = await getSettings();
+    const key = addressGoogleApiKey(settings) || await fetchGoogleMapsApiKeyFromFunction();
+    if (!key) {
+      hint.textContent = 'Google Maps API-key ontbreekt; vul het adres manueel in.';
+      return;
+    }
+    hint.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>Adres-autocomplete laden...';
+    await loadGooglePlaces(key);
+    const autocomplete = new window.google.maps.places.Autocomplete(input, {
+      componentRestrictions: { country: ['be'] },
+      fields: ['address_components', 'formatted_address', 'geometry', 'place_id'],
+      types: ['address'],
+    });
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace();
+      if (!place || !place.place_id) return;
+      const structured = placeToAddressStructured(place);
+      _project.customer = _project.customer || {};
+      _project.customer.addressStructured = structured;
+      _project.customer.address = place.formatted_address || formatStructuredAddress(structured);
+      _suppressAddressSearchInput = true;
+      input.value = _project.customer.address;
+      _suppressAddressSearchInput = false;
+      updateAddressFields(structured);
+      updateAddressValidationBadge();
+      hint.textContent = 'Adres gevalideerd. Busnummer kan je eventueel manueel aanvullen.';
+    });
+    hint.textContent = 'Kies een suggestie om het adres te valideren.';
+  } catch (e) {
+    console.warn('Adres-autocomplete laden mislukt:', e);
+    hint.textContent = 'Adres-autocomplete niet beschikbaar; vul het adres manueel in.';
+  }
 }
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
@@ -430,6 +605,9 @@ function rerenderBlokA() {
 
 function sectionBlokB() {
   const c = _project.customer || {};
+  const structured = normalizedAddressStructured(c) || {};
+  const addressValue = c.address || formatCustomerAddress(c);
+  const isGoogleAddress = structured.provider === 'google' && structured.placeId;
   const status = _project.status || DEFAULT_STATUS;
   const statusOptions = PROJECT_STATUSES.map(s =>
     `<option value="${s.key}" ${s.key === status ? 'selected' : ''}>${escapeHtml(s.label)}</option>`
@@ -448,8 +626,36 @@ function sectionBlokB() {
               <select id="fStatus" class="form-select">${statusOptions}</select>
             </div>
             <div class="col-12">
-              <label for="fAddress" class="form-label">Adres</label>
-              <input type="text" id="fAddress" class="form-control" maxlength="200" placeholder="Straat + nr, postcode gemeente" value="${escapeHtml(c.address || '')}" />
+              <div class="d-flex justify-content-between align-items-center gap-2">
+                <label for="fAddressSearch" class="form-label mb-0">Adres zoeken</label>
+                <span id="addressValidationBadge" class="badge ${isGoogleAddress ? 'text-bg-success' : 'text-bg-secondary'}">${isGoogleAddress ? 'Gevalideerd via Google' : 'Niet gevalideerd'}</span>
+              </div>
+              <input type="text" id="fAddressSearch" class="form-control mt-1" maxlength="240" autocomplete="off" placeholder="Begin te typen en kies een suggestie" value="${escapeHtml(addressValue)}" />
+              <div class="form-text" id="addressAutocompleteHint">Autocomplete laden...</div>
+            </div>
+            <div class="col-12 col-md-5">
+              <label for="fAddressStreet" class="form-label">Straat</label>
+              <input type="text" id="fAddressStreet" class="form-control address-structured-field" maxlength="120" value="${escapeHtml(structured.street || '')}" />
+            </div>
+            <div class="col-6 col-md-2">
+              <label for="fAddressHouseNumber" class="form-label">Nr</label>
+              <input type="text" id="fAddressHouseNumber" class="form-control address-structured-field" maxlength="20" value="${escapeHtml(structured.houseNumber || '')}" />
+            </div>
+            <div class="col-6 col-md-2">
+              <label for="fAddressBus" class="form-label">Bus</label>
+              <input type="text" id="fAddressBus" class="form-control address-structured-field" maxlength="20" value="${escapeHtml(structured.bus || '')}" />
+            </div>
+            <div class="col-6 col-md-3">
+              <label for="fAddressPostalCode" class="form-label">Postcode</label>
+              <input type="text" id="fAddressPostalCode" class="form-control address-structured-field" maxlength="12" value="${escapeHtml(structured.postalCode || '')}" />
+            </div>
+            <div class="col-6 col-md-6">
+              <label for="fAddressCity" class="form-label">Gemeente/stad</label>
+              <input type="text" id="fAddressCity" class="form-control address-structured-field" maxlength="80" value="${escapeHtml(structured.city || '')}" />
+            </div>
+            <div class="col-6 col-md-3">
+              <label for="fAddressCountry" class="form-label">Land</label>
+              <input type="text" id="fAddressCountry" class="form-control address-structured-field" maxlength="2" value="${escapeHtml(structured.countryCode || 'BE')}" />
             </div>
             <div class="col-12 col-md-6">
               <label for="fPhone" class="form-label">Telefoon</label>
@@ -482,10 +688,19 @@ function wireBlokB() {
   document.getElementById('fStatus').addEventListener('change', e => {
     _project.status = e.target.value;
   });
-  document.getElementById('fAddress').addEventListener('input', e => {
+  const search = document.getElementById('fAddressSearch');
+  search.addEventListener('input', e => {
+    if (_suppressAddressSearchInput) return;
     _project.customer = _project.customer || {};
     _project.customer.address = e.target.value;
+    _project.customer.addressStructured = null;
+    updateAddressFields(null);
+    updateAddressValidationBadge();
   });
+  document.querySelectorAll('.address-structured-field').forEach(el => {
+    el.addEventListener('input', syncManualAddressFields);
+  });
+  initAddressAutocomplete();
   document.getElementById('fPhone').addEventListener('input', e => {
     _project.customer = _project.customer || {};
     _project.customer.phone = e.target.value;
