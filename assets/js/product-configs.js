@@ -69,6 +69,69 @@ export function configSubtotalExVat(items, productsById) {
   }, 0);
 }
 
+export function quoteGroupSubtotalExVat(group, productsById) {
+  const gross = configSubtotalExVat(group && group.items, productsById)
+    + Math.max(0, Number(group && group.extraExVat) || 0);
+  return Math.max(0, gross - Math.max(0, Number(group && group.discountExVat) || 0));
+}
+
+export function addAmountsToVatGroups(groups, amounts, fallbackDescription = '') {
+  const result = (groups || []).map(group => ({
+    ...group,
+    items: normalizeConfigItems(group.items),
+    extraExVat: Math.max(0, Number(group.extraExVat) || 0),
+  }));
+
+  (amounts || []).forEach(amount => {
+    const exVat = Math.max(0, Number(amount && amount.exVat) || 0);
+    if (exVat <= 0) return;
+    const vat = Number(amount.vat) || 21;
+    let group = result.find(g => Number(g.vat) === vat);
+    if (!group) {
+      group = {
+        vat,
+        items: [],
+        description: amount.description || fallbackDescription,
+        extraExVat: 0,
+      };
+      result.push(group);
+    }
+    group.extraExVat = Math.max(0, Number(group.extraExVat) || 0) + exVat;
+  });
+
+  return result.filter(group => group.items.length || group.extraExVat > 0);
+}
+
+export function applyDiscountToVatGroups(groups, discount, productsById) {
+  const result = (groups || []).map(group => ({
+    ...group,
+    items: normalizeConfigItems(group.items),
+    extraExVat: Math.max(0, Number(group.extraExVat) || 0),
+    discountExVat: 0,
+  }));
+  const grossAmounts = result.map(group => (
+    configSubtotalExVat(group.items, productsById) + Math.max(0, Number(group.extraExVat) || 0)
+  ));
+  const grossTotal = grossAmounts.reduce((sum, amount) => sum + amount, 0);
+  if (grossTotal <= 0) return result;
+
+  const type = discount && discount.type === 'fixed' ? 'fixed' : 'percent';
+  const value = Math.max(0, Number(discount && discount.value) || 0);
+  const requested = type === 'fixed' ? value : grossTotal * (value / 100);
+  const totalDiscount = Math.min(grossTotal, requested);
+  if (totalDiscount <= 0) return result;
+
+  let assigned = 0;
+  result.forEach((group, idx) => {
+    const isLast = idx === result.length - 1;
+    const share = isLast ? (totalDiscount - assigned) : totalDiscount * (grossAmounts[idx] / grossTotal);
+    const clamped = Math.min(grossAmounts[idx], Math.max(0, share));
+    group.discountExVat = clamped;
+    assigned += clamped;
+  });
+  return result;
+}
+
 export function configItemsForCategorySlug(items, productsById, categoriesById = {}, slug) {
   return normalizeConfigItems(items).filter(item => {
     const product = productsById && productsById[item.productId];

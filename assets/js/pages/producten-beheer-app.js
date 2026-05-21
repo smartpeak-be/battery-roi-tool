@@ -8,10 +8,13 @@ import {
   configItemsForCategorySlug,
   configSubtotalExVat,
   generatedConfigDescription,
+  addAmountsToVatGroups,
+  applyDiscountToVatGroups,
   MATERIAL_CATEGORY_SLUG,
   MISC_CATEGORY_SLUG,
   productLabel,
   productMap,
+  quoteGroupSubtotalExVat,
 } from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
@@ -180,7 +183,7 @@ function renderCategoryTabs() {
   let html = `<button class="btn btn-sm ${!_activeCategory ? 'btn-primary' : 'btn-outline-secondary'}" data-cat="">Alle</button>`;
   _categories.forEach(c => {
     const active = _activeCategory === c.id;
-    html += `<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}" data-cat="${escapeAttr(c.id)}">${escapeHtml(c.name)}</button>`;
+    html += `<button class="btn btn-sm sp-category-filter ${active ? 'btn-primary' : 'btn-outline-secondary'}" style="--sp-cat-color:${escapeAttr(categoryColor(c))}" data-cat="${escapeAttr(c.id)}">${categoryDotHtml(c)}${escapeHtml(c.name)}</button>`;
   });
   container.innerHTML = html;
 
@@ -326,6 +329,23 @@ function getCategorySlug(categoryId) {
   return cat ? (cat.slug || cat.name || '').toLowerCase() : '';
 }
 
+function categoryColor(slugOrCategory) {
+  const slug = typeof slugOrCategory === 'string'
+    ? slugOrCategory
+    : (slugOrCategory && (slugOrCategory.slug || slugOrCategory.name) || '');
+  const normalized = String(slug || '').toLowerCase();
+  if (normalized === 'service') return '#16a34a';
+  if (normalized === 'materiaal') return '#f59e0b';
+  if (normalized === 'diversen') return '#8b5cf6';
+  if (normalized.includes('batterij') || normalized.includes('thuisbatterij')) return '#dc2626';
+  if (normalized.includes('omvormer')) return '#2563eb';
+  return '#64748b';
+}
+
+function categoryDotHtml(category, extraClass = '') {
+  return `<span class="sp-category-dot ${extraClass}" style="--sp-cat-color:${escapeAttr(categoryColor(category))}"></span>`;
+}
+
 function isBrandlessCategorySlug(slug) {
   return slug === 'service' || slug === 'materiaal' || slug === 'diversen';
 }
@@ -404,14 +424,15 @@ function renderProductList() {
     const inactiveClass = p.isActive === false ? 'inactive' : '';
     const activeClass = _selectedProductId === p.id ? 'active' : '';
     const badge = p.isActive === false ? '<span class="badge text-bg-secondary ms-2">Inactief</span>' : '';
-    const catName = _categories.find(c => c.id === p.categoryId)?.name || '';
+    const cat = _categories.find(c => c.id === p.categoryId);
+    const catName = cat?.name || '';
     const label = productLabel(p, categoriesById);
     return `
-      <div class="card mb-2 product-card ${inactiveClass} ${activeClass}" data-id="${escapeAttr(p.id)}">
+      <div class="card mb-2 product-card sp-product-card ${inactiveClass} ${activeClass}" style="--sp-cat-color:${escapeAttr(categoryColor(cat))}" data-id="${escapeAttr(p.id)}">
         <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
           <div class="flex-grow-1">
             <strong>${escapeHtml(label)}</strong>${badge}
-            <div class="text-muted small">${escapeHtml(catName)}${p.description ? ' · ' + escapeHtml(p.description) : ''}</div>
+            <div class="text-muted small">${cat ? categoryDotHtml(cat, 'sp-category-dot-xs') : ''}${escapeHtml(catName)}${p.description ? ' · ' + escapeHtml(p.description) : ''}</div>
           </div>
           <div class="text-end text-nowrap">
             <strong>&euro;${sp.toFixed(2)}</strong>
@@ -1288,7 +1309,7 @@ function activeConfigProducts() {
 function productOptionsHtml(selectedId) {
   const categoriesById = categoryMap(_categories);
   return '<option value="">— Product kiezen —</option>' + activeConfigProducts().map(p => (
-    `<option value="${escapeAttr(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(productLabel(p, categoriesById))}</option>`
+    `<option value="${escapeAttr(p.id)}" style="color:${escapeAttr(categoryColor(categoriesById[p.categoryId]))}" ${p.id === selectedId ? 'selected' : ''}>● ${escapeHtml(productLabel(p, categoriesById))}</option>`
   )).join('');
 }
 
@@ -1459,6 +1480,16 @@ function buildQuoteModalHtml(projects, context) {
         <label class="form-label">BTW config/services</label>
         <select class="form-select" id="quoteVat"><option value="6">6% woning 10+ jaar</option><option value="21" selected>21%</option></select>
       </div>
+      <div class="col-md-4">
+        <label class="form-label">Korting op samenstelling</label>
+        <div class="input-group">
+          <select class="form-select" id="quoteDiscountType" style="max-width:110px">
+            <option value="percent">%</option>
+            <option value="fixed">€</option>
+          </select>
+          <input type="number" class="form-control" id="quoteDiscountValue" min="0" step="0.01" value="" placeholder="Geen">
+        </div>
+      </div>
       <div class="col-12">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <h6 class="mb-0">Extra producten</h6>
@@ -1484,8 +1515,9 @@ function buildQuoteModalHtml(projects, context) {
 }
 
 function wireQuoteModal() {
-  ['quoteProject', 'quoteConfig', 'quoteVat'].forEach(id => {
+  ['quoteProject', 'quoteConfig', 'quoteVat', 'quoteDiscountType', 'quoteDiscountValue'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', updateQuotePreview);
+    document.getElementById(id)?.addEventListener('input', updateQuotePreview);
   });
   document.getElementById('btnAddQuoteProduct')?.addEventListener('click', () => {
     const vat = parseFloat(document.getElementById('quoteVat')?.value) || 21;
@@ -1494,7 +1526,8 @@ function wireQuoteModal() {
     updateQuotePreview();
   });
   document.getElementById('btnAddQuoteManualLine')?.addEventListener('click', () => {
-    document.getElementById('quoteManualLines').insertAdjacentHTML('beforeend', quoteManualLineRowHtml());
+    const vat = parseFloat(document.getElementById('quoteVat')?.value) || 21;
+    document.getElementById('quoteManualLines').insertAdjacentHTML('beforeend', quoteManualLineRowHtml({ vat }));
     wireQuoteDynamicRows();
     updateQuotePreview();
   });
@@ -1526,9 +1559,17 @@ function quoteExtraProductRowHtml(row = {}) {
 }
 
 function quoteManualLineRowHtml(row = {}) {
+  const kind = row.kind || 'line';
   return `
     <div class="row g-2 align-items-end mb-2 quote-manual-line-row">
-      <div class="col-md-6">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Type</label>
+        <select class="form-select quote-manual-kind">
+          <option value="line" ${kind === 'line' ? 'selected' : ''}>Aparte lijn</option>
+          <option value="installation_extra" ${kind === 'installation_extra' ? 'selected' : ''}>Extra installatiekost</option>
+        </select>
+      </div>
+      <div class="col-md-4">
         <label class="form-label small mb-1">Omschrijving</label>
         <input type="text" class="form-control quote-manual-desc" value="${escapeAttr(row.description || '')}" placeholder="Omschrijving">
       </div>
@@ -1579,19 +1620,29 @@ function readQuoteExtraProductItems() {
 
 function readQuoteManualLines() {
   return Array.from(document.querySelectorAll('#quoteManualLines .quote-manual-line-row')).map(row => {
+    const kind = row.querySelector('.quote-manual-kind').value || 'line';
     const description = row.querySelector('.quote-manual-desc').value.trim();
     const exVat = parseFloat(row.querySelector('.quote-manual-price').value) || 0;
     const vat = parseFloat(row.querySelector('.quote-manual-vat').value) || 21;
-    if (!description || exVat <= 0) return null;
-    return { description, exVat, vat };
+    if (exVat <= 0) return null;
+    if (kind === 'line' && !description) return null;
+    return { kind, description: description || 'Extra installatiekost', exVat, vat };
   }).filter(Boolean);
+}
+
+function readQuoteDiscount() {
+  return {
+    type: document.getElementById('quoteDiscountType')?.value === 'fixed' ? 'fixed' : 'percent',
+    value: parseFloat(document.getElementById('quoteDiscountValue')?.value) || 0,
+  };
 }
 
 function quoteLineHtml(line) {
   const incl = line.exVat * (1 + line.vat / 100);
+  const colorStyle = line.color ? ` style="border-left:4px solid ${escapeAttr(line.color)}"` : '';
   return `
           <tr>
-            <td>${escapeHtml(line.description)}</td>
+            <td${colorStyle}>${escapeHtml(line.description)}</td>
             <td class="text-end">€${line.exVat.toFixed(2)}</td>
             <td class="text-end">${line.vat}%</td>
             <td class="text-end">€${incl.toFixed(2)}</td>
@@ -1631,21 +1682,40 @@ function categoryItemsByVat(baseItems, extraItems, productsById, categoriesById,
   })).filter(group => group.items.length);
 }
 
+function quoteGroupColor(group, productsById, categoriesById, fallbackSlug) {
+  if (fallbackSlug) return categoryColor(fallbackSlug);
+  if ((!group.items || group.items.length === 0) && Number(group.extraExVat) > 0) return categoryColor('service');
+  const slugs = new Set((group.items || []).map(item => {
+    const product = productsById[item.productId];
+    const cat = product && categoriesById[product.categoryId];
+    return cat && cat.slug;
+  }).filter(Boolean));
+  if (slugs.size === 1) return categoryColor([...slugs][0]);
+  if (slugs.has('service') && slugs.size === 1) return categoryColor('service');
+  return categoryColor('thuisbatterij-systemen');
+}
+
 function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '') {
   return groups.map(group => {
-    const exVat = configSubtotalExVat(group.items, productsById);
-    const description = generatedConfigDescription(group.items, productsById, categoriesById);
+    const exVat = quoteGroupSubtotalExVat(group, productsById);
+    const description = generatedConfigDescription(group.items, productsById, categoriesById)
+      || group.description
+      || 'Extra installatiekost';
+    const discountSuffix = Number(group.discountExVat) > 0 ? ` (korting €${Number(group.discountExVat).toFixed(2)})` : '';
+    const fallbackSlug = prefix.startsWith('Materiaal') ? MATERIAL_CATEGORY_SLUG
+      : (prefix.startsWith('Diversen') ? MISC_CATEGORY_SLUG : '');
     return quoteLineHtml({
-      description: `${prefix}${description}`,
+      description: `${prefix}${description}${discountSuffix}`,
       exVat,
       vat: group.vat,
+      color: quoteGroupColor(group, productsById, categoriesById, fallbackSlug),
     });
   }).join('');
 }
 
 function groupedQuoteIncl(groups, productsById) {
   return groups.reduce((sum, group) => {
-    const exVat = configSubtotalExVat(group.items, productsById);
+    const exVat = quoteGroupSubtotalExVat(group, productsById);
     return sum + exVat * (1 + group.vat / 100);
   }, 0);
 }
@@ -1661,13 +1731,16 @@ function productPurchaseCostExVat(product, qty, categoriesById) {
 
 function groupedQuoteProfitExVat(groups, productsById, categoriesById) {
   return groups.reduce((sum, group) => {
-    return sum + group.items.reduce((itemSum, item) => {
+    const productProfit = group.items.reduce((itemSum, item) => {
       const product = productsById[item.productId];
       if (!product) return itemSum;
       const revenue = totalProductPrice(product, item.qty);
       const cost = productPurchaseCostExVat(product, item.qty, categoriesById);
       return itemSum + Math.max(0, revenue - cost);
     }, 0);
+    return sum + productProfit
+      + Math.max(0, Number(group.extraExVat) || 0)
+      - Math.max(0, Number(group.discountExVat) || 0);
   }, 0);
 }
 
@@ -1682,7 +1755,15 @@ function updateQuotePreview() {
   const { productsById, categoriesById } = _maps();
   const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
   const extraProductItems = readQuoteExtraProductItems();
-  const mainGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, null, vat);
+  const manualLines = readQuoteManualLines();
+  const installationExtras = manualLines.filter(line => line.kind === 'installation_extra');
+  const extraLines = manualLines.filter(line => line.kind !== 'installation_extra');
+  const undiscountedMainGroups = addAmountsToVatGroups(
+    categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, null, vat),
+    installationExtras,
+    'Extra installatiekost',
+  );
+  const mainGroups = applyDiscountToVatGroups(undiscountedMainGroups, readQuoteDiscount(), productsById);
   const materialGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MATERIAL_CATEGORY_SLUG, vat);
   const miscGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MISC_CATEGORY_SLUG, vat);
   const kg = configBatteryWeightKg([...cfg.items, ...extraProductItems], productsById, categoriesById);
@@ -1693,8 +1774,6 @@ function updateQuotePreview() {
     : quoteLineHtml({ description: cfg.name || 'Configuratie', exVat: 0, vat });
   const materialRows = quoteGroupedRowsHtml(materialGroups, productsById, categoriesById, 'Materiaal: ');
   const miscRows = quoteGroupedRowsHtml(miscGroups, productsById, categoriesById, 'Diversen: ');
-  const manualLines = readQuoteManualLines();
-  const extraLines = manualLines;
   const extraRows = extraLines.map(quoteLineHtml).join('');
   const extraIncl = extraLines.reduce((sum, line) => sum + line.exVat * (1 + line.vat / 100), 0);
   const groupedIncl = groupedQuoteIncl(mainGroups, productsById)
@@ -1706,6 +1785,7 @@ function updateQuotePreview() {
   const manualProfit = extraLines.reduce((sum, line) => sum + line.exVat, 0);
   const totalProfit = groupedProfit + manualProfit;
   const totalIncl = groupedIncl + bebatIncl + extraIncl;
+  const discountExVat = mainGroups.reduce((sum, group) => sum + (Number(group.discountExVat) || 0), 0);
   el.innerHTML = `
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-2">
@@ -1728,6 +1808,7 @@ function updateQuotePreview() {
     <div class="alert alert-success py-2 mb-2">
       <strong>Totale winst ex BTW:</strong> €${totalProfit.toFixed(2)}
       <span class="text-muted small">(Bebat niet meegerekend)</span>
+      ${discountExVat > 0 ? `<br><span class="text-muted small">Korting op samenstelling: €${discountExVat.toFixed(2)} ex BTW</span>` : ''}
     </div>
     <p class="text-muted small mb-0">Deze preview maakt nog geen offerte-document aan; hij test alleen UX en berekening.</p>`;
 }
@@ -1793,7 +1874,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       await seedDefaultCategories();
-      await ensureServiceProducts();
       await loadCategories();
       await loadProducts();
       await loadConfigs();

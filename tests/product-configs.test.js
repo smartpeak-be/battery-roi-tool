@@ -9,6 +9,9 @@ import {
   generatedConfigDescription,
   productMap,
   categoryMap,
+  addAmountsToVatGroups,
+  applyDiscountToVatGroups,
+  quoteGroupSubtotalExVat,
 } from '../assets/js/product-configs.js';
 
 const categories = [
@@ -109,6 +112,57 @@ describe('product config helpers', () => {
       { productId: 'ab3000l', qty: 2 },
       { productId: 'install', qty: 1 },
     ], pMap, cMap)).toBeCloseTo(1200 + 1080 + 700 + 650 + 250);
+  });
+
+  it('adds manual installation amounts to an existing VAT group without duplicating items', () => {
+    const groups = addAmountsToVatGroups([
+      { vat: 21, items: [{ productId: 'acplus', qty: 1 }, { productId: 'install', qty: 1 }] },
+    ], [
+      { kind: 'installation_extra', description: 'Extra installatiekost', exVat: 150, vat: 21 },
+    ]);
+
+    expect(groups).toEqual([
+      {
+        vat: 21,
+        items: [{ productId: 'acplus', qty: 1 }, { productId: 'install', qty: 1 }],
+        extraExVat: 150,
+      },
+    ]);
+    expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBeCloseTo(1200 + 250 + 150);
+  });
+
+  it('creates a VAT group for manual installation amounts when no matching group exists', () => {
+    const groups = addAmountsToVatGroups([], [
+      { kind: 'installation_extra', description: 'Extra installatiekost', exVat: 90, vat: 6 },
+    ]);
+
+    expect(groups).toEqual([
+      {
+        vat: 6,
+        items: [],
+        description: 'Extra installatiekost',
+        extraExVat: 90,
+      },
+    ]);
+    expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBeCloseTo(90);
+  });
+
+  it('applies discounts to the composition VAT groups only', () => {
+    const groups = applyDiscountToVatGroups([
+      { vat: 21, items: [{ productId: 'acplus', qty: 1 }, { productId: 'install', qty: 1 }], extraExVat: 50 },
+    ], { type: 'percent', value: 10 }, pMap);
+
+    expect(groups[0].discountExVat).toBeCloseTo(150);
+    expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBeCloseTo(1350);
+  });
+
+  it('caps fixed discounts at the composition total', () => {
+    const groups = applyDiscountToVatGroups([
+      { vat: 6, items: [], description: 'Extra installatiekost', extraExVat: 90 },
+    ], { type: 'fixed', value: 150 }, pMap);
+
+    expect(groups[0].discountExVat).toBeCloseTo(90);
+    expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBe(0);
   });
 
   it('splits material items from the main quote line', () => {

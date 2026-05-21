@@ -69,6 +69,31 @@
 .badge.status-chip.readonly { cursor: default; }
 .badge.status-chip:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 2px; }
 
+/* Product category color coding */
+.sp-category-dot {
+  display: inline-block;
+  width: 0.72em;
+  height: 0.72em;
+  margin-right: 0.4em;
+  border-radius: 50%;
+  background: var(--sp-cat-color, #64748b);
+  vertical-align: -0.05em;
+}
+.sp-category-dot-xs {
+  width: 0.62em;
+  height: 0.62em;
+  margin-right: 0.35em;
+}
+.sp-category-filter {
+  border-left: 4px solid var(--sp-cat-color, #64748b);
+}
+.sp-product-card {
+  border-left: 6px solid var(--sp-cat-color, #64748b);
+}
+.sp-product-card.active {
+  box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), 0.18);
+}
+
 /* Offcanvas drawer: wider on large screens so the config grid (1/2/3 cols) fits. */
 @media (max-width: 767.98px) { #drawer { --bs-offcanvas-width: 100vw; } }
 @media (min-width: 768px)    { #drawer { --bs-offcanvas-width: 420px; } }
