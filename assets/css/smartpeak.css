@@ -850,6 +850,20 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
 }
 
 /* producten-beheer.html */
+.product-section-nav {
+  position: sticky;
+  top: 64px;
+  z-index: 1010;
+}
+.product-section-nav .nav-link {
+  color: #495057;
+  text-align: left;
+  font-weight: 600;
+}
+.product-section-nav .nav-link.active {
+  color: #fff;
+}
+
 .cat-row {
   background: #f8f9fa;
   border-radius: 8px;

@@ -1,4 +1,4 @@
-import { sellPrice, totalProductPrice, unitPrice } from '../product-pricing.js';
+import { sellPrice, unitPrice } from '../product-pricing.js';
 import { specsForCategory } from '../product-specs.js';
 import {
   bebatTotalInclVat,
@@ -14,6 +14,7 @@ import {
   MISC_CATEGORY_SLUG,
   productLabel,
   productMap,
+  quoteGroupsProfitExVat,
   quoteGroupSubtotalExVat,
 } from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
@@ -131,7 +132,7 @@ function wireSettingsCollapse() {
   const settingsChevron = document.getElementById('settingsChevron');
 
   // Restore collapse state from localStorage
-  const collapsed = localStorage.getItem('smartpeak.settingsCollapsed') !== 'false';
+  const collapsed = localStorage.getItem('smartpeak.settingsCollapsed') === 'true';
   settingsBody.style.display = collapsed ? 'none' : 'block';
   settingsChevron.classList.toggle('fa-chevron-up', !collapsed);
   settingsChevron.classList.toggle('fa-chevron-down', collapsed);
@@ -143,6 +144,31 @@ function wireSettingsCollapse() {
     settingsChevron.classList.toggle('fa-chevron-down', !isHidden);
     localStorage.setItem('smartpeak.settingsCollapsed', !isHidden);
   });
+}
+
+function wireProductSectionNav() {
+  const buttons = [...document.querySelectorAll('[data-product-nav]')];
+  const sections = [...document.querySelectorAll('[data-product-section]')];
+  if (!buttons.length || !sections.length) return;
+
+  const validSections = new Set(sections.map(section => section.dataset.productSection));
+  const activate = (sectionId) => {
+    const nextSection = validSections.has(sectionId) ? sectionId : 'products';
+    sections.forEach(section => {
+      section.hidden = section.dataset.productSection !== nextSection;
+    });
+    buttons.forEach(button => {
+      const isActive = button.dataset.productNav === nextSection;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    localStorage.setItem('smartpeak.productsSection', nextSection);
+  };
+
+  buttons.forEach(button => {
+    button.addEventListener('click', () => activate(button.dataset.productNav));
+  });
+  activate(localStorage.getItem('smartpeak.productsSection') || 'products');
 }
 
 // ─── CATEGORY TABS ───────────────────────────────────────────────────────
@@ -1733,30 +1759,6 @@ function groupedQuoteIncl(groups, productsById) {
   }, 0);
 }
 
-function productPurchaseCostExVat(product, qty, categoriesById) {
-  const cat = product && categoriesById && categoriesById[product.categoryId];
-  const isService = cat && cat.slug === 'service';
-  const explicitCost = product?.specs && Number(product.specs.purchaseCostExVat);
-  if (isService && (!explicitCost || explicitCost <= 0)) return 0;
-  if (isService) return explicitCost * Math.max(0, qty || 0);
-  return Math.max(0, Number(product?.purchasePrice) || 0) * Math.max(0, qty || 0);
-}
-
-function groupedQuoteProfitExVat(groups, productsById, categoriesById) {
-  return groups.reduce((sum, group) => {
-    const productProfit = group.items.reduce((itemSum, item) => {
-      const product = productsById[item.productId];
-      if (!product) return itemSum;
-      const revenue = totalProductPrice(product, item.qty);
-      const cost = productPurchaseCostExVat(product, item.qty, categoriesById);
-      return itemSum + Math.max(0, revenue - cost);
-    }, 0);
-    return sum + productProfit
-      + Math.max(0, Number(group.extraExVat) || 0)
-      - Math.max(0, Number(group.discountExVat) || 0);
-  }, 0);
-}
-
 function buildQuoteComputation() {
   const cfg = _allConfigs.find(c => c.id === document.getElementById('quoteConfig')?.value);
   if (!cfg) return null;
@@ -1800,9 +1802,9 @@ function buildQuoteComputation() {
   const groupedIncl = groupedQuoteIncl(mainGroups, productsById)
     + groupedQuoteIncl(materialGroups, productsById)
     + groupedQuoteIncl(miscGroups, productsById);
-  const groupedProfit = groupedQuoteProfitExVat(mainGroups, productsById, categoriesById)
-    + groupedQuoteProfitExVat(materialGroups, productsById, categoriesById)
-    + groupedQuoteProfitExVat(miscGroups, productsById, categoriesById);
+  const groupedProfit = quoteGroupsProfitExVat(mainGroups, productsById)
+    + quoteGroupsProfitExVat(materialGroups, productsById)
+    + quoteGroupsProfitExVat(miscGroups, productsById);
   const manualProfit = extraLines.reduce((sum, line) => sum + line.exVat, 0);
   const totalProfit = groupedProfit + manualProfit;
   const totalIncl = groupedIncl + bebatIncl + extraIncl;
@@ -1866,7 +1868,6 @@ function updateQuotePreview() {
     </div>
     <div class="alert alert-success py-2 mb-2">
       <strong>Totale winst ex BTW:</strong> €${totalProfit.toFixed(2)}
-      <span class="text-muted small">(Bebat niet meegerekend)</span>
       ${discountExVat > 0 ? `<br><span class="text-muted small">Korting op samenstelling: €${discountExVat.toFixed(2)} ex BTW</span>` : ''}
     </div>
     <div class="d-flex flex-wrap align-items-center gap-2">
@@ -2012,6 +2013,7 @@ function downloadBase64File(base64, mimeType, fileName) {
 }
 
 function wireProductInteractions() {
+  wireProductSectionNav();
   document.getElementById('btnNewProduct').addEventListener('click', () => openNewProduct());
   document.getElementById('productSearch').addEventListener('input', () => renderProductList());
   document.getElementById('toggleShowInactive').addEventListener('change', () => renderProductList());

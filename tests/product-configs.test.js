@@ -11,6 +11,8 @@ import {
   categoryMap,
   addAmountsToVatGroups,
   applyDiscountToVatGroups,
+  productPurchaseCostExVat,
+  quoteGroupsProfitExVat,
   quoteGroupSubtotalExVat,
 } from '../assets/js/product-configs.js';
 
@@ -154,6 +156,39 @@ describe('product config helpers', () => {
 
     expect(groups[0].discountExVat).toBeCloseTo(150);
     expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBeCloseTo(1350);
+  });
+
+  it('counts service product purchase price as cost when calculating quote profit', () => {
+    const serviceProduct = {
+      id: 'inspection',
+      categoryId: 'cat-service',
+      brand: 'SmartPeak',
+      model: 'Keuring',
+      purchasePrice: 150,
+      marginType: 'fixed',
+      marginValue: 100,
+      specs: {},
+    };
+    const productsById = productMap([serviceProduct]);
+    const groups = [{ vat: 21, items: [{ productId: 'inspection', qty: 1 }] }];
+
+    expect(productPurchaseCostExVat(serviceProduct, 1)).toBeCloseTo(150);
+    expect(quoteGroupsProfitExVat(groups, productsById)).toBeCloseTo(100);
+  });
+
+  it('prefers explicit service purchase cost when present', () => {
+    const serviceProduct = {
+      id: 'custom-service',
+      categoryId: 'cat-service',
+      brand: 'SmartPeak',
+      model: 'Service',
+      purchasePrice: 150,
+      marginType: 'fixed',
+      marginValue: 100,
+      specs: { purchaseCostExVat: 120 },
+    };
+
+    expect(productPurchaseCostExVat(serviceProduct, 2)).toBeCloseTo(240);
   });
 
   it('caps fixed discounts at the composition total', () => {

@@ -62,7 +62,24 @@
   </nav>
 
   <main class="container py-4">
+    <div class="card mb-3 product-section-nav">
+      <div class="card-body p-2">
+        <div class="nav nav-pills flex-column flex-md-row gap-1" role="tablist" aria-label="Productbeheer onderdelen">
+          <button type="button" class="nav-link active" data-product-nav="products" role="tab" aria-selected="true">
+            <i class="fa-solid fa-boxes-stacked me-1"></i> Producten
+          </button>
+          <button type="button" class="nav-link" data-product-nav="configs" role="tab" aria-selected="false">
+            <i class="fa-solid fa-layer-group me-1"></i> Samenstellingen
+          </button>
+          <button type="button" class="nav-link" data-product-nav="settings" role="tab" aria-selected="false">
+            <i class="fa-solid fa-gear me-1"></i> Configuratie
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Settings Card -->
+    <section data-product-section="settings" hidden>
     <div class="card mb-3" id="settingsCard">
       <div class="card-header d-flex align-items-center justify-content-between" role="button" id="settingsToggle" style="cursor:pointer;">
         <h6 class="mb-0"><i class="fa-solid fa-gear me-2"></i>Instellingen</h6>
@@ -155,12 +172,14 @@
         </div>
       </div>
     </div>
+    </section>
 
+    <section data-product-section="configs" hidden>
     <div class="card mb-3" id="configsCard">
       <div class="card-header d-flex align-items-center justify-content-between">
-        <h6 class="mb-0"><i class="fa-solid fa-layer-group me-2"></i>Configuraties</h6>
+        <h6 class="mb-0"><i class="fa-solid fa-layer-group me-2"></i>Samenstellingen</h6>
         <button type="button" class="btn btn-primary btn-sm" id="btnNewConfig">
-          <i class="fa-solid fa-plus me-1"></i> Nieuwe configuratie
+          <i class="fa-solid fa-plus me-1"></i> Nieuwe samenstelling
         </button>
       </div>
       <div class="card-body">
@@ -170,7 +189,9 @@
         </div>
       </div>
     </div>
+    </section>
 
+    <section data-product-section="products">
     <!-- Category Tabs + Gear Button -->
     <div class="d-flex align-items-center gap-2 mb-3" id="categoryTabsWrapper">
       <div class="d-flex gap-1 flex-wrap flex-grow-1" id="categoryTabs">
@@ -212,6 +233,7 @@
         </div>
       </div>
     </div>
+    </section>
   </main>
 </div>
 
