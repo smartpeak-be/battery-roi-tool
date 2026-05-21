@@ -1,8 +1,12 @@
 import * as functions from 'firebase-functions/v2';
+import { defineSecret } from 'firebase-functions/params';
 import admin from 'firebase-admin';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 
 if (!admin.apps.length) admin.initializeApp();
+
+const billitApiKey = defineSecret('BILLIT_API_KEY');
+const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'ledsrepair@gmail.com']);
 
 // Vision client — lazy singleton. Firebase CLI loads this module during deploy
 // analysis; constructing the client eagerly can trigger local ADC/metadata
@@ -336,4 +340,140 @@ async function cleanupSerialEntry(projectId, photoId, serialEntryId) {
 export const ocrSerial = functions.firestore.onDocumentWritten(
   { document: 'projects/{projectId}/photos/{photoId}', region: 'europe-west1' },
   handleOcrSerial,
+);
+
+function setCors(req, res) {
+  const origin = req.get('origin') || '*';
+  res.set('Access-Control-Allow-Origin', origin);
+  res.set('Vary', 'Origin');
+  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+}
+
+async function requireWhitelistedUser(req) {
+  const header = req.get('authorization') || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    const err = new Error('Missing Firebase auth token');
+    err.status = 401;
+    throw err;
+  }
+  const decoded = await admin.auth().verifyIdToken(match[1]);
+  if (!WHITELISTED_EMAILS.has(decoded.email || '')) {
+    const err = new Error('Forbidden');
+    err.status = 403;
+    throw err;
+  }
+  return decoded;
+}
+
+function cleanString(value, max = 4000) {
+  return String(value == null ? '' : value).trim().slice(0, max);
+}
+
+function cleanNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function sanitizeBillitOrder(input) {
+  const source = Array.isArray(input) ? input[0] : input;
+  if (!source || typeof source !== 'object') throw new Error('Invalid Billit order payload');
+  const customer = source.Customer && typeof source.Customer === 'object' ? source.Customer : {};
+  const lines = Array.isArray(source.OrderLines) ? source.OrderLines : [];
+  if (!cleanString(customer.Name, 200)) throw new Error('Customer.Name is required');
+  if (!lines.length) throw new Error('At least one OrderLine is required');
+
+  return {
+    IsSent: false,
+    OrderType: 'Offer',
+    OrderDirection: 'Income',
+    OrderDate: cleanString(source.OrderDate, 10),
+    ExpiryDate: cleanString(source.ExpiryDate, 10),
+    Description: cleanString(source.Description, 500),
+    OrderTitle: cleanString(source.OrderTitle, 500),
+    InternalInfo: cleanString(source.InternalInfo, 2000),
+    Customer: {
+      Name: cleanString(customer.Name, 200),
+      Street: cleanString(customer.Street, 250),
+      City: cleanString(customer.City, 120),
+      Zipcode: cleanString(customer.Zipcode, 40),
+      CountryCode: cleanString(customer.CountryCode || 'BE', 2),
+      Email: cleanString(customer.Email, 254),
+      Phone: cleanString(customer.Phone, 80),
+    },
+    OrderLines: lines.map(line => ({
+      Quantity: cleanNumber(line.Quantity, 1),
+      UnitPriceExcl: cleanNumber(line.UnitPriceExcl, 0),
+      Description: cleanString(line.Description, 4000),
+      VATPercentage: cleanNumber(line.VATPercentage, 21),
+      AccountCode: cleanNumber(line.AccountCode, 700010),
+      ...(line.CustomFields && typeof line.CustomFields === 'object' ? { CustomFields: line.CustomFields } : {}),
+    })).filter(line => line.Description && line.Quantity > 0),
+    AccountCode: cleanNumber(source.AccountCode, 700010),
+    Reference: cleanString(source.Reference, 200),
+    Comments: cleanString(source.Comments, 4000),
+    Currency: cleanString(source.Currency || 'EUR', 3),
+  };
+}
+
+async function postBillitOrder(order, apiKey, wrapArray = false, authScheme = 'api-key') {
+  const response = await fetch('https://api.billit.be/v1/orders', {
+    method: 'POST',
+    headers: {
+      Authorization: `${authScheme} ${apiKey}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(wrapArray ? [order] : order),
+  });
+  const text = await response.text();
+  let data = text;
+  try { data = text ? JSON.parse(text) : null; } catch { /* Billit may return plain text */ }
+  return { ok: response.ok, status: response.status, data };
+}
+
+async function createBillitOrder(order, apiKey) {
+  let billit = await postBillitOrder(order, apiKey, false, 'api-key');
+  if (!billit.ok && [401, 403].includes(billit.status)) {
+    billit = await postBillitOrder(order, apiKey, false, 'Bearer');
+  }
+  if (!billit.ok && billit.status === 400) {
+    billit = await postBillitOrder(order, apiKey, true, 'api-key');
+    if (!billit.ok && [401, 403].includes(billit.status)) {
+      billit = await postBillitOrder(order, apiKey, true, 'Bearer');
+    }
+  }
+  return billit;
+}
+
+export const createBillitOffer = functions.https.onRequest(
+  { region: 'europe-west1', secrets: [billitApiKey] },
+  async (req, res) => {
+    setCors(req, res);
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      await requireWhitelistedUser(req);
+      const apiKey = billitApiKey.value();
+      if (!apiKey) throw new Error('BILLIT_API_KEY secret is not configured');
+      const order = sanitizeBillitOrder(req.body && req.body.order);
+      const billit = await createBillitOrder(order, apiKey);
+      if (!billit.ok) {
+        res.status(502).json({ error: 'Billit request failed', status: billit.status, details: billit.data });
+        return;
+      }
+      res.json({ ok: true, billit: billit.data, order });
+    } catch (err) {
+      const status = err.status || 400;
+      res.status(status).json({ error: err.message || String(err) });
+    }
+  },
 );

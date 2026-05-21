@@ -152,6 +152,7 @@ let _activeCategory = null;
 let _settings = {};
 let _allConfigs = [];
 let _editingConfigId = null;
+let _quoteProjects = [];
 
 async function seedDefaultCategories() {
   const cats = await listProductCategories();
@@ -1454,6 +1455,7 @@ async function openQuoteModal(context = {}) {
   } catch (e) {
     console.warn('Projecten laden voor offerte-preview mislukt', e);
   }
+  _quoteProjects = projects || [];
   body.innerHTML = buildQuoteModalHtml(projects, context);
   wireQuoteModal();
   updateQuotePreview();
@@ -1531,6 +1533,7 @@ function wireQuoteModal() {
     wireQuoteDynamicRows();
     updateQuotePreview();
   });
+  document.getElementById('btnCreateBillitOffer')?.addEventListener('click', createBillitOfferFromPreview);
   wireQuoteDynamicRows();
 }
 
@@ -1695,7 +1698,7 @@ function quoteGroupColor(group, productsById, categoriesById, fallbackSlug) {
   return categoryColor('thuisbatterij-systemen');
 }
 
-function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '') {
+function quoteGroupedLineModels(groups, productsById, categoriesById, prefix = '') {
   return groups.map(group => {
     const exVat = quoteGroupSubtotalExVat(group, productsById);
     const description = generatedConfigDescription(group.items, productsById, categoriesById)
@@ -1704,13 +1707,17 @@ function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '')
     const discountSuffix = Number(group.discountExVat) > 0 ? ` (korting €${Number(group.discountExVat).toFixed(2)})` : '';
     const fallbackSlug = prefix.startsWith('Materiaal') ? MATERIAL_CATEGORY_SLUG
       : (prefix.startsWith('Diversen') ? MISC_CATEGORY_SLUG : '');
-    return quoteLineHtml({
+    return {
       description: `${prefix}${description}${discountSuffix}`,
       exVat,
       vat: group.vat,
       color: quoteGroupColor(group, productsById, categoriesById, fallbackSlug),
-    });
-  }).join('');
+    };
+  });
+}
+
+function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '') {
+  return quoteGroupedLineModels(groups, productsById, categoriesById, prefix).map(quoteLineHtml).join('');
 }
 
 function groupedQuoteIncl(groups, productsById) {
@@ -1744,14 +1751,9 @@ function groupedQuoteProfitExVat(groups, productsById, categoriesById) {
   }, 0);
 }
 
-function updateQuotePreview() {
-  const el = document.getElementById('quotePreview');
-  if (!el) return;
+function buildQuoteComputation() {
   const cfg = _allConfigs.find(c => c.id === document.getElementById('quoteConfig')?.value);
-  if (!cfg) {
-    el.innerHTML = '<p class="text-muted mb-0">Kies een configuratie om de offerte-lijnen te bekijken.</p>';
-    return;
-  }
+  if (!cfg) return null;
   const { productsById, categoriesById } = _maps();
   const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
   const extraProductItems = readQuoteExtraProductItems();
@@ -1775,6 +1777,19 @@ function updateQuotePreview() {
   const materialRows = quoteGroupedRowsHtml(materialGroups, productsById, categoriesById, 'Materiaal: ');
   const miscRows = quoteGroupedRowsHtml(miscGroups, productsById, categoriesById, 'Diversen: ');
   const extraRows = extraLines.map(quoteLineHtml).join('');
+  const bebatExVat = bebatIncl / 1.21;
+  const lines = [
+    ...quoteGroupedLineModels(mainGroups, productsById, categoriesById),
+    ...quoteGroupedLineModels(materialGroups, productsById, categoriesById, 'Materiaal: '),
+    ...quoteGroupedLineModels(miscGroups, productsById, categoriesById, 'Diversen: '),
+    ...extraLines,
+    {
+      description: `Bebat bijdrage (${kg.toFixed(2)} kg x EUR ${bebatPrice.toFixed(2)}/kg)`,
+      exVat: bebatExVat,
+      vat: 21,
+      color: categoryColor('diversen'),
+    },
+  ].filter(line => Number(line.exVat) > 0);
   const extraIncl = extraLines.reduce((sum, line) => sum + line.exVat * (1 + line.vat / 100), 0);
   const groupedIncl = groupedQuoteIncl(mainGroups, productsById)
     + groupedQuoteIncl(materialGroups, productsById)
@@ -1786,6 +1801,44 @@ function updateQuotePreview() {
   const totalProfit = groupedProfit + manualProfit;
   const totalIncl = groupedIncl + bebatIncl + extraIncl;
   const discountExVat = mainGroups.reduce((sum, group) => sum + (Number(group.discountExVat) || 0), 0);
+  const project = _quoteProjects.find(p => p.id === document.getElementById('quoteProject')?.value) || null;
+  return {
+    cfg,
+    project,
+    lines,
+    mainRows,
+    materialRows,
+    miscRows,
+    extraRows,
+    kg,
+    bebatPrice,
+    bebatIncl,
+    totalProfit,
+    totalIncl,
+    discountExVat,
+  };
+}
+
+function updateQuotePreview() {
+  const el = document.getElementById('quotePreview');
+  if (!el) return;
+  const computed = buildQuoteComputation();
+  if (!computed) {
+    el.innerHTML = '<p class="text-muted mb-0">Kies een configuratie om de offerte-lijnen te bekijken.</p>';
+    return;
+  }
+  const {
+    mainRows,
+    materialRows,
+    miscRows,
+    extraRows,
+    kg,
+    bebatPrice,
+    bebatIncl,
+    totalProfit,
+    totalIncl,
+    discountExVat,
+  } = computed;
   el.innerHTML = `
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-2">
@@ -1810,7 +1863,92 @@ function updateQuotePreview() {
       <span class="text-muted small">(Bebat niet meegerekend)</span>
       ${discountExVat > 0 ? `<br><span class="text-muted small">Korting op samenstelling: €${discountExVat.toFixed(2)} ex BTW</span>` : ''}
     </div>
-    <p class="text-muted small mb-0">Deze preview maakt nog geen offerte-document aan; hij test alleen UX en berekening.</p>`;
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <button type="button" class="btn btn-primary" id="btnCreateBillitOffer">
+        <i class="fa-solid fa-paper-plane me-1"></i> Maak Billit-offerte
+      </button>
+      <span class="text-muted small" id="billitOfferStatus">Maakt een concept-offerte in Billit sandbox.</span>
+    </div>`;
+  document.getElementById('btnCreateBillitOffer')?.addEventListener('click', createBillitOfferFromPreview);
+}
+
+function isoDatePlusDays(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function projectBillitCustomer(project) {
+  const merged = typeof mergeProjectMetadata === 'function' && project ? mergeProjectMetadata(project) : project;
+  const customer = merged && merged.customer ? merged.customer : {};
+  return {
+    Name: (merged && (merged.customerName || merged.projectName)) || '',
+    Street: customer.address || '',
+    City: '',
+    Zipcode: '',
+    CountryCode: 'BE',
+    Email: customer.email || '',
+    Phone: customer.phone || '',
+  };
+}
+
+function buildBillitOfferPayload() {
+  const computed = buildQuoteComputation();
+  if (!computed) throw new Error('Kies eerst een configuratie.');
+  if (!computed.project) throw new Error('Kies eerst een klant/project voor de Billit-offerte.');
+  const customer = projectBillitCustomer(computed.project);
+  if (!customer.Name) throw new Error('Het gekozen project heeft geen klantnaam.');
+  const title = `SmartPeak offerte - ${computed.cfg.name || 'configuratie'}`;
+  return {
+    IsSent: false,
+    OrderType: 'Offer',
+    OrderDirection: 'Income',
+    OrderDate: isoDatePlusDays(0),
+    ExpiryDate: isoDatePlusDays(14),
+    Description: title,
+    OrderTitle: title,
+    Customer: customer,
+    OrderLines: computed.lines.map(line => ({
+      Quantity: 1,
+      UnitPriceExcl: Number(Number(line.exVat).toFixed(2)),
+      Description: line.description,
+      VATPercentage: Number(line.vat) || 21,
+      AccountCode: 700010,
+    })),
+    AccountCode: 700010,
+  };
+}
+
+async function createBillitOfferFromPreview() {
+  const btn = document.getElementById('btnCreateBillitOffer');
+  const status = document.getElementById('billitOfferStatus');
+  try {
+    const order = buildBillitOfferPayload();
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error('Niet ingelogd.');
+    btn.disabled = true;
+    status.textContent = 'Billit-offerte wordt aangemaakt...';
+    const token = await user.getIdToken();
+    const projectId = firebase.app().options.projectId;
+    const response = await fetch(`https://europe-west1-${projectId}.cloudfunctions.net/createBillitOffer`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ order }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Billit request mislukt.');
+    const billitId = result.billit && (result.billit.ID || result.billit.Id || result.billit.id || result.billit);
+    status.textContent = billitId ? `Billit-offerte aangemaakt (#${billitId}).` : 'Billit-offerte aangemaakt.';
+    showToast(status.textContent, 'success');
+  } catch (e) {
+    if (status) status.textContent = e.message || String(e);
+    showToast('Billit-offerte maken mislukt: ' + (e.message || e), 'danger');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function wireProductInteractions() {
