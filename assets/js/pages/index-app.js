@@ -1292,6 +1292,26 @@ let _projectDoc  = null;
 })();
 
 // ─── Project values summary card (projectValuesCard) ─────────────────────────
+const PROJECT_VOLTAGE_MEASUREMENT_LABELS = {
+  l1N: 'L1 - N',
+  l2N: 'L2 - N',
+  l3N: 'L3 - N',
+  l1L2: 'L1 - L2',
+  l1L3: 'L1 - L3',
+  l2L3: 'L2 - L3',
+  l1Pe: 'L1 - PE',
+  l2Pe: 'L2 - PE',
+  l3Pe: 'L3 - PE',
+  nPe: 'N - PE',
+};
+
+function fmtProjectDateString(value) {
+  if (!value) return '';
+  const [year, month, day] = String(value).split('-');
+  if (!year || !month || !day) return String(value);
+  return `${day}/${month}/${year}`;
+}
+
 function renderProjectValuesCard(project) {
   const m = mergeProjectMetadata(project);
   const rows = [];
@@ -1318,6 +1338,14 @@ function renderProjectValuesCard(project) {
   if (effBtw != null) add('BTW', effBtw + '%');
   if (m.calcDefaults.keuring) add('Keuring (voorkeur)', m.calcDefaults.keuring === 'yes' ? 'Met keuring' : 'Zonder keuring');
 
+  // Planning
+  add('Plaatsbezoek ingepland', fmtProjectDateString(m.planning.visitPlannedDate));
+  add('Plaatsbezoek uitgevoerd', fmtProjectDateString(m.planning.visitDoneDate));
+  add('Installatie ingepland', fmtProjectDateString(m.planning.installationPlannedDate));
+  add('Installatie uitgevoerd', fmtProjectDateString(m.planning.installationDoneDate));
+  add('Keuring ingepland', fmtProjectDateString(m.planning.inspectionPlannedDate));
+  add('Keuring uitgevoerd', fmtProjectDateString(m.planning.inspectionDoneDate));
+
   // Elektrisch
   if (m.electrical.connectionType) add('Aansluiting', m.electrical.connectionType);
   if (m.electrical.fuseRatingA != null) add('Fluvius-zekering', m.electrical.fuseRatingA + ' A');
@@ -1334,6 +1362,18 @@ function renderProjectValuesCard(project) {
     ['Wifi bij zekeringkast',          m.cabinet.hasWifiNearCabinet],
   ];
   triPairs.forEach(([label, v]) => { const s = tri(v); if (s) add(label, s); });
+
+  // Technische metingen
+  const earthMeasured = tri(m.technical.earthResistanceMeasured);
+  if (earthMeasured) add('Aardweerstand gemeten', earthMeasured);
+  if (m.technical.earthResistanceOhm != null) add('Aardweerstand', m.technical.earthResistanceOhm + ' Ω');
+  add('Meetdatum aardweerstand', fmtProjectDateString(m.technical.earthResistanceMeasuredDate));
+  Object.entries(m.technical.voltageMeasurements || {}).forEach(([key, value]) => {
+    if (value != null && value !== '') add('Spanning ' + (PROJECT_VOLTAGE_MEASUREMENT_LABELS[key] || key), value + ' V');
+  });
+  if (m.technical.technicalNotes) add('Technische opmerkingen', escapeHtml(m.technical.technicalNotes));
+  if (m.inspection.company) add('Keuringsfirma', escapeHtml(m.inspection.company));
+  if (m.inspection.reference) add('Keuring referentie', escapeHtml(m.inspection.reference));
 
   // Omvormers
   if (m.solar.inverters.length > 0) {

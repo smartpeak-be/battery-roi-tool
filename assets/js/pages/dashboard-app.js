@@ -84,6 +84,39 @@ document.addEventListener('DOMContentLoaded', () => {
   // Reset drawer state when Bootstrap hides it (hidden.bs.offcanvas also handled above)
 });
 
+const VOLTAGE_MEASUREMENT_LABELS = {
+  l1N: 'L1 - N',
+  l2N: 'L2 - N',
+  l3N: 'L3 - N',
+  l1L2: 'L1 - L2',
+  l1L3: 'L1 - L3',
+  l2L3: 'L2 - L3',
+  l1Pe: 'L1 - PE',
+  l2Pe: 'L2 - PE',
+  l3Pe: 'L3 - PE',
+  nPe: 'N - PE',
+};
+
+function fmtDateString(value) {
+  if (!value) return '';
+  const [year, month, day] = String(value).split('-');
+  if (!year || !month || !day) return String(value);
+  return `${day}/${month}/${year}`;
+}
+
+function detailRowsHtml(rows) {
+  const visible = rows.filter(([, value]) => value !== null && value !== undefined && value !== '');
+  if (!visible.length) return '';
+  return `
+    <dl class="row g-2 mb-0">
+      ${visible.map(([label, value]) => `
+        <dt class="col-sm-5 text-muted fw-normal">${escapeHtml(label)}</dt>
+        <dd class="col-sm-7 mb-0">${escapeHtml(value)}</dd>
+      `).join('')}
+    </dl>
+  `;
+}
+
 // ─── PROJECT LIST ───────────────────────────────────────────────────────────
 // statusChipHTML() lives in assets/js/status-chip.js (shared component)
 
@@ -647,6 +680,56 @@ function renderDrawer(project) {
       <section class="border-bottom pb-3 mb-3">
         <h6 class="mb-2 text-uppercase text-muted">Contact</h6>
         ${contactLines.join('')}
+      </section>
+    `);
+  }
+
+  const planningHtml = detailRowsHtml([
+    ['Plaatsbezoek ingepland', fmtDateString(m.planning.visitPlannedDate)],
+    ['Plaatsbezoek uitgevoerd', fmtDateString(m.planning.visitDoneDate)],
+    ['Installatie ingepland', fmtDateString(m.planning.installationPlannedDate)],
+    ['Installatie uitgevoerd', fmtDateString(m.planning.installationDoneDate)],
+    ['Keuring ingepland', fmtDateString(m.planning.inspectionPlannedDate)],
+    ['Keuring uitgevoerd', fmtDateString(m.planning.inspectionDoneDate)],
+  ]);
+  if (planningHtml) {
+    sections.push(`
+      <section class="border-bottom pb-3 mb-3">
+        <h6 class="mb-2 text-uppercase text-muted">Planning</h6>
+        ${planningHtml}
+      </section>
+    `);
+  }
+
+  const voltageRows = Object.entries(m.technical.voltageMeasurements || {})
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => [`Spanning ${VOLTAGE_MEASUREMENT_LABELS[key] || key}`, `${value} V`]);
+  const technicalHtml = detailRowsHtml([
+    ['Aardweerstand gemeten', m.technical.earthResistanceMeasured === true ? 'Ja' : m.technical.earthResistanceMeasured === false ? 'Nee' : ''],
+    ['Aardweerstand', m.technical.earthResistanceOhm != null ? `${m.technical.earthResistanceOhm} Ω` : ''],
+    ['Meetdatum aardweerstand', fmtDateString(m.technical.earthResistanceMeasuredDate)],
+    ...voltageRows,
+    ['Technische opmerkingen', m.technical.technicalNotes],
+  ]);
+  if (technicalHtml) {
+    sections.push(`
+      <section class="border-bottom pb-3 mb-3">
+        <h6 class="mb-2 text-uppercase text-muted">Techniek</h6>
+        ${technicalHtml}
+      </section>
+    `);
+  }
+
+  const inspectionHtml = detailRowsHtml([
+    ['Keuringsfirma', m.inspection.company],
+    ['Referentie', m.inspection.reference],
+    ['Opmerkingen keuring', m.inspection.notes],
+  ]);
+  if (inspectionHtml) {
+    sections.push(`
+      <section class="border-bottom pb-3 mb-3">
+        <h6 class="mb-2 text-uppercase text-muted">Keuring</h6>
+        ${inspectionHtml}
       </section>
     `);
   }
