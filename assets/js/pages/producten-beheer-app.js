@@ -132,7 +132,7 @@ function wireSettingsCollapse() {
   const settingsChevron = document.getElementById('settingsChevron');
 
   // Restore collapse state from localStorage
-  const collapsed = localStorage.getItem('smartpeak.settingsCollapsed') !== 'false';
+  const collapsed = localStorage.getItem('smartpeak.settingsCollapsed') === 'true';
   settingsBody.style.display = collapsed ? 'none' : 'block';
   settingsChevron.classList.toggle('fa-chevron-up', !collapsed);
   settingsChevron.classList.toggle('fa-chevron-down', collapsed);
@@ -144,6 +144,31 @@ function wireSettingsCollapse() {
     settingsChevron.classList.toggle('fa-chevron-down', !isHidden);
     localStorage.setItem('smartpeak.settingsCollapsed', !isHidden);
   });
+}
+
+function wireProductSectionNav() {
+  const buttons = [...document.querySelectorAll('[data-product-nav]')];
+  const sections = [...document.querySelectorAll('[data-product-section]')];
+  if (!buttons.length || !sections.length) return;
+
+  const validSections = new Set(sections.map(section => section.dataset.productSection));
+  const activate = (sectionId) => {
+    const nextSection = validSections.has(sectionId) ? sectionId : 'products';
+    sections.forEach(section => {
+      section.hidden = section.dataset.productSection !== nextSection;
+    });
+    buttons.forEach(button => {
+      const isActive = button.dataset.productNav === nextSection;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    localStorage.setItem('smartpeak.productsSection', nextSection);
+  };
+
+  buttons.forEach(button => {
+    button.addEventListener('click', () => activate(button.dataset.productNav));
+  });
+  activate(localStorage.getItem('smartpeak.productsSection') || 'products');
 }
 
 // ─── CATEGORY TABS ───────────────────────────────────────────────────────
@@ -1843,7 +1868,6 @@ function updateQuotePreview() {
     </div>
     <div class="alert alert-success py-2 mb-2">
       <strong>Totale winst ex BTW:</strong> €${totalProfit.toFixed(2)}
-      <span class="text-muted small">(Bebat niet meegerekend)</span>
       ${discountExVat > 0 ? `<br><span class="text-muted small">Korting op samenstelling: €${discountExVat.toFixed(2)} ex BTW</span>` : ''}
     </div>
     <div class="d-flex flex-wrap align-items-center gap-2">
@@ -1989,6 +2013,7 @@ function downloadBase64File(base64, mimeType, fileName) {
 }
 
 function wireProductInteractions() {
+  wireProductSectionNav();
   document.getElementById('btnNewProduct').addEventListener('click', () => openNewProduct());
   document.getElementById('productSearch').addEventListener('input', () => renderProductList());
   document.getElementById('toggleShowInactive').addEventListener('change', () => renderProductList());
