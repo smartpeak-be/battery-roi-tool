@@ -1,8 +1,13 @@
 import * as functions from 'firebase-functions/v2';
+import { defineSecret } from 'firebase-functions/params';
 import admin from 'firebase-admin';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 
 if (!admin.apps.length) admin.initializeApp();
+
+const billitApiKey = defineSecret('BILLIT_API_KEY');
+const BILLIT_BASE_URL = 'https://api.sandbox.billit.be';
+const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'ledsrepair@gmail.com']);
 
 // Vision client — lazy singleton. Firebase CLI loads this module during deploy
 // analysis; constructing the client eagerly can trigger local ADC/metadata
@@ -336,4 +341,221 @@ async function cleanupSerialEntry(projectId, photoId, serialEntryId) {
 export const ocrSerial = functions.firestore.onDocumentWritten(
   { document: 'projects/{projectId}/photos/{photoId}', region: 'europe-west1' },
   handleOcrSerial,
+);
+
+function setCors(req, res) {
+  const origin = req.get('origin') || '*';
+  res.set('Access-Control-Allow-Origin', origin);
+  res.set('Vary', 'Origin');
+  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+}
+
+async function requireWhitelistedUser(req) {
+  const header = req.get('authorization') || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    const err = new Error('Missing Firebase auth token');
+    err.status = 401;
+    throw err;
+  }
+  const decoded = await admin.auth().verifyIdToken(match[1]);
+  if (!WHITELISTED_EMAILS.has(decoded.email || '')) {
+    const err = new Error('Forbidden');
+    err.status = 403;
+    throw err;
+  }
+  return decoded;
+}
+
+function cleanString(value, max = 4000) {
+  return String(value == null ? '' : value).trim().slice(0, max);
+}
+
+function cleanNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function sanitizeBillitOrder(input) {
+  const source = Array.isArray(input) ? input[0] : input;
+  if (!source || typeof source !== 'object') throw new Error('Invalid Billit order payload');
+  const customer = source.Customer && typeof source.Customer === 'object' ? source.Customer : {};
+  const lines = Array.isArray(source.OrderLines) ? source.OrderLines : [];
+  if (!cleanString(customer.Name, 200)) throw new Error('Customer.Name is required');
+  if (!lines.length) throw new Error('At least one OrderLine is required');
+
+  return {
+    IsSent: false,
+    OrderType: 'Offer',
+    OrderDirection: 'Income',
+    OrderDate: cleanString(source.OrderDate, 10),
+    ExpiryDate: cleanString(source.ExpiryDate, 10),
+    Description: cleanString(source.Description, 500),
+    OrderTitle: cleanString(source.OrderTitle, 500),
+    InternalInfo: cleanString(source.InternalInfo, 2000),
+    Customer: {
+      Name: cleanString(customer.Name, 200),
+      Street: cleanString(customer.Street, 250),
+      City: cleanString(customer.City, 120),
+      Zipcode: cleanString(customer.Zipcode, 40),
+      CountryCode: cleanString(customer.CountryCode || 'BE', 2),
+      Email: cleanString(customer.Email, 254),
+      Phone: cleanString(customer.Phone, 80),
+    },
+    OrderLines: lines.map(line => ({
+      Quantity: cleanNumber(line.Quantity, 1),
+      UnitPriceExcl: cleanNumber(line.UnitPriceExcl, 0),
+      Description: cleanString(line.Description, 4000),
+      VATPercentage: cleanNumber(line.VATPercentage, 21),
+      AccountCode: cleanNumber(line.AccountCode, 700010),
+      ...(line.CustomFields && typeof line.CustomFields === 'object' ? { CustomFields: line.CustomFields } : {}),
+    })).filter(line => line.Description && line.Quantity > 0),
+    AccountCode: cleanNumber(source.AccountCode, 700010),
+    Reference: cleanString(source.Reference, 200),
+    Comments: cleanString(source.Comments, 4000),
+    Currency: cleanString(source.Currency || 'EUR', 3),
+  };
+}
+
+async function postBillitOrder(order, apiKey, wrapArray = false, authMode = 'apiKey-header') {
+  const headers = billitHeaders(apiKey);
+  if (authMode !== 'apiKey-header') {
+    delete headers.apiKey;
+    headers.Authorization = `${authMode} ${apiKey}`;
+  }
+  const response = await fetch(`${BILLIT_BASE_URL}/v1/orders`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(wrapArray ? [order] : order),
+  });
+  return readBillitResponse(response);
+}
+
+function billitHeaders(apiKey) {
+  return {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    apiKey,
+  };
+}
+
+async function readBillitResponse(response) {
+  const text = await response.text();
+  let data = text;
+  try { data = text ? JSON.parse(text) : null; } catch { /* Billit may return plain text */ }
+  return { ok: response.ok, status: response.status, data };
+}
+
+async function createBillitOrder(order, apiKey) {
+  let billit = await postBillitOrder(order, apiKey, false, 'apiKey-header');
+  if (!billit.ok && [401, 403].includes(billit.status)) {
+    billit = await postBillitOrder(order, apiKey, false, 'api-key');
+  }
+  if (!billit.ok && [401, 403].includes(billit.status)) {
+    billit = await postBillitOrder(order, apiKey, false, 'Bearer');
+  }
+  if (!billit.ok && billit.status === 400) {
+    billit = await postBillitOrder(order, apiKey, true, 'apiKey-header');
+    if (!billit.ok && [401, 403].includes(billit.status)) {
+      billit = await postBillitOrder(order, apiKey, true, 'api-key');
+    }
+    if (!billit.ok && [401, 403].includes(billit.status)) {
+      billit = await postBillitOrder(order, apiKey, true, 'Bearer');
+    }
+  }
+  return billit;
+}
+
+function extractBillitOrderId(data) {
+  if (Number.isFinite(Number(data))) return Number(data);
+  if (!data || typeof data !== 'object') return null;
+  return Number(data.OrderID || data.OrderId || data.ID || data.Id || data.id) || null;
+}
+
+async function getBillitOrder(orderId, apiKey) {
+  const response = await fetch(`${BILLIT_BASE_URL}/v1/orders/${encodeURIComponent(orderId)}`, {
+    method: 'GET',
+    headers: billitHeaders(apiKey),
+  });
+  return readBillitResponse(response);
+}
+
+async function getBillitFile(fileId, apiKey) {
+  const response = await fetch(`${BILLIT_BASE_URL}/v1/files/${encodeURIComponent(fileId)}`, {
+    method: 'GET',
+    headers: billitHeaders(apiKey),
+  });
+  return readBillitResponse(response);
+}
+
+function normalizeBillitPdf(file) {
+  if (!file || typeof file !== 'object' || !file.FileContent) return null;
+  return {
+    fileName: cleanString(file.FileName || 'billit-offerte.pdf', 180) || 'billit-offerte.pdf',
+    mimeType: cleanString(file.MimeType || 'application/pdf', 80) || 'application/pdf',
+    fileContent: file.FileContent,
+  };
+}
+
+async function getBillitPdf(orderId, apiKey) {
+  const order = await getBillitOrder(orderId, apiKey);
+  if (!order.ok) {
+    if ([400, 404].includes(order.status)) return { ready: false, status: order.status };
+    return { ready: false, errorStatus: order.status, details: order.data };
+  }
+  const pdf = order.data && order.data.OrderPDF;
+  const inlinePdf = normalizeBillitPdf(pdf);
+  if (inlinePdf) return { ready: true, file: inlinePdf };
+  const fileId = pdf && (pdf.FileID || pdf.FileId || pdf.fileID || pdf.id);
+  if (!fileId) return { ready: false, status: 202 };
+  const file = await getBillitFile(fileId, apiKey);
+  if (!file.ok) {
+    if ([400, 404].includes(file.status)) return { ready: false, status: file.status };
+    return { ready: false, errorStatus: file.status, details: file.data };
+  }
+  const fetchedPdf = normalizeBillitPdf(file.data);
+  return fetchedPdf ? { ready: true, file: fetchedPdf } : { ready: false, status: 202 };
+}
+
+export const createBillitOffer = functions.https.onRequest(
+  { region: 'europe-west1', secrets: [billitApiKey] },
+  async (req, res) => {
+    setCors(req, res);
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      await requireWhitelistedUser(req);
+      const apiKey = billitApiKey.value().trim();
+      if (!apiKey) throw new Error('BILLIT_API_KEY secret is not configured');
+      if (req.body && req.body.action === 'pdf-status') {
+        const orderId = Number(req.body.orderId);
+        if (!Number.isFinite(orderId) || orderId <= 0) throw new Error('Valid orderId is required');
+        const pdf = await getBillitPdf(orderId, apiKey);
+        if (pdf.errorStatus) {
+          res.status(502).json({ error: 'Billit PDF request failed', status: pdf.errorStatus, details: pdf.details });
+          return;
+        }
+        res.json(pdf);
+        return;
+      }
+      const order = sanitizeBillitOrder(req.body && req.body.order);
+      const billit = await createBillitOrder(order, apiKey);
+      if (!billit.ok) {
+        res.status(502).json({ error: 'Billit request failed', status: billit.status, details: billit.data });
+        return;
+      }
+      res.json({ ok: true, billit: billit.data, orderId: extractBillitOrderId(billit.data), order });
+    } catch (err) {
+      const status = err.status || 400;
+      res.status(status).json({ error: err.message || String(err) });
+    }
+  },
 );
