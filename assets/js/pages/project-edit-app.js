@@ -50,6 +50,24 @@ function addressGoogleApiKey(settings) {
   )) || '';
 }
 
+async function fetchGoogleMapsApiKeyFromFunction() {
+  const user = firebase.auth().currentUser;
+  if (!user) throw new Error('Niet ingelogd.');
+  const token = await user.getIdToken();
+  const projectId = firebase.app().options.projectId;
+  const response = await fetch(`https://europe-west1-${projectId}.cloudfunctions.net/getGoogleMapsApiKey`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Google Maps API-key ophalen mislukt.');
+  return data.apiKey || '';
+}
+
 function loadGooglePlaces(apiKey) {
   if (window.google && window.google.maps && window.google.maps.places) {
     return Promise.resolve(window.google.maps.places);
@@ -164,9 +182,9 @@ async function initAddressAutocomplete() {
   if (!input || !hint) return;
   try {
     const settings = await getSettings();
-    const key = addressGoogleApiKey(settings);
+    const key = addressGoogleApiKey(settings) || await fetchGoogleMapsApiKeyFromFunction();
     if (!key) {
-      hint.textContent = 'Google Maps API-key ontbreekt in instellingen; vul het adres manueel in.';
+      hint.textContent = 'Google Maps API-key ontbreekt; vul het adres manueel in.';
       return;
     }
     hint.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>Adres-autocomplete laden...';

@@ -86,7 +86,6 @@ async function loadSettings() {
     if (s.defaultInstallCost != null) document.getElementById('settingsInstallCost').value = s.defaultInstallCost;
     if (s.defaultInspectCost != null) document.getElementById('settingsInspectCost').value = s.defaultInspectCost;
     if (s.bebatPricePerKg != null) document.getElementById('settingsBebatPerKg').value = s.bebatPricePerKg;
-    if (s.addressAutocompleteGoogleMapsApiKey != null) document.getElementById('settingsGoogleMapsApiKey').value = s.addressAutocompleteGoogleMapsApiKey;
     markLegacyServiceSettings();
   } catch (e) {
     console.warn('loadSettings failed:', e);
@@ -116,7 +115,6 @@ function wireSaveSettings() {
         defaultDiscountValue:   parseFloat(document.getElementById('settingsDiscountValue').value) || 0,
         defaultDiscountFromUnit: parseInt(document.getElementById('settingsDiscountFromUnit').value) || 2,
         bebatPricePerKg:        parseFloat(document.getElementById('settingsBebatPerKg').value) || 0,
-        addressAutocompleteGoogleMapsApiKey: document.getElementById('settingsGoogleMapsApiKey').value.trim(),
       });
       showToast('Instellingen opgeslagen', 'success');
     } catch (e) {

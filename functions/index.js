@@ -6,6 +6,7 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 if (!admin.apps.length) admin.initializeApp();
 
 const billitApiKey = defineSecret('BILLIT_API_KEY');
+const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
 const BILLIT_BASE_URL = 'https://api.sandbox.billit.be';
 const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'ledsrepair@gmail.com']);
 
@@ -553,6 +554,30 @@ export const createBillitOffer = functions.https.onRequest(
         return;
       }
       res.json({ ok: true, billit: billit.data, orderId: extractBillitOrderId(billit.data), order });
+    } catch (err) {
+      const status = err.status || 400;
+      res.status(status).json({ error: err.message || String(err) });
+    }
+  },
+);
+
+export const getGoogleMapsApiKey = functions.https.onRequest(
+  { region: 'europe-west1', secrets: [googleMapsApiKey] },
+  async (req, res) => {
+    setCors(req, res);
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+    try {
+      await requireWhitelistedUser(req);
+      const apiKey = googleMapsApiKey.value().trim();
+      if (!apiKey) throw new Error('GOOGLE_MAPS_API_KEY secret is not configured');
+      res.json({ apiKey });
     } catch (err) {
       const status = err.status || 400;
       res.status(status).json({ error: err.message || String(err) });
