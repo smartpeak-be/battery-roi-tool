@@ -85,6 +85,14 @@ function newEmptyProjectMetadata() {
     },
     situation: null,
     notes:     null,
+    planning: {
+      visitPlannedDate:        null,
+      visitDoneDate:           null,
+      installationPlannedDate: null,
+      installationDoneDate:    null,
+      inspectionPlannedDate:   null,
+      inspectionDoneDate:      null,
+    },
     site: {
       houseAgeOver10Years: null,
     },
@@ -104,6 +112,18 @@ function newEmptyProjectMetadata() {
     },
     solar: {
       inverters: [],
+    },
+    technical: {
+      earthResistanceMeasured:     null,
+      earthResistanceOhm:          null,
+      earthResistanceMeasuredDate: null,
+      voltageMeasurements:         {},
+      technicalNotes:              null,
+    },
+    inspection: {
+      company:   null,
+      reference: null,
+      notes:     null,
     },
     supplier: {
       name:           null,
@@ -127,12 +147,19 @@ function mergeProjectMetadata(project) {
     customer:     { ...empty.customer,     ...(project.customer || {}) },
     situation:    project.situation != null ? project.situation : empty.situation,
     notes:        project.notes     != null ? project.notes     : empty.notes,
+    planning:     { ...empty.planning,     ...(project.planning || {}) },
     site:         { ...empty.site,         ...(project.site || {}) },
     electrical:   { ...empty.electrical,   ...(project.electrical || {}) },
     cabinet:      { ...empty.cabinet,      ...(project.cabinet || {}) },
     solar:        { ...empty.solar,        ...(project.solar || {}) },
+    technical:    { ...empty.technical,    ...(project.technical || {}) },
+    inspection:   { ...empty.inspection,   ...(project.inspection || {}) },
     supplier:     { ...empty.supplier,     ...(project.supplier || {}) },
     calcDefaults: { ...empty.calcDefaults, ...(project.calcDefaults || {}) },
+  };
+  merged.technical.voltageMeasurements = {
+    ...empty.technical.voltageMeasurements,
+    ...((project.technical && project.technical.voltageMeasurements) || {}),
   };
   merged.offertes      = project.offertes || {};
   merged.serialNumbers = (Array.isArray(project.serialNumbers) ? project.serialNumbers : []).map(e => ({
@@ -318,9 +345,8 @@ function projectDoc(id) { return projectsCol().doc(id); }
 
 // Create a project. csvData is the optional output of extractCsvForStorage(); pass null
 // if no CSV was uploaded at creation. `metadata` is an optional object with any subset
-// of { site, electrical, cabinet, solar, supplier, calcDefaults } — if omitted, the
-// document is created without those sections (pre-2026-04-20 shape; readers fall back
-// via mergeProjectMetadata). Returns the new document reference.
+// of the project metadata sections — if omitted, readers fall back via
+// mergeProjectMetadata. Returns the new document reference.
 async function createProject({ projectName, customerName, status, csvData, metadata }) {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd');
@@ -347,10 +373,13 @@ async function createProject({ projectName, customerName, status, csvData, metad
     if (metadata.customer)     doc.customer     = metadata.customer;
     if (metadata.situation !== undefined) doc.situation = metadata.situation;
     if (metadata.notes     !== undefined) doc.notes     = metadata.notes;
+    if (metadata.planning)     doc.planning     = metadata.planning;
     if (metadata.site)         doc.site         = metadata.site;
     if (metadata.electrical)   doc.electrical   = metadata.electrical;
     if (metadata.cabinet)      doc.cabinet      = metadata.cabinet;
     if (metadata.solar)        doc.solar        = metadata.solar;
+    if (metadata.technical)    doc.technical    = metadata.technical;
+    if (metadata.inspection)   doc.inspection   = metadata.inspection;
     if (metadata.supplier)     doc.supplier     = metadata.supplier;
     if (metadata.calcDefaults) doc.calcDefaults = metadata.calcDefaults;
     if (Array.isArray(metadata.serialNumbers)) doc.serialNumbers = metadata.serialNumbers;
@@ -642,8 +671,13 @@ function groundFaultStatus(project) {
   // Warning: measurement not yet performed
   const m = mergeProjectMetadata(project);
   const v = m.cabinet.lineGroundChecked;
+  const phaseGroundValues = m.technical && m.technical.voltageMeasurements
+    ? [m.technical.voltageMeasurements.l1Pe, m.technical.voltageMeasurements.l2Pe, m.technical.voltageMeasurements.l3Pe]
+    : [];
+  const hasExactPhaseGroundMeasurement = phaseGroundValues.some(value => Number(value) > 0);
   // Legacy compat: old projects stored true (checkbox era) → treat as 'under30'
   if (v === true) return false;
+  if (hasExactPhaseGroundMeasurement) return false;
   if (v !== 'under30' && v !== 'over30') return 'no-measurement';
   return false;
 }

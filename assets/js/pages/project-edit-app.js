@@ -42,6 +42,53 @@ function clearFieldError(fieldId) {
   el.classList.remove('is-invalid');
 }
 
+const VOLTAGE_MEASUREMENT_FIELDS = {
+  '1x230': [
+    ['l1N',  'L1 - N'],
+    ['l1Pe', 'L1 - PE'],
+    ['nPe',  'N - PE'],
+  ],
+  '3x230': [
+    ['l1L2', 'L1 - L2'],
+    ['l1L3', 'L1 - L3'],
+    ['l2L3', 'L2 - L3'],
+    ['l1Pe', 'L1 - PE'],
+    ['l2Pe', 'L2 - PE'],
+    ['l3Pe', 'L3 - PE'],
+  ],
+  '3x400+N': [
+    ['l1L2', 'L1 - L2'],
+    ['l1L3', 'L1 - L3'],
+    ['l2L3', 'L2 - L3'],
+    ['l1N',  'L1 - N'],
+    ['l2N',  'L2 - N'],
+    ['l3N',  'L3 - N'],
+    ['l1Pe', 'L1 - PE'],
+    ['l2Pe', 'L2 - PE'],
+    ['l3Pe', 'L3 - PE'],
+    ['nPe',  'N - PE'],
+  ],
+};
+
+function voltageFieldsForConnection(connectionType) {
+  return VOLTAGE_MEASUREMENT_FIELDS[connectionType] || [];
+}
+
+function readOptionalNumber(value) {
+  if (value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function pruneVoltageMeasurementsForConnection(connectionType) {
+  const allowed = new Set(voltageFieldsForConnection(connectionType).map(([key]) => key));
+  _project.technical = _project.technical || {};
+  const current = _project.technical.voltageMeasurements || {};
+  _project.technical.voltageMeasurements = Object.fromEntries(
+    Object.entries(current).filter(([key]) => allowed.has(key))
+  );
+}
+
 function addressGoogleApiKey(settings) {
   return (settings && (
     settings.addressAutocompleteGoogleMapsApiKey
@@ -605,6 +652,8 @@ function rerenderBlokA() {
 
 function sectionBlokB() {
   const c = _project.customer || {};
+  const planning = _project.planning || {};
+  const inspection = _project.inspection || {};
   const structured = normalizedAddressStructured(c) || {};
   const addressValue = c.address || formatCustomerAddress(c);
   const isGoogleAddress = structured.provider === 'google' && structured.placeId;
@@ -624,6 +673,35 @@ function sectionBlokB() {
             <div class="col-12 col-md-6">
               <label for="fStatus" class="form-label">Status</label>
               <select id="fStatus" class="form-select">${statusOptions}</select>
+            </div>
+            <div class="col-12">
+              <h6 class="text-muted mb-2 mt-2">Planning</h6>
+              <div class="row g-3">
+                <div class="col-12 col-md-4">
+                  <label for="fVisitPlannedDate" class="form-label">Plaatsbezoek ingepland</label>
+                  <input type="date" id="fVisitPlannedDate" class="form-control" value="${escapeHtml(planning.visitPlannedDate || '')}" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label for="fInstallationPlannedDate" class="form-label">Installatie ingepland</label>
+                  <input type="date" id="fInstallationPlannedDate" class="form-control" value="${escapeHtml(planning.installationPlannedDate || '')}" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label for="fInspectionPlannedDate" class="form-label">Keuring ingepland</label>
+                  <input type="date" id="fInspectionPlannedDate" class="form-control" value="${escapeHtml(planning.inspectionPlannedDate || '')}" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label for="fVisitDoneDate" class="form-label">Plaatsbezoek uitgevoerd</label>
+                  <input type="date" id="fVisitDoneDate" class="form-control" value="${escapeHtml(planning.visitDoneDate || '')}" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label for="fInstallationDoneDate" class="form-label">Installatie uitgevoerd</label>
+                  <input type="date" id="fInstallationDoneDate" class="form-control" value="${escapeHtml(planning.installationDoneDate || '')}" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label for="fInspectionDoneDate" class="form-label">Keuring uitgevoerd</label>
+                  <input type="date" id="fInspectionDoneDate" class="form-control" value="${escapeHtml(planning.inspectionDoneDate || '')}" />
+                </div>
+              </div>
             </div>
             <div class="col-12">
               <div class="d-flex justify-content-between align-items-center gap-2">
@@ -666,13 +744,30 @@ function sectionBlokB() {
               <input type="email" id="fEmail" class="form-control" maxlength="120" value="${escapeHtml(c.email || '')}" />
             </div>
             <div class="col-12">
+              <h6 class="text-muted mb-2 mt-2">Keuring</h6>
+              <div class="row g-3">
+                <div class="col-12 col-md-6">
+                  <label for="fInspectionCompany" class="form-label">Keuringsfirma</label>
+                  <input type="text" id="fInspectionCompany" class="form-control" maxlength="120" value="${escapeHtml(inspection.company || '')}" />
+                </div>
+                <div class="col-12 col-md-6">
+                  <label for="fInspectionReference" class="form-label">Referentie</label>
+                  <input type="text" id="fInspectionReference" class="form-control" maxlength="120" value="${escapeHtml(inspection.reference || '')}" />
+                </div>
+                <div class="col-12">
+                  <label for="fInspectionNotes" class="form-label">Keuring opmerkingen</label>
+                  <textarea id="fInspectionNotes" class="form-control" rows="2" maxlength="1000">${escapeHtml(inspection.notes || '')}</textarea>
+                </div>
+              </div>
+            </div>
+            <div class="col-12">
               <label for="fSituation" class="form-label">Situatie</label>
               <div class="input-group">
                 <textarea id="fSituation" class="form-control" rows="2" maxlength="500">${escapeHtml(_project.situation || '')}</textarea>
               </div>
             </div>
             <div class="col-12">
-              <label for="fNotes" class="form-label">Notities</label>
+              <label for="fNotes" class="form-label">Algemene notities</label>
               <div class="input-group">
                 <textarea id="fNotes" class="form-control" rows="3" maxlength="2000">${escapeHtml(_project.notes || '')}</textarea>
               </div>
@@ -687,6 +782,19 @@ function sectionBlokB() {
 function wireBlokB() {
   document.getElementById('fStatus').addEventListener('change', e => {
     _project.status = e.target.value;
+  });
+  [
+    ['fVisitPlannedDate', 'visitPlannedDate'],
+    ['fVisitDoneDate', 'visitDoneDate'],
+    ['fInstallationPlannedDate', 'installationPlannedDate'],
+    ['fInstallationDoneDate', 'installationDoneDate'],
+    ['fInspectionPlannedDate', 'inspectionPlannedDate'],
+    ['fInspectionDoneDate', 'inspectionDoneDate'],
+  ].forEach(([fieldId, key]) => {
+    document.getElementById(fieldId).addEventListener('input', e => {
+      _project.planning = _project.planning || {};
+      _project.planning[key] = e.target.value || null;
+    });
   });
   const search = document.getElementById('fAddressSearch');
   search.addEventListener('input', e => {
@@ -709,17 +817,31 @@ function wireBlokB() {
     _project.customer = _project.customer || {};
     _project.customer.email = e.target.value;
   });
+  [
+    ['fInspectionCompany', 'company'],
+    ['fInspectionReference', 'reference'],
+    ['fInspectionNotes', 'notes'],
+  ].forEach(([fieldId, key]) => {
+    document.getElementById(fieldId).addEventListener('input', e => {
+      _project.inspection = _project.inspection || {};
+      _project.inspection[key] = e.target.value;
+    });
+  });
   document.getElementById('fSituation').addEventListener('input', e => {
     _project.situation = e.target.value;
   });
   document.getElementById('fNotes').addEventListener('input', e => {
     _project.notes = e.target.value;
   });
-  ['fSituation', 'fNotes'].forEach(id => {
+  ['fSituation', 'fNotes', 'fInspectionNotes'].forEach(id => {
     const textarea = document.getElementById(id);
     attachSpeechToText(textarea, {
-      title: id === 'fSituation' ? 'Situatie dicteren in het Nederlands' : 'Notities dicteren in het Nederlands',
-      ariaLabel: id === 'fSituation' ? 'Situatie dicteren' : 'Notities dicteren',
+      title: id === 'fSituation' ? 'Situatie dicteren in het Nederlands'
+        : id === 'fInspectionNotes' ? 'Keuring opmerkingen dicteren in het Nederlands'
+          : 'Notities dicteren in het Nederlands',
+      ariaLabel: id === 'fSituation' ? 'Situatie dicteren'
+        : id === 'fInspectionNotes' ? 'Keuring opmerkingen dicteren'
+          : 'Notities dicteren',
     });
     textarea.addEventListener('speech-to-text-error', (e) => {
       showToast(e.detail && e.detail.message ? e.detail.message : 'Dicteren mislukt.', 'warning');
@@ -756,6 +878,9 @@ function _setCardCollapsed(blok, collapsed) {
 function sectionBlokC() {
   const el = _project.electrical || {};
   const c  = _project.cabinet    || {};
+  const technical = _project.technical || {};
+  const voltages = technical.voltageMeasurements || {};
+  const voltageFields = voltageFieldsForConnection(el.connectionType);
   const invs = (_project.solar && _project.solar.inverters) || [];
 
   const connTypes = ['', ...CONNECTION_TYPES].map(t =>
@@ -768,6 +893,18 @@ function sectionBlokC() {
       ${triStateHtml('fCab_' + key, value)}
     </div>
   `;
+
+  const voltageFieldsHtml = voltageFields.length > 0
+    ? voltageFields.map(([key, label]) => `
+      <div class="col-6 col-md-4">
+        <label for="fVoltage_${key}" class="form-label">${label}</label>
+        <div class="input-group">
+          <input type="number" id="fVoltage_${key}" data-voltage-field="${key}" class="form-control" min="0" step="0.1" value="${voltages[key] != null ? voltages[key] : ''}" />
+          <span class="input-group-text">V</span>
+        </div>
+      </div>
+    `).join('')
+    : '<div class="col-12"><p class="text-muted small mb-0">Kies eerst het type aansluiting om de juiste spanningsmetingen te tonen.</p></div>';
 
   const inverterCards = invs.map((inv, idx) => `
     <div class="card mb-2" data-inv-id="${inv.id}">
@@ -860,6 +997,35 @@ function sectionBlokC() {
             </div>
           </div>
 
+          <h6 class="text-muted mb-2">Metingen</h6>
+          <div class="row g-3 mb-3">
+            <div class="col-12 col-md-6">
+              <label class="form-label">Aardweerstand gemeten?</label>
+              ${triStateHtml('fEarthResistanceMeasured', technical.earthResistanceMeasured)}
+            </div>
+            <div class="col-6 col-md-3">
+              <label for="fEarthResistanceOhm" class="form-label">Aardweerstand</label>
+              <div class="input-group">
+                <input type="number" id="fEarthResistanceOhm" class="form-control" min="0" step="0.1" value="${technical.earthResistanceOhm != null ? technical.earthResistanceOhm : ''}" />
+                <span class="input-group-text">Ω</span>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <label for="fEarthResistanceMeasuredDate" class="form-label">Meetdatum</label>
+              <input type="date" id="fEarthResistanceMeasuredDate" class="form-control" value="${escapeHtml(technical.earthResistanceMeasuredDate || '')}" />
+            </div>
+          </div>
+
+          <h6 class="text-muted mb-2">Spanningsmetingen</h6>
+          <div class="row g-3 mb-3">
+            ${voltageFieldsHtml}
+          </div>
+
+          <div class="mb-3">
+            <label for="fTechnicalNotes" class="form-label">Technische opmerkingen</label>
+            <textarea id="fTechnicalNotes" class="form-control" rows="2" maxlength="1000">${escapeHtml(technical.technicalNotes || '')}</textarea>
+          </div>
+
           <h6 class="text-muted mb-2">Omvormer(s)</h6>
           <div id="peInverterList">${inverterCards}</div>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="fAddInverter"><i class="fa-solid fa-plus me-1"></i>Omvormer toevoegen</button>
@@ -874,6 +1040,8 @@ function wireBlokC() {
   document.getElementById('fConnectionType').addEventListener('change', e => {
     _project.electrical = _project.electrical || {};
     _project.electrical.connectionType = e.target.value || null;
+    pruneVoltageMeasurementsForConnection(_project.electrical.connectionType);
+    rerenderBlokC();
   });
   document.getElementById('fFuseRating').addEventListener('input', e => {
     _project.electrical = _project.electrical || {};
@@ -905,6 +1073,41 @@ function wireBlokC() {
       _project.cabinet = _project.cabinet || {};
       _project.cabinet.lineGroundChecked = e.target.value || null;
     });
+  });
+  document.querySelectorAll('input[name="fEarthResistanceMeasured"]').forEach(r => {
+    r.addEventListener('change', e => {
+      _project.technical = _project.technical || {};
+      _project.technical.earthResistanceMeasured = parseTriState(e.target.value);
+    });
+  });
+  document.getElementById('fEarthResistanceOhm').addEventListener('input', e => {
+    _project.technical = _project.technical || {};
+    _project.technical.earthResistanceOhm = readOptionalNumber(e.target.value);
+  });
+  document.getElementById('fEarthResistanceMeasuredDate').addEventListener('input', e => {
+    _project.technical = _project.technical || {};
+    _project.technical.earthResistanceMeasuredDate = e.target.value || null;
+  });
+  document.querySelectorAll('[data-voltage-field]').forEach(input => {
+    input.addEventListener('input', e => {
+      _project.technical = _project.technical || {};
+      _project.technical.voltageMeasurements = _project.technical.voltageMeasurements || {};
+      const key = e.target.getAttribute('data-voltage-field');
+      const value = readOptionalNumber(e.target.value);
+      if (value == null) delete _project.technical.voltageMeasurements[key];
+      else _project.technical.voltageMeasurements[key] = value;
+    });
+  });
+  document.getElementById('fTechnicalNotes').addEventListener('input', e => {
+    _project.technical = _project.technical || {};
+    _project.technical.technicalNotes = e.target.value;
+  });
+  attachSpeechToText(document.getElementById('fTechnicalNotes'), {
+    title: 'Technische opmerkingen dicteren in het Nederlands',
+    ariaLabel: 'Technische opmerkingen dicteren',
+  });
+  document.getElementById('fTechnicalNotes').addEventListener('speech-to-text-error', (e) => {
+    showToast(e.detail && e.detail.message ? e.detail.message : 'Dicteren mislukt.', 'warning');
   });
 
   // Omvormer-lijst — per-entry input handlers
@@ -1314,10 +1517,13 @@ function collectFromForm() {
     customer:      _project.customer,
     situation:     _project.situation,
     notes:         _project.notes,
+    planning:      _project.planning,
     site:          _project.site,
     electrical:    _project.electrical,
     cabinet:       _project.cabinet,
     solar:         _project.solar,
+    technical:     _project.technical,
+    inspection:    _project.inspection,
     supplier:      _project.supplier,
     calcDefaults:  _project.calcDefaults,
     serialNumbers: _project.serialNumbers || [],

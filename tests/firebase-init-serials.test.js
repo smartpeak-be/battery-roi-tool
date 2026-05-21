@@ -18,6 +18,27 @@ function loadHelpers() {
 }
 
 describe('mergeProjectMetadata serial defaults', () => {
+  it('adds planning, technical, and inspection defaults for legacy projects', () => {
+    const { mergeProjectMetadata } = loadHelpers();
+    const merged = mergeProjectMetadata({});
+
+    expect(merged.planning).toMatchObject({
+      visitPlannedDate: null,
+      installationPlannedDate: null,
+      inspectionPlannedDate: null,
+    });
+    expect(merged.technical).toMatchObject({
+      earthResistanceMeasured: null,
+      earthResistanceOhm: null,
+      voltageMeasurements: {},
+    });
+    expect(merged.inspection).toMatchObject({
+      company: null,
+      reference: null,
+      notes: null,
+    });
+  });
+
   it('adds category=null and source=manual to legacy entries lacking those fields', () => {
     const { mergeProjectMetadata } = loadHelpers();
     const project = {
@@ -46,6 +67,19 @@ describe('mergeProjectMetadata serial defaults', () => {
     const { mergeProjectMetadata } = loadHelpers();
     const merged = mergeProjectMetadata({});
     expect(merged.serialNumbers).toEqual([]);
+  });
+});
+
+describe('ground fault measurement status', () => {
+  it('treats exact voltage measurements as phase-ground measurement evidence', () => {
+    const { groundFaultStatus } = loadHelpers();
+    const project = {
+      lastCalcRun: { inputs: { selectedConfigTypes: ['ZSF_TEST'] } },
+      cabinet: { lineGroundChecked: null },
+      technical: { voltageMeasurements: { l1Pe: 12 } },
+    };
+
+    expect(groundFaultStatus(project)).toBe(false);
   });
 });
 
