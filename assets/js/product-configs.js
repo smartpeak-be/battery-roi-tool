@@ -75,6 +75,28 @@ export function quoteGroupSubtotalExVat(group, productsById) {
   return Math.max(0, gross - Math.max(0, Number(group && group.discountExVat) || 0));
 }
 
+export function productPurchaseCostExVat(product, qty = 1) {
+  const count = Math.max(0, qty || 0);
+  const explicitCost = Number(product?.specs?.purchaseCostExVat);
+  if (Number.isFinite(explicitCost) && explicitCost > 0) return explicitCost * count;
+  return Math.max(0, Number(product?.purchasePrice) || 0) * count;
+}
+
+export function quoteGroupsProfitExVat(groups, productsById) {
+  return (groups || []).reduce((sum, group) => {
+    const productProfit = normalizeConfigItems(group && group.items).reduce((itemSum, item) => {
+      const product = productsById && productsById[item.productId];
+      if (!product) return itemSum;
+      const revenue = totalProductPrice(product, item.qty);
+      const cost = productPurchaseCostExVat(product, item.qty);
+      return itemSum + Math.max(0, revenue - cost);
+    }, 0);
+    return sum + productProfit
+      + Math.max(0, Number(group && group.extraExVat) || 0)
+      - Math.max(0, Number(group && group.discountExVat) || 0);
+  }, 0);
+}
+
 export function addAmountsToVatGroups(groups, amounts, fallbackDescription = '') {
   const result = (groups || []).map(group => ({
     ...group,

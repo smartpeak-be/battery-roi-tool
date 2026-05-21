@@ -1,4 +1,4 @@
-import { sellPrice, totalProductPrice, unitPrice } from '../product-pricing.js';
+import { sellPrice, unitPrice } from '../product-pricing.js';
 import { specsForCategory } from '../product-specs.js';
 import {
   bebatTotalInclVat,
@@ -14,6 +14,7 @@ import {
   MISC_CATEGORY_SLUG,
   productLabel,
   productMap,
+  quoteGroupsProfitExVat,
   quoteGroupSubtotalExVat,
 } from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
@@ -1733,30 +1734,6 @@ function groupedQuoteIncl(groups, productsById) {
   }, 0);
 }
 
-function productPurchaseCostExVat(product, qty, categoriesById) {
-  const cat = product && categoriesById && categoriesById[product.categoryId];
-  const isService = cat && cat.slug === 'service';
-  const explicitCost = product?.specs && Number(product.specs.purchaseCostExVat);
-  if (isService && (!explicitCost || explicitCost <= 0)) return 0;
-  if (isService) return explicitCost * Math.max(0, qty || 0);
-  return Math.max(0, Number(product?.purchasePrice) || 0) * Math.max(0, qty || 0);
-}
-
-function groupedQuoteProfitExVat(groups, productsById, categoriesById) {
-  return groups.reduce((sum, group) => {
-    const productProfit = group.items.reduce((itemSum, item) => {
-      const product = productsById[item.productId];
-      if (!product) return itemSum;
-      const revenue = totalProductPrice(product, item.qty);
-      const cost = productPurchaseCostExVat(product, item.qty, categoriesById);
-      return itemSum + Math.max(0, revenue - cost);
-    }, 0);
-    return sum + productProfit
-      + Math.max(0, Number(group.extraExVat) || 0)
-      - Math.max(0, Number(group.discountExVat) || 0);
-  }, 0);
-}
-
 function buildQuoteComputation() {
   const cfg = _allConfigs.find(c => c.id === document.getElementById('quoteConfig')?.value);
   if (!cfg) return null;
@@ -1800,9 +1777,9 @@ function buildQuoteComputation() {
   const groupedIncl = groupedQuoteIncl(mainGroups, productsById)
     + groupedQuoteIncl(materialGroups, productsById)
     + groupedQuoteIncl(miscGroups, productsById);
-  const groupedProfit = groupedQuoteProfitExVat(mainGroups, productsById, categoriesById)
-    + groupedQuoteProfitExVat(materialGroups, productsById, categoriesById)
-    + groupedQuoteProfitExVat(miscGroups, productsById, categoriesById);
+  const groupedProfit = quoteGroupsProfitExVat(mainGroups, productsById)
+    + quoteGroupsProfitExVat(materialGroups, productsById)
+    + quoteGroupsProfitExVat(miscGroups, productsById);
   const manualProfit = extraLines.reduce((sum, line) => sum + line.exVat, 0);
   const totalProfit = groupedProfit + manualProfit;
   const totalIncl = groupedIncl + bebatIncl + extraIncl;
