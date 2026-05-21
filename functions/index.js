@@ -6,6 +6,7 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 if (!admin.apps.length) admin.initializeApp();
 
 const billitApiKey = defineSecret('BILLIT_API_KEY');
+const BILLIT_BASE_URL = 'https://api.sandbox.billit.be';
 const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'ledsrepair@gmail.com']);
 
 // Vision client — lazy singleton. Firebase CLI loads this module during deploy
@@ -417,14 +418,19 @@ function sanitizeBillitOrder(input) {
   };
 }
 
-async function postBillitOrder(order, apiKey, wrapArray = false, authScheme = 'api-key') {
-  const response = await fetch('https://api.billit.be/v1/orders', {
+async function postBillitOrder(order, apiKey, wrapArray = false, authMode = 'api-key-header') {
+  const headers = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+  if (authMode === 'api-key-header') {
+    headers['api-key'] = apiKey;
+  } else {
+    headers.Authorization = `${authMode} ${apiKey}`;
+  }
+  const response = await fetch(`${BILLIT_BASE_URL}/v1/orders`, {
     method: 'POST',
-    headers: {
-      Authorization: `${authScheme} ${apiKey}`,
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(wrapArray ? [order] : order),
   });
   const text = await response.text();
@@ -434,12 +440,18 @@ async function postBillitOrder(order, apiKey, wrapArray = false, authScheme = 'a
 }
 
 async function createBillitOrder(order, apiKey) {
-  let billit = await postBillitOrder(order, apiKey, false, 'api-key');
+  let billit = await postBillitOrder(order, apiKey, false, 'api-key-header');
+  if (!billit.ok && [401, 403].includes(billit.status)) {
+    billit = await postBillitOrder(order, apiKey, false, 'api-key');
+  }
   if (!billit.ok && [401, 403].includes(billit.status)) {
     billit = await postBillitOrder(order, apiKey, false, 'Bearer');
   }
   if (!billit.ok && billit.status === 400) {
-    billit = await postBillitOrder(order, apiKey, true, 'api-key');
+    billit = await postBillitOrder(order, apiKey, true, 'api-key-header');
+    if (!billit.ok && [401, 403].includes(billit.status)) {
+      billit = await postBillitOrder(order, apiKey, true, 'api-key');
+    }
     if (!billit.ok && [401, 403].includes(billit.status)) {
       billit = await postBillitOrder(order, apiKey, true, 'Bearer');
     }
@@ -462,7 +474,7 @@ export const createBillitOffer = functions.https.onRequest(
 
     try {
       await requireWhitelistedUser(req);
-      const apiKey = billitApiKey.value();
+      const apiKey = billitApiKey.value().trim();
       if (!apiKey) throw new Error('BILLIT_API_KEY secret is not configured');
       const order = sanitizeBillitOrder(req.body && req.body.order);
       const billit = await createBillitOrder(order, apiKey);
