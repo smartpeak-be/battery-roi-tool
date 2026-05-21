@@ -56,12 +56,6 @@ function openDictation(textarea, opts, setRecording) {
     heardSpeech: false,
     keepAliveUntil: 0,
     restartTimer: null,
-    audioContext: null,
-    analyser: null,
-    micStream: null,
-    waveRaf: null,
-    transcriptWatchdog: null,
-    didDisableMeterForRecognition: false,
   };
   activeSession = state;
   resetModal(modal, opts);
@@ -124,12 +118,6 @@ function configureRecognition(state) {
     modal.querySelector('[data-speech-status]').textContent = state.heardSpeech
       ? 'Verder aan het luisteren...'
       : 'Browser luistert. Begin te spreken...';
-    if (!state.didDisableMeterForRecognition) {
-      setTimeout(() => {
-        if (activeSession === state && state.isListening && !state.micStream) startVolumeMeter(state);
-      }, 350);
-    }
-    scheduleTranscriptWatchdog(state);
   });
 
   recognition.addEventListener('speechstart', () => {
@@ -139,7 +127,6 @@ function configureRecognition(state) {
   });
 
   recognition.addEventListener('result', (event) => {
-    clearTranscriptWatchdog(state);
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
@@ -159,7 +146,6 @@ function configureRecognition(state) {
 
   recognition.addEventListener('end', () => {
     if (activeSession !== state) return;
-    clearTranscriptWatchdog(state);
     state.isListening = false;
     state.setRecording(false);
     modal.classList.remove('recording');
@@ -180,14 +166,6 @@ function configureRecognition(state) {
 
   recognition.addEventListener('error', (event) => {
     if (activeSession !== state) return;
-    clearTranscriptWatchdog(state);
-    if ((event.error === 'audio-capture' || event.error === 'no-speech') && state.micStream && !state.heardSpeech) {
-      state.didDisableMeterForRecognition = true;
-      stopVolumeMeter(state);
-      modal.querySelector('[data-speech-status]').textContent = 'Tekstherkenning krijgt voorrang op de volume-indicator...';
-      scheduleTranscriptWatchdog(state);
-      return;
-    }
     if (event.error === 'no-speech' && state.heardSpeech && Date.now() < state.keepAliveUntil) return;
     const message = speechErrorMessage(event.error);
     modal.querySelector('[data-speech-status]').textContent = message;
@@ -259,7 +237,6 @@ function resetModal(modal, opts) {
   modal.querySelector('[data-speech-status]').textContent = 'Luisteren naar Nederlands...';
   modal.querySelector('[data-speech-preview]').textContent = 'Begin te spreken...';
   modal.querySelector('[data-speech-resume]').classList.add('d-none');
-  setWaveLevel(0);
 }
 
 function renderModalTranscript(state) {
@@ -276,7 +253,6 @@ function closeDictation({ append }) {
   session.isClosing = true;
   activeSession = null;
   clearRestartTimer(session);
-  clearTranscriptWatchdog(session);
   try {
     if (session.recognition) session.recognition.stop();
   } catch (_) {
@@ -284,105 +260,16 @@ function closeDictation({ append }) {
   }
   session.setRecording(false);
   if (modalEl) modalEl.classList.remove('open', 'recording');
-  stopVolumeMeter(session);
 
   if (append) {
     appendTranscript(session.textarea, joinSpeechText(session.finalText, session.interimText));
   }
 }
 
-async function startVolumeMeter(state) {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
-  try {
-    state.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) return;
-    state.audioContext = new AudioContextCtor();
-    const source = state.audioContext.createMediaStreamSource(state.micStream);
-    state.analyser = state.audioContext.createAnalyser();
-    state.analyser.fftSize = 256;
-    source.connect(state.analyser);
-    drawWaveFromVolume(state);
-  } catch (err) {
-    state.textarea.dispatchEvent(new CustomEvent('speech-to-text-error', {
-      bubbles: true,
-      detail: {
-        error: err && err.name ? err.name : 'audio-meter',
-        message: 'Volume-indicator kon de microfoon niet uitlezen.',
-      },
-    }));
-  }
-}
-
-function drawWaveFromVolume(state) {
-  if (!state.analyser || activeSession !== state) return;
-  const data = new Uint8Array(state.analyser.fftSize);
-  const tick = () => {
-    if (!state.analyser || activeSession !== state) return;
-    state.analyser.getByteTimeDomainData(data);
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      const centered = (data[i] - 128) / 128;
-      sum += centered * centered;
-    }
-    const rms = Math.sqrt(sum / data.length);
-    setWaveLevel(Math.min(1, rms * 7));
-    state.waveRaf = requestAnimationFrame(tick);
-  };
-  tick();
-}
-
-function setWaveLevel(level) {
-  if (!modalEl) return;
-  const bars = modalEl.querySelectorAll('.sp-speech-wave span');
-  const clamped = Math.max(0, Math.min(1, Number(level) || 0));
-  bars.forEach((bar, idx) => {
-    const phase = Math.sin((Date.now() / 110) + idx * 0.9) * 0.18 + 0.82;
-    const height = 8 + Math.round(clamped * phase * 58);
-    bar.style.height = `${height}px`;
-    bar.style.opacity = String(0.28 + clamped * 0.7);
-  });
-}
-
-function stopVolumeMeter(state) {
-  if (state.waveRaf) cancelAnimationFrame(state.waveRaf);
-  state.waveRaf = null;
-  if (state.micStream) {
-    state.micStream.getTracks().forEach(track => track.stop());
-  }
-  state.micStream = null;
-  if (state.audioContext) {
-    state.audioContext.close().catch(() => {
-      // Closing can reject if the context is already closed by the browser.
-    });
-  }
-  state.audioContext = null;
-  state.analyser = null;
-  setWaveLevel(0);
-}
-
 function clearRestartTimer(state) {
   if (!state.restartTimer) return;
   clearTimeout(state.restartTimer);
   state.restartTimer = null;
-}
-
-function scheduleTranscriptWatchdog(state) {
-  clearTranscriptWatchdog(state);
-  state.transcriptWatchdog = setTimeout(() => {
-    if (activeSession !== state || !state.isListening || state.heardSpeech) return;
-    if (!state.micStream) return;
-    state.didDisableMeterForRecognition = true;
-    stopVolumeMeter(state);
-    ensureModal().querySelector('[data-speech-status]').textContent =
-      'Geen tekst ontvangen. Volume-indicator uitgezet zodat de browser kan dicteren.';
-  }, 6000);
-}
-
-function clearTranscriptWatchdog(state) {
-  if (!state.transcriptWatchdog) return;
-  clearTimeout(state.transcriptWatchdog);
-  state.transcriptWatchdog = null;
 }
 
 function joinSpeechText(...parts) {
