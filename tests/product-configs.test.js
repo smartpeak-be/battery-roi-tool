@@ -9,6 +9,8 @@ import {
   generatedConfigDescription,
   productMap,
   categoryMap,
+  addAmountsToVatGroups,
+  quoteGroupSubtotalExVat,
 } from '../assets/js/product-configs.js';
 
 const categories = [
@@ -109,6 +111,39 @@ describe('product config helpers', () => {
       { productId: 'ab3000l', qty: 2 },
       { productId: 'install', qty: 1 },
     ], pMap, cMap)).toBeCloseTo(1200 + 1080 + 700 + 650 + 250);
+  });
+
+  it('adds manual installation amounts to an existing VAT group without duplicating items', () => {
+    const groups = addAmountsToVatGroups([
+      { vat: 21, items: [{ productId: 'acplus', qty: 1 }, { productId: 'install', qty: 1 }] },
+    ], [
+      { kind: 'installation_extra', description: 'Extra installatiekost', exVat: 150, vat: 21 },
+    ]);
+
+    expect(groups).toEqual([
+      {
+        vat: 21,
+        items: [{ productId: 'acplus', qty: 1 }, { productId: 'install', qty: 1 }],
+        extraExVat: 150,
+      },
+    ]);
+    expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBeCloseTo(1200 + 250 + 150);
+  });
+
+  it('creates a VAT group for manual installation amounts when no matching group exists', () => {
+    const groups = addAmountsToVatGroups([], [
+      { kind: 'installation_extra', description: 'Extra installatiekost', exVat: 90, vat: 6 },
+    ]);
+
+    expect(groups).toEqual([
+      {
+        vat: 6,
+        items: [],
+        description: 'Extra installatiekost',
+        extraExVat: 90,
+      },
+    ]);
+    expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBeCloseTo(90);
   });
 
   it('splits material items from the main quote line', () => {

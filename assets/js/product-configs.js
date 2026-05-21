@@ -69,6 +69,38 @@ export function configSubtotalExVat(items, productsById) {
   }, 0);
 }
 
+export function quoteGroupSubtotalExVat(group, productsById) {
+  return configSubtotalExVat(group && group.items, productsById)
+    + Math.max(0, Number(group && group.extraExVat) || 0);
+}
+
+export function addAmountsToVatGroups(groups, amounts, fallbackDescription = '') {
+  const result = (groups || []).map(group => ({
+    ...group,
+    items: normalizeConfigItems(group.items),
+    extraExVat: Math.max(0, Number(group.extraExVat) || 0),
+  }));
+
+  (amounts || []).forEach(amount => {
+    const exVat = Math.max(0, Number(amount && amount.exVat) || 0);
+    if (exVat <= 0) return;
+    const vat = Number(amount.vat) || 21;
+    let group = result.find(g => Number(g.vat) === vat);
+    if (!group) {
+      group = {
+        vat,
+        items: [],
+        description: amount.description || fallbackDescription,
+        extraExVat: 0,
+      };
+      result.push(group);
+    }
+    group.extraExVat = Math.max(0, Number(group.extraExVat) || 0) + exVat;
+  });
+
+  return result.filter(group => group.items.length || group.extraExVat > 0);
+}
+
 export function configItemsForCategorySlug(items, productsById, categoriesById = {}, slug) {
   return normalizeConfigItems(items).filter(item => {
     const product = productsById && productsById[item.productId];

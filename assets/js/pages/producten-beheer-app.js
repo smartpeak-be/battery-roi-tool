@@ -8,10 +8,12 @@ import {
   configItemsForCategorySlug,
   configSubtotalExVat,
   generatedConfigDescription,
+  addAmountsToVatGroups,
   MATERIAL_CATEGORY_SLUG,
   MISC_CATEGORY_SLUG,
   productLabel,
   productMap,
+  quoteGroupSubtotalExVat,
 } from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
@@ -1494,7 +1496,8 @@ function wireQuoteModal() {
     updateQuotePreview();
   });
   document.getElementById('btnAddQuoteManualLine')?.addEventListener('click', () => {
-    document.getElementById('quoteManualLines').insertAdjacentHTML('beforeend', quoteManualLineRowHtml());
+    const vat = parseFloat(document.getElementById('quoteVat')?.value) || 21;
+    document.getElementById('quoteManualLines').insertAdjacentHTML('beforeend', quoteManualLineRowHtml({ vat }));
     wireQuoteDynamicRows();
     updateQuotePreview();
   });
@@ -1526,9 +1529,17 @@ function quoteExtraProductRowHtml(row = {}) {
 }
 
 function quoteManualLineRowHtml(row = {}) {
+  const kind = row.kind || 'line';
   return `
     <div class="row g-2 align-items-end mb-2 quote-manual-line-row">
-      <div class="col-md-6">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Type</label>
+        <select class="form-select quote-manual-kind">
+          <option value="line" ${kind === 'line' ? 'selected' : ''}>Aparte lijn</option>
+          <option value="installation_extra" ${kind === 'installation_extra' ? 'selected' : ''}>Extra installatiekost</option>
+        </select>
+      </div>
+      <div class="col-md-4">
         <label class="form-label small mb-1">Omschrijving</label>
         <input type="text" class="form-control quote-manual-desc" value="${escapeAttr(row.description || '')}" placeholder="Omschrijving">
       </div>
@@ -1579,11 +1590,13 @@ function readQuoteExtraProductItems() {
 
 function readQuoteManualLines() {
   return Array.from(document.querySelectorAll('#quoteManualLines .quote-manual-line-row')).map(row => {
+    const kind = row.querySelector('.quote-manual-kind').value || 'line';
     const description = row.querySelector('.quote-manual-desc').value.trim();
     const exVat = parseFloat(row.querySelector('.quote-manual-price').value) || 0;
     const vat = parseFloat(row.querySelector('.quote-manual-vat').value) || 21;
-    if (!description || exVat <= 0) return null;
-    return { description, exVat, vat };
+    if (exVat <= 0) return null;
+    if (kind === 'line' && !description) return null;
+    return { kind, description: description || 'Extra installatiekost', exVat, vat };
   }).filter(Boolean);
 }
 
@@ -1633,8 +1646,10 @@ function categoryItemsByVat(baseItems, extraItems, productsById, categoriesById,
 
 function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '') {
   return groups.map(group => {
-    const exVat = configSubtotalExVat(group.items, productsById);
-    const description = generatedConfigDescription(group.items, productsById, categoriesById);
+    const exVat = quoteGroupSubtotalExVat(group, productsById);
+    const description = generatedConfigDescription(group.items, productsById, categoriesById)
+      || group.description
+      || 'Extra installatiekost';
     return quoteLineHtml({
       description: `${prefix}${description}`,
       exVat,
@@ -1645,7 +1660,7 @@ function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '')
 
 function groupedQuoteIncl(groups, productsById) {
   return groups.reduce((sum, group) => {
-    const exVat = configSubtotalExVat(group.items, productsById);
+    const exVat = quoteGroupSubtotalExVat(group, productsById);
     return sum + exVat * (1 + group.vat / 100);
   }, 0);
 }
@@ -1661,13 +1676,14 @@ function productPurchaseCostExVat(product, qty, categoriesById) {
 
 function groupedQuoteProfitExVat(groups, productsById, categoriesById) {
   return groups.reduce((sum, group) => {
-    return sum + group.items.reduce((itemSum, item) => {
+    const productProfit = group.items.reduce((itemSum, item) => {
       const product = productsById[item.productId];
       if (!product) return itemSum;
       const revenue = totalProductPrice(product, item.qty);
       const cost = productPurchaseCostExVat(product, item.qty, categoriesById);
       return itemSum + Math.max(0, revenue - cost);
     }, 0);
+    return sum + productProfit + Math.max(0, Number(group.extraExVat) || 0);
   }, 0);
 }
 
@@ -1682,7 +1698,14 @@ function updateQuotePreview() {
   const { productsById, categoriesById } = _maps();
   const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
   const extraProductItems = readQuoteExtraProductItems();
-  const mainGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, null, vat);
+  const manualLines = readQuoteManualLines();
+  const installationExtras = manualLines.filter(line => line.kind === 'installation_extra');
+  const extraLines = manualLines.filter(line => line.kind !== 'installation_extra');
+  const mainGroups = addAmountsToVatGroups(
+    categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, null, vat),
+    installationExtras,
+    'Extra installatiekost',
+  );
   const materialGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MATERIAL_CATEGORY_SLUG, vat);
   const miscGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MISC_CATEGORY_SLUG, vat);
   const kg = configBatteryWeightKg([...cfg.items, ...extraProductItems], productsById, categoriesById);
@@ -1693,8 +1716,6 @@ function updateQuotePreview() {
     : quoteLineHtml({ description: cfg.name || 'Configuratie', exVat: 0, vat });
   const materialRows = quoteGroupedRowsHtml(materialGroups, productsById, categoriesById, 'Materiaal: ');
   const miscRows = quoteGroupedRowsHtml(miscGroups, productsById, categoriesById, 'Diversen: ');
-  const manualLines = readQuoteManualLines();
-  const extraLines = manualLines;
   const extraRows = extraLines.map(quoteLineHtml).join('');
   const extraIncl = extraLines.reduce((sum, line) => sum + line.exVat * (1 + line.vat / 100), 0);
   const groupedIncl = groupedQuoteIncl(mainGroups, productsById)
