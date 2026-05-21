@@ -1,5 +1,6 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
+import { attachSpeechToText } from '../speech-to-text.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
@@ -700,6 +701,15 @@ function renderDrawer(project) {
   body.innerHTML = sections.join('');
 
   renderDrawerSerials(project);
+
+  const commentInput = document.getElementById('drawerCommentInput');
+  attachSpeechToText(commentInput, {
+    title: 'Opmerking dicteren in het Nederlands',
+    ariaLabel: 'Opmerking dicteren',
+  });
+  commentInput.addEventListener('speech-to-text-error', (e) => {
+    showToast(e.detail && e.detail.message ? e.detail.message : 'Dicteren mislukt.', 'warning');
+  });
 
   // Wire delete button (soft-delete from drawer)
   const delBtn = document.getElementById('drawerDeleteBtn');

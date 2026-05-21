@@ -1,5 +1,6 @@
 import { escapeHtml, showToast, showState, showSpinner, hideSpinner, showConfirm } from '../shared-helpers.js';
 import { extractCsvForStorage } from '../csv.js';
+import { attachSpeechToText } from '../speech-to-text.js';
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 const URL_PARAMS = new URLSearchParams(window.location.search);
@@ -460,11 +461,15 @@ function sectionBlokB() {
             </div>
             <div class="col-12">
               <label for="fSituation" class="form-label">Situatie</label>
-              <textarea id="fSituation" class="form-control" rows="2" maxlength="500">${escapeHtml(_project.situation || '')}</textarea>
+              <div class="input-group">
+                <textarea id="fSituation" class="form-control" rows="2" maxlength="500">${escapeHtml(_project.situation || '')}</textarea>
+              </div>
             </div>
             <div class="col-12">
               <label for="fNotes" class="form-label">Notities</label>
-              <textarea id="fNotes" class="form-control" rows="3" maxlength="2000">${escapeHtml(_project.notes || '')}</textarea>
+              <div class="input-group">
+                <textarea id="fNotes" class="form-control" rows="3" maxlength="2000">${escapeHtml(_project.notes || '')}</textarea>
+              </div>
             </div>
           </div>
         </div>
@@ -494,6 +499,16 @@ function wireBlokB() {
   });
   document.getElementById('fNotes').addEventListener('input', e => {
     _project.notes = e.target.value;
+  });
+  ['fSituation', 'fNotes'].forEach(id => {
+    const textarea = document.getElementById(id);
+    attachSpeechToText(textarea, {
+      title: id === 'fSituation' ? 'Situatie dicteren in het Nederlands' : 'Notities dicteren in het Nederlands',
+      ariaLabel: id === 'fSituation' ? 'Situatie dicteren' : 'Notities dicteren',
+    });
+    textarea.addEventListener('speech-to-text-error', (e) => {
+      showToast(e.detail && e.detail.message ? e.detail.message : 'Dicteren mislukt.', 'warning');
+    });
   });
 
   // Collapse-toggle: restore persisted state + wire persistence on click.
