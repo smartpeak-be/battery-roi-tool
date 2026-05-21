@@ -368,8 +368,14 @@
   overflow: hidden;
   color: var(--bs-body-color);
   background: #fff;
+  border: 2px solid transparent;
   border-radius: var(--bs-border-radius-lg);
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.sp-speech-modal.recording .sp-speech-dialog {
+  border-color: #16a34a;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28), 0 0 0 4px rgba(22, 163, 74, 0.16);
 }
 .sp-speech-header {
   display: flex;
@@ -378,6 +384,28 @@
   gap: 12px;
   padding: 18px 20px 12px;
   border-bottom: 1px solid var(--bs-border-color);
+}
+.sp-speech-header h5 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sp-speech-header h5::before {
+  content: "";
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.sp-speech-modal.recording .sp-speech-header h5::before {
+  background: #16a34a;
+  box-shadow: 0 0 0 5px rgba(22, 163, 74, 0.16);
+  animation: sp-speech-listening-pulse 1.2s ease-in-out infinite;
+}
+.sp-speech-modal.recording [data-speech-status] {
+  color: #15803d !important;
+  font-weight: 600;
 }
 .sp-speech-body {
   padding: 22px 20px;
@@ -418,6 +446,10 @@
   padding: 14px 20px;
   background: #f8fafc;
   border-top: 1px solid var(--bs-border-color);
+}
+@keyframes sp-speech-listening-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.65; }
 }
 /* ── Readonly mode (share-link viewers) ──────────────────────────────── */
 /* Only referenced by index.html but lives here so all backoffice files   */

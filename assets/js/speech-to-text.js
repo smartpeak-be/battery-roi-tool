@@ -60,12 +60,13 @@ function openDictation(textarea, opts, setRecording) {
     analyser: null,
     micStream: null,
     waveRaf: null,
+    transcriptWatchdog: null,
+    didDisableMeterForRecognition: false,
   };
   activeSession = state;
   resetModal(modal, opts);
   modal.classList.add('open');
   modal.querySelector('[data-speech-cancel]').focus();
-  startVolumeMeter(state);
   startListening(state);
 }
 
@@ -118,7 +119,27 @@ function configureRecognition(state) {
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
 
+  recognition.addEventListener('start', () => {
+    if (activeSession !== state) return;
+    modal.querySelector('[data-speech-status]').textContent = state.heardSpeech
+      ? 'Verder aan het luisteren...'
+      : 'Browser luistert. Begin te spreken...';
+    if (!state.didDisableMeterForRecognition) {
+      setTimeout(() => {
+        if (activeSession === state && state.isListening && !state.micStream) startVolumeMeter(state);
+      }, 350);
+    }
+    scheduleTranscriptWatchdog(state);
+  });
+
+  recognition.addEventListener('speechstart', () => {
+    if (activeSession !== state) return;
+    modal.querySelector('[data-speech-status]').textContent = 'Spraak gedetecteerd...';
+    state.keepAliveUntil = Date.now() + 10000;
+  });
+
   recognition.addEventListener('result', (event) => {
+    clearTranscriptWatchdog(state);
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
@@ -138,6 +159,7 @@ function configureRecognition(state) {
 
   recognition.addEventListener('end', () => {
     if (activeSession !== state) return;
+    clearTranscriptWatchdog(state);
     state.isListening = false;
     state.setRecording(false);
     modal.classList.remove('recording');
@@ -158,6 +180,14 @@ function configureRecognition(state) {
 
   recognition.addEventListener('error', (event) => {
     if (activeSession !== state) return;
+    clearTranscriptWatchdog(state);
+    if ((event.error === 'audio-capture' || event.error === 'no-speech') && state.micStream && !state.heardSpeech) {
+      state.didDisableMeterForRecognition = true;
+      stopVolumeMeter(state);
+      modal.querySelector('[data-speech-status]').textContent = 'Tekstherkenning krijgt voorrang op de volume-indicator...';
+      scheduleTranscriptWatchdog(state);
+      return;
+    }
     if (event.error === 'no-speech' && state.heardSpeech && Date.now() < state.keepAliveUntil) return;
     const message = speechErrorMessage(event.error);
     modal.querySelector('[data-speech-status]').textContent = message;
@@ -246,6 +276,7 @@ function closeDictation({ append }) {
   session.isClosing = true;
   activeSession = null;
   clearRestartTimer(session);
+  clearTranscriptWatchdog(session);
   try {
     if (session.recognition) session.recognition.stop();
   } catch (_) {
@@ -334,6 +365,24 @@ function clearRestartTimer(state) {
   if (!state.restartTimer) return;
   clearTimeout(state.restartTimer);
   state.restartTimer = null;
+}
+
+function scheduleTranscriptWatchdog(state) {
+  clearTranscriptWatchdog(state);
+  state.transcriptWatchdog = setTimeout(() => {
+    if (activeSession !== state || !state.isListening || state.heardSpeech) return;
+    if (!state.micStream) return;
+    state.didDisableMeterForRecognition = true;
+    stopVolumeMeter(state);
+    ensureModal().querySelector('[data-speech-status]').textContent =
+      'Geen tekst ontvangen. Volume-indicator uitgezet zodat de browser kan dicteren.';
+  }, 6000);
+}
+
+function clearTranscriptWatchdog(state) {
+  if (!state.transcriptWatchdog) return;
+  clearTimeout(state.transcriptWatchdog);
+  state.transcriptWatchdog = null;
 }
 
 function joinSpeechText(...parts) {
