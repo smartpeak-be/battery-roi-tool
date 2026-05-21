@@ -86,6 +86,7 @@ async function loadSettings() {
     if (s.defaultInstallCost != null) document.getElementById('settingsInstallCost').value = s.defaultInstallCost;
     if (s.defaultInspectCost != null) document.getElementById('settingsInspectCost').value = s.defaultInspectCost;
     if (s.bebatPricePerKg != null) document.getElementById('settingsBebatPerKg').value = s.bebatPricePerKg;
+    if (s.addressAutocompleteGoogleMapsApiKey != null) document.getElementById('settingsGoogleMapsApiKey').value = s.addressAutocompleteGoogleMapsApiKey;
     markLegacyServiceSettings();
   } catch (e) {
     console.warn('loadSettings failed:', e);
@@ -115,6 +116,7 @@ function wireSaveSettings() {
         defaultDiscountValue:   parseFloat(document.getElementById('settingsDiscountValue').value) || 0,
         defaultDiscountFromUnit: parseInt(document.getElementById('settingsDiscountFromUnit').value) || 2,
         bebatPricePerKg:        parseFloat(document.getElementById('settingsBebatPerKg').value) || 0,
+        addressAutocompleteGoogleMapsApiKey: document.getElementById('settingsGoogleMapsApiKey').value.trim(),
       });
       showToast('Instellingen opgeslagen', 'success');
     } catch (e) {
@@ -1879,23 +1881,10 @@ function isoDatePlusDays(days) {
   return d.toISOString().slice(0, 10);
 }
 
-function parseBelgianAddress(address) {
-  const raw = String(address || '').trim();
-  if (!raw) return { street: '', zipcode: '', city: '' };
-  const zipMatch = raw.match(/\b(\d{4})\b\s*([^,]*)$/);
-  if (!zipMatch) return { street: raw, zipcode: '', city: '' };
-  const street = raw.slice(0, zipMatch.index).replace(/[,\s]+$/, '').trim();
-  return {
-    street: street || raw,
-    zipcode: zipMatch[1],
-    city: (zipMatch[2] || '').replace(/^[-,\s]+/, '').trim(),
-  };
-}
-
 function projectBillitCustomer(project) {
   const merged = typeof mergeProjectMetadata === 'function' && project ? mergeProjectMetadata(project) : project;
   const customer = merged && merged.customer ? merged.customer : {};
-  const address = parseBelgianAddress(customer.address);
+  const address = billitAddressForCustomer(customer);
   return {
     Name: (project && (project.customerName || project.projectName)) || '',
     Street: address.street,

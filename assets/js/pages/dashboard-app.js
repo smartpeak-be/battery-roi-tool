@@ -622,7 +622,19 @@ function renderDrawer(project) {
 
   // Contact
   const contactLines = [];
-  if (m.customer.address) contactLines.push(`<div class="mb-1 sp-pre-wrap">📍 ${escapeHtml(m.customer.address)}</div>`);
+  const addressText = formatCustomerAddress(m.customer);
+  if (addressText) {
+    const mapsUrl = googleMapsUrlForCustomerAddress(m.customer);
+    const wazeUrl = wazeUrlForCustomerAddress(m.customer);
+    const safeMapsUrl = mapsUrl && /^https:\/\//.test(mapsUrl) ? mapsUrl : '';
+    const safeWazeUrl = wazeUrl && /^https:\/\//.test(wazeUrl) ? wazeUrl : '';
+    contactLines.push(`
+      <div class="mb-1 sp-pre-wrap">
+        <i class="fa-solid fa-location-dot text-primary me-1" aria-hidden="true"></i>
+        ${safeMapsUrl ? `<a href="${escapeHtml(safeMapsUrl)}" target="_blank" rel="noopener">${escapeHtml(addressText)}</a>` : escapeHtml(addressText)}
+        ${safeWazeUrl ? `<a href="${escapeHtml(safeWazeUrl)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary ms-2 py-0">Waze</a>` : ''}
+      </div>`);
+  }
   if (m.customer.phone)   contactLines.push(`<div class="mb-1">📞 <a href="tel:${escapeHtml(m.customer.phone)}">${escapeHtml(m.customer.phone)}</a></div>`);
   if (m.customer.email)   contactLines.push(`<div class="mb-1">✉️ <a href="mailto:${escapeHtml(m.customer.email)}">${escapeHtml(m.customer.email)}</a></div>`);
   if (contactLines.length > 0) {

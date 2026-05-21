@@ -60,3 +60,36 @@ describe('firebase helper signatures (existence smoke-test)', () => {
     expect(typeof window.setPhotoSerialTag).toBe('function');
   });
 });
+
+describe('customer address helpers', () => {
+  it('formats structured addresses and creates Billit fields without duplicating house numbers', () => {
+    const { formatCustomerAddress, billitAddressForCustomer } = loadHelpers();
+    const customer = {
+      addressStructured: {
+        street: 'Kerkstraat',
+        houseNumber: '15',
+        bus: '2',
+        postalCode: '9240',
+        city: 'Zele',
+        countryCode: 'BE',
+      },
+    };
+    expect(formatCustomerAddress(customer)).toBe('Kerkstraat 15 bus 2, 9240 Zele');
+    expect(billitAddressForCustomer(customer)).toEqual({
+      street: 'Kerkstraat 15 bus 2',
+      zipcode: '9240',
+      city: 'Zele',
+      countryCode: 'BE',
+    });
+  });
+
+  it('falls back to legacy address parsing for old projects', () => {
+    const { billitAddressForCustomer } = loadHelpers();
+    expect(billitAddressForCustomer({ address: 'Kerkstraat 15, 9240 Zele' })).toEqual({
+      street: 'Kerkstraat 15',
+      zipcode: '9240',
+      city: 'Zele',
+      countryCode: 'BE',
+    });
+  });
+});

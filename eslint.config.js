@@ -105,6 +105,12 @@ const firebaseInitGlobals = {
   deleteProductDatasheet: 'readonly',
   requestPhotoOcrRerun: 'readonly',
   setPhotoSerialTag: 'readonly',
+  normalizedAddressStructured: 'readonly',
+  formatStructuredAddress: 'readonly',
+  formatCustomerAddress: 'readonly',
+  billitAddressForCustomer: 'readonly',
+  googleMapsUrlForCustomerAddress: 'readonly',
+  wazeUrlForCustomerAddress: 'readonly',
   // UI helpers exported by non-module/module helper scripts
   statusChipHTML: 'readonly',
   wireStatusChipClicks: 'readonly',

@@ -78,9 +78,10 @@ const CONNECTION_TYPES = ['1x230', '3x230', '3x400+N'];
 function newEmptyProjectMetadata() {
   return {
     customer: {
-      address: null,
-      phone:   null,
-      email:   null,
+      address:           null,
+      addressStructured: null,
+      phone:             null,
+      email:             null,
     },
     situation: null,
     notes:     null,
@@ -173,6 +174,94 @@ function getProjectLabel(project) {
   return '(zonder naam)';
 }
 
+function _cleanAddressPart(value) {
+  return String(value == null ? '' : value).trim();
+}
+
+function normalizedAddressStructured(customer) {
+  const s = customer && customer.addressStructured && typeof customer.addressStructured === 'object'
+    ? customer.addressStructured
+    : null;
+  if (!s) return null;
+  const out = {
+    street:      _cleanAddressPart(s.street),
+    houseNumber: _cleanAddressPart(s.houseNumber),
+    bus:         _cleanAddressPart(s.bus),
+    postalCode:  _cleanAddressPart(s.postalCode),
+    city:        _cleanAddressPart(s.city),
+    countryCode: _cleanAddressPart(s.countryCode || 'BE').toUpperCase(),
+    placeId:     _cleanAddressPart(s.placeId),
+    provider:    _cleanAddressPart(s.provider),
+  };
+  const lat = Number(s.lat);
+  const lng = Number(s.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    out.lat = lat;
+    out.lng = lng;
+  }
+  return Object.values(out).some(Boolean) ? out : null;
+}
+
+function formatStructuredAddress(s) {
+  if (!s) return '';
+  const number = [s.houseNumber, s.bus ? `bus ${s.bus}` : ''].filter(Boolean).join(' ');
+  const line1 = [s.street, number].filter(Boolean).join(' ');
+  const line2 = [s.postalCode, s.city].filter(Boolean).join(' ');
+  return [line1, line2].filter(Boolean).join(', ');
+}
+
+function formatCustomerAddress(customer) {
+  const structured = normalizedAddressStructured(customer);
+  return formatStructuredAddress(structured) || _cleanAddressPart(customer && customer.address);
+}
+
+function parseBelgianAddress(address) {
+  const raw = _cleanAddressPart(address);
+  if (!raw) return { street: '', zipcode: '', city: '', countryCode: 'BE' };
+  const zipMatch = raw.match(/\b(\d{4})\b\s*([^,]*)$/);
+  if (!zipMatch) return { street: raw, zipcode: '', city: '', countryCode: 'BE' };
+  const street = raw.slice(0, zipMatch.index).replace(/[,\s]+$/, '').trim();
+  return {
+    street: street || raw,
+    zipcode: zipMatch[1],
+    city: (zipMatch[2] || '').replace(/^[-,\s]+/, '').trim(),
+    countryCode: 'BE',
+  };
+}
+
+function billitAddressForCustomer(customer) {
+  const structured = normalizedAddressStructured(customer);
+  if (structured) {
+    return {
+      street: [structured.street, structured.houseNumber, structured.bus ? `bus ${structured.bus}` : ''].filter(Boolean).join(' '),
+      zipcode: structured.postalCode,
+      city: structured.city,
+      countryCode: structured.countryCode || 'BE',
+    };
+  }
+  return parseBelgianAddress(customer && customer.address);
+}
+
+function googleMapsUrlForCustomerAddress(customer) {
+  const structured = normalizedAddressStructured(customer);
+  if (structured && Number.isFinite(structured.lat) && Number.isFinite(structured.lng)) {
+    const ll = `${structured.lat},${structured.lng}`;
+    const place = structured.placeId ? `&query_place_id=${encodeURIComponent(structured.placeId)}` : '';
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ll)}${place}`;
+  }
+  const formatted = formatCustomerAddress(customer);
+  return formatted ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formatted)}` : '';
+}
+
+function wazeUrlForCustomerAddress(customer) {
+  const structured = normalizedAddressStructured(customer);
+  if (structured && Number.isFinite(structured.lat) && Number.isFinite(structured.lng)) {
+    return `https://waze.com/ul?ll=${encodeURIComponent(`${structured.lat},${structured.lng}`)}&navigate=yes`;
+  }
+  const formatted = formatCustomerAddress(customer);
+  return formatted ? `https://waze.com/ul?q=${encodeURIComponent(formatted)}&navigate=yes` : '';
+}
+
 // ─── INIT ────────────────────────────────────────────────────────────────────
 let _firebaseApp = null;
 let _firebaseDb  = null;
@@ -255,6 +344,9 @@ async function createProject({ projectName, customerName, status, csvData, metad
     lastCalcRun: null,
   };
   if (metadata) {
+    if (metadata.customer)     doc.customer     = metadata.customer;
+    if (metadata.situation !== undefined) doc.situation = metadata.situation;
+    if (metadata.notes     !== undefined) doc.notes     = metadata.notes;
     if (metadata.site)         doc.site         = metadata.site;
     if (metadata.electrical)   doc.electrical   = metadata.electrical;
     if (metadata.cabinet)      doc.cabinet      = metadata.cabinet;
@@ -1963,3 +2055,9 @@ window.listProductDatasheets = listProductDatasheets;
 window.deleteProductDatasheet = deleteProductDatasheet;
 window.requestPhotoOcrRerun = requestPhotoOcrRerun;
 window.setPhotoSerialTag = setPhotoSerialTag;
+window.normalizedAddressStructured = normalizedAddressStructured;
+window.formatStructuredAddress = formatStructuredAddress;
+window.formatCustomerAddress = formatCustomerAddress;
+window.billitAddressForCustomer = billitAddressForCustomer;
+window.googleMapsUrlForCustomerAddress = googleMapsUrlForCustomerAddress;
+window.wazeUrlForCustomerAddress = wazeUrlForCustomerAddress;
