@@ -10,6 +10,7 @@ import {
   productMap,
   categoryMap,
   addAmountsToVatGroups,
+  applyDiscountToVatGroups,
   quoteGroupSubtotalExVat,
 } from '../assets/js/product-configs.js';
 
@@ -144,6 +145,24 @@ describe('product config helpers', () => {
       },
     ]);
     expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBeCloseTo(90);
+  });
+
+  it('applies discounts to the composition VAT groups only', () => {
+    const groups = applyDiscountToVatGroups([
+      { vat: 21, items: [{ productId: 'acplus', qty: 1 }, { productId: 'install', qty: 1 }], extraExVat: 50 },
+    ], { type: 'percent', value: 10 }, pMap);
+
+    expect(groups[0].discountExVat).toBeCloseTo(150);
+    expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBeCloseTo(1350);
+  });
+
+  it('caps fixed discounts at the composition total', () => {
+    const groups = applyDiscountToVatGroups([
+      { vat: 6, items: [], description: 'Extra installatiekost', extraExVat: 90 },
+    ], { type: 'fixed', value: 150 }, pMap);
+
+    expect(groups[0].discountExVat).toBeCloseTo(90);
+    expect(quoteGroupSubtotalExVat(groups[0], pMap)).toBe(0);
   });
 
   it('splits material items from the main quote line', () => {

@@ -9,6 +9,7 @@ import {
   configSubtotalExVat,
   generatedConfigDescription,
   addAmountsToVatGroups,
+  applyDiscountToVatGroups,
   MATERIAL_CATEGORY_SLUG,
   MISC_CATEGORY_SLUG,
   productLabel,
@@ -1479,6 +1480,16 @@ function buildQuoteModalHtml(projects, context) {
         <label class="form-label">BTW config/services</label>
         <select class="form-select" id="quoteVat"><option value="6">6% woning 10+ jaar</option><option value="21" selected>21%</option></select>
       </div>
+      <div class="col-md-4">
+        <label class="form-label">Korting op samenstelling</label>
+        <div class="input-group">
+          <select class="form-select" id="quoteDiscountType" style="max-width:110px">
+            <option value="percent">%</option>
+            <option value="fixed">€</option>
+          </select>
+          <input type="number" class="form-control" id="quoteDiscountValue" min="0" step="0.01" value="" placeholder="Geen">
+        </div>
+      </div>
       <div class="col-12">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <h6 class="mb-0">Extra producten</h6>
@@ -1504,8 +1515,9 @@ function buildQuoteModalHtml(projects, context) {
 }
 
 function wireQuoteModal() {
-  ['quoteProject', 'quoteConfig', 'quoteVat'].forEach(id => {
+  ['quoteProject', 'quoteConfig', 'quoteVat', 'quoteDiscountType', 'quoteDiscountValue'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', updateQuotePreview);
+    document.getElementById(id)?.addEventListener('input', updateQuotePreview);
   });
   document.getElementById('btnAddQuoteProduct')?.addEventListener('click', () => {
     const vat = parseFloat(document.getElementById('quoteVat')?.value) || 21;
@@ -1618,6 +1630,13 @@ function readQuoteManualLines() {
   }).filter(Boolean);
 }
 
+function readQuoteDiscount() {
+  return {
+    type: document.getElementById('quoteDiscountType')?.value === 'fixed' ? 'fixed' : 'percent',
+    value: parseFloat(document.getElementById('quoteDiscountValue')?.value) || 0,
+  };
+}
+
 function quoteLineHtml(line) {
   const incl = line.exVat * (1 + line.vat / 100);
   const colorStyle = line.color ? ` style="border-left:4px solid ${escapeAttr(line.color)}"` : '';
@@ -1682,10 +1701,11 @@ function quoteGroupedRowsHtml(groups, productsById, categoriesById, prefix = '')
     const description = generatedConfigDescription(group.items, productsById, categoriesById)
       || group.description
       || 'Extra installatiekost';
+    const discountSuffix = Number(group.discountExVat) > 0 ? ` (korting €${Number(group.discountExVat).toFixed(2)})` : '';
     const fallbackSlug = prefix.startsWith('Materiaal') ? MATERIAL_CATEGORY_SLUG
       : (prefix.startsWith('Diversen') ? MISC_CATEGORY_SLUG : '');
     return quoteLineHtml({
-      description: `${prefix}${description}`,
+      description: `${prefix}${description}${discountSuffix}`,
       exVat,
       vat: group.vat,
       color: quoteGroupColor(group, productsById, categoriesById, fallbackSlug),
@@ -1718,7 +1738,9 @@ function groupedQuoteProfitExVat(groups, productsById, categoriesById) {
       const cost = productPurchaseCostExVat(product, item.qty, categoriesById);
       return itemSum + Math.max(0, revenue - cost);
     }, 0);
-    return sum + productProfit + Math.max(0, Number(group.extraExVat) || 0);
+    return sum + productProfit
+      + Math.max(0, Number(group.extraExVat) || 0)
+      - Math.max(0, Number(group.discountExVat) || 0);
   }, 0);
 }
 
@@ -1736,11 +1758,12 @@ function updateQuotePreview() {
   const manualLines = readQuoteManualLines();
   const installationExtras = manualLines.filter(line => line.kind === 'installation_extra');
   const extraLines = manualLines.filter(line => line.kind !== 'installation_extra');
-  const mainGroups = addAmountsToVatGroups(
+  const undiscountedMainGroups = addAmountsToVatGroups(
     categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, null, vat),
     installationExtras,
     'Extra installatiekost',
   );
+  const mainGroups = applyDiscountToVatGroups(undiscountedMainGroups, readQuoteDiscount(), productsById);
   const materialGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MATERIAL_CATEGORY_SLUG, vat);
   const miscGroups = categoryItemsByVat(cfg.items, extraProductItems, productsById, categoriesById, MISC_CATEGORY_SLUG, vat);
   const kg = configBatteryWeightKg([...cfg.items, ...extraProductItems], productsById, categoriesById);
@@ -1762,6 +1785,7 @@ function updateQuotePreview() {
   const manualProfit = extraLines.reduce((sum, line) => sum + line.exVat, 0);
   const totalProfit = groupedProfit + manualProfit;
   const totalIncl = groupedIncl + bebatIncl + extraIncl;
+  const discountExVat = mainGroups.reduce((sum, group) => sum + (Number(group.discountExVat) || 0), 0);
   el.innerHTML = `
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-2">
@@ -1784,6 +1808,7 @@ function updateQuotePreview() {
     <div class="alert alert-success py-2 mb-2">
       <strong>Totale winst ex BTW:</strong> €${totalProfit.toFixed(2)}
       <span class="text-muted small">(Bebat niet meegerekend)</span>
+      ${discountExVat > 0 ? `<br><span class="text-muted small">Korting op samenstelling: €${discountExVat.toFixed(2)} ex BTW</span>` : ''}
     </div>
     <p class="text-muted small mb-0">Deze preview maakt nog geen offerte-document aan; hij test alleen UX en berekening.</p>`;
 }
