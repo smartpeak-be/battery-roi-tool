@@ -116,6 +116,14 @@ test.describe('Dashboard UI', () => {
       const photoThumb = photoSection.locator('.photo-grid img, .photo-grid .photo-thumb');
       const thumbCount = await photoThumb.count();
       expect(thumbCount).toBeGreaterThanOrEqual(1);
+
+      // Open the dashboard lightbox and verify the zoom affordance works.
+      await photoThumb.first().click();
+      const lightbox = page.locator('#pu-lightbox.open');
+      await expect(lightbox).toBeVisible();
+      await lightbox.locator('.zoom').click();
+      await expect(lightbox).toHaveClass(/is-zoomed/);
+      await expect(lightbox.locator('[data-pu-annotation-stage]')).toHaveAttribute('style', /scale\(2\)/);
     }
   });
 
