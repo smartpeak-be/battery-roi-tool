@@ -657,21 +657,29 @@ import {
 
     async function _confirmDiscardAnnotation() {
       if (!state.annotationDirty) return true;
-      const ok = await showConfirm({
+      const choice = await showConfirm({
         title: 'Aantekening niet opgeslagen',
-        message: 'Je hebt nog niet opgeslagen aantekeningen. Wil je doorgaan en die wijzigingen verliezen?',
-        confirmLabel: 'Wijzigingen verliezen',
-        confirmVariant: 'danger',
-        cancelLabel: 'Verder tekenen',
+        message: 'Je hebt nog niet opgeslagen aantekeningen. Wat wil je doen?',
+        cancelValue: 'cancel',
+        actions: [
+          { value: 'cancel', label: 'Verder tekenen' },
+          { value: 'discard', label: 'Niet opslaan', variant: 'danger' },
+          { value: 'save', label: 'Opslaan en sluiten', variant: 'primary', autofocus: true },
+        ],
       });
-      if (ok) state.annotationDirty = false;
-      return !!ok;
+      if (choice === 'cancel') return false;
+      if (choice === 'discard') {
+        state.annotationDirty = false;
+        return true;
+      }
+      if (choice === 'save') return _saveAnnotation();
+      return false;
     }
 
     async function _saveAnnotation() {
       const photo = state.photos[state.lightboxIdx];
       const canvas = document.querySelector('#pu-lightbox [data-pu-annotation-canvas]');
-      if (!photo || !canvas || !state.annotationDirty) return;
+      if (!photo || !canvas || !state.annotationDirty) return true;
       showSpinner();
       try {
         const annotationBlob = await _canvasToBlob(canvas, 'image/png');
@@ -681,8 +689,10 @@ import {
         state.annotationHasContent = true;
         await _refreshAfterAnnotationChange(photo.id);
         _toast('Aantekening opgeslagen.', 'success');
+        return true;
       } catch (e) {
         _toast('Aantekening opslaan mislukt: ' + (e && e.message ? e.message : e), 'danger');
+        return false;
       } finally {
         hideSpinner();
       }

@@ -124,6 +124,29 @@ test.describe('Dashboard UI', () => {
       await lightbox.locator('.zoom').click();
       await expect(lightbox).toHaveClass(/is-zoomed/);
       await expect(lightbox.locator('[data-pu-annotation-stage]')).toHaveAttribute('style', /scale\(2\)/);
+
+      // Drawing without pressing Opslaan should ask explicitly whether to save or discard.
+      await lightbox.locator('.zoom').click();
+      await lightbox.locator('.annotate').click();
+      const canvas = lightbox.locator('[data-pu-annotation-canvas]');
+      const box = await canvas.boundingBox();
+      expect(box).not.toBeNull();
+      await page.mouse.move(box.x + 30, box.y + 30);
+      await page.mouse.down();
+      await page.mouse.move(box.x + 90, box.y + 70);
+      await page.mouse.up();
+      await lightbox.locator('.close').click();
+      const confirm = page.locator('.sp-confirm-dialog');
+      await expect(confirm).toBeVisible();
+      await expect(confirm).toContainText('Opslaan en sluiten');
+      await expect(confirm).toContainText('Niet opslaan');
+      await confirm.locator('button:has-text("Verder tekenen")').click();
+      await expect(lightbox).toBeVisible();
+
+      await lightbox.locator('.close').click();
+      await page.locator('.sp-confirm-dialog button:has-text("Opslaan en sluiten")').click();
+      await expect(lightbox).toBeHidden({ timeout: 15_000 });
+      await expect(page.locator('.toast')).toContainText('Aantekening opgeslagen', { timeout: 15_000 });
     }
   });
 
