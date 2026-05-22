@@ -3,6 +3,12 @@
           deleteProjectPhotoAnnotation, showToast, showSpinner, updateSpinner, hideSpinner */
 
 import { escapeHtml, showConfirm } from './shared-helpers.js';
+import {
+  getDistanceBetweenTouches,
+  midpointBetweenTouches,
+  nextZoomTransform,
+  panZoomTransform,
+} from './photo-lightbox-zoom.js';
 
 // assets/js/photo-uploader.js
 // Shared photo-uploader component — used in dashboard.html drawer and
@@ -138,6 +144,10 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
       annotationDrawing: false,
       annotationLastPoint: null,
       lightboxSeq:    0,
+      zoom:           { scale: 1, x: 0, y: 0 },
+      zoomPointers:   new Map(),
+      zoomPanLast:    null,
+      zoomPinchStart: null,
     };
 
     async function refresh() {
@@ -208,10 +218,12 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
           <button type="button" class="sp-lightbox-btn next" title="Volgende" aria-label="Volgende foto">›</button>
           <button type="button" class="sp-lightbox-btn del" title="Verwijder foto" aria-label="Verwijder foto"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
           <button type="button" class="sp-lightbox-btn annotate" title="Aantekenen" aria-label="Aantekenen"><i class="fa-solid fa-pencil" aria-hidden="true"></i></button>
+          <button type="button" class="sp-lightbox-btn zoom" title="Zoom in/uit" aria-label="Zoom in of uit"><i class="fa-solid fa-magnifying-glass-plus" aria-hidden="true"></i></button>
           <div class="pu-annotation-stage" data-pu-annotation-stage>
             <img data-pu-lightbox-img alt="Foto" />
             <canvas data-pu-annotation-canvas aria-label="Aantekeningenlaag"></canvas>
           </div>
+          <div class="pu-lightbox-hint" data-pu-zoom-hint>Knijp met twee vingers of gebruik Ctrl + scroll om in te zoomen. Sleep om te verplaatsen.</div>
           <div class="pu-annotation-toolbar" data-pu-annotation-toolbar hidden>
             <div class="pu-annotation-tools" role="group" aria-label="Kleur">
               ${ANNOTATION_COLORS.map((c, i) => `
@@ -257,7 +269,15 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
           _setAnnotationMode(!state.annotationMode);
         };
       }
+      const zoomBtn = lb.querySelector('.zoom');
+      if (zoomBtn) {
+        zoomBtn.onclick = e => {
+          e.stopPropagation();
+          _toggleLightboxZoom();
+        };
+      }
       _wireAnnotationToolbar(lb);
+      _wireLightboxZoom(lb);
       lb.querySelector('.del').onclick   = async e => {
         e.stopPropagation();
         const photo = state.photos[state.lightboxIdx];
@@ -321,6 +341,7 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
       const canvas = document.querySelector('#pu-lightbox [data-pu-annotation-canvas]');
       const p   = state.photos[state.lightboxIdx];
       if (!img || !canvas || !lb) return;
+      _resetLightboxZoom();
       const width = Number(p && p.width) || img.naturalWidth || 1;
       const height = Number(p && p.height) || img.naturalHeight || 1;
       canvas.width = width;
@@ -361,6 +382,142 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
       if (lb) lb.classList.remove('open');
     }
 
+    function _resetLightboxZoom() {
+      state.zoom = { scale: 1, x: 0, y: 0 };
+      state.zoomPointers.clear();
+      state.zoomPanLast = null;
+      state.zoomPinchStart = null;
+      _applyLightboxZoom();
+    }
+
+    function _applyLightboxZoom() {
+      const lb = document.getElementById('pu-lightbox');
+      const stage = document.querySelector('#pu-lightbox [data-pu-annotation-stage]');
+      if (!stage) return;
+      const scale = state.zoom.scale || 1;
+      stage.style.transform = `translate3d(${state.zoom.x || 0}px, ${state.zoom.y || 0}px, 0) scale(${scale})`;
+      stage.style.cursor = state.annotationMode ? 'crosshair' : (scale > 1 ? 'grab' : 'zoom-in');
+      if (lb) lb.classList.toggle('is-zoomed', scale > 1);
+      const zoomBtn = lb && lb.querySelector('.zoom');
+      if (zoomBtn) {
+        zoomBtn.classList.toggle('active', scale > 1);
+        zoomBtn.innerHTML = scale > 1
+          ? '<i class="fa-solid fa-magnifying-glass-minus" aria-hidden="true"></i>'
+          : '<i class="fa-solid fa-magnifying-glass-plus" aria-hidden="true"></i>';
+      }
+    }
+
+    function _zoomViewport() {
+      const stage = document.querySelector('#pu-lightbox [data-pu-annotation-stage]');
+      const rect = stage ? stage.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
+      return { width: Math.max(1, rect.width / (state.zoom.scale || 1)), height: Math.max(1, rect.height / (state.zoom.scale || 1)) };
+    }
+
+    function _eventOriginWithinStage(e) {
+      const stage = document.querySelector('#pu-lightbox [data-pu-annotation-stage]');
+      const rect = stage ? stage.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+      return {
+        x: (Number(e.clientX) || rect.left + rect.width / 2) - rect.left,
+        y: (Number(e.clientY) || rect.top + rect.height / 2) - rect.top,
+      };
+    }
+
+    function _setLightboxZoom(nextScale, origin) {
+      state.zoom = nextZoomTransform({
+        current: state.zoom,
+        nextScale,
+        origin: origin || { x: _zoomViewport().width / 2, y: _zoomViewport().height / 2 },
+        viewport: _zoomViewport(),
+      });
+      _applyLightboxZoom();
+    }
+
+    function _toggleLightboxZoom() {
+      if (state.annotationMode) return;
+      if ((state.zoom.scale || 1) > 1) _resetLightboxZoom();
+      else _setLightboxZoom(2);
+    }
+
+    function _wireLightboxZoom(lb) {
+      const stage = lb.querySelector('[data-pu-annotation-stage]');
+      if (!stage) return;
+
+      stage._puZoomHandlers = {
+        wheel: e => {
+          if (state.annotationMode || !(e.ctrlKey || e.metaKey)) return;
+          e.preventDefault();
+          const direction = e.deltaY < 0 ? 1 : -1;
+          const multiplier = direction > 0 ? 1.25 : 0.8;
+          _setLightboxZoom((state.zoom.scale || 1) * multiplier, _eventOriginWithinStage(e));
+        },
+        dblclick: e => {
+          if (state.annotationMode) return;
+          e.preventDefault();
+          if ((state.zoom.scale || 1) > 1) _resetLightboxZoom();
+          else _setLightboxZoom(2.5, _eventOriginWithinStage(e));
+        },
+        pointerdown: e => {
+          if (state.annotationMode) return;
+          state.zoomPointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+          if (state.zoomPointers.size === 1 && (state.zoom.scale || 1) > 1) {
+            e.preventDefault();
+            state.zoomPanLast = { x: e.clientX, y: e.clientY };
+            try { stage.setPointerCapture(e.pointerId); } catch {}
+          } else if (state.zoomPointers.size === 2) {
+            e.preventDefault();
+            const touches = Array.from(state.zoomPointers.values());
+            state.zoomPinchStart = {
+              distance: getDistanceBetweenTouches(touches),
+              zoom: { ...state.zoom },
+            };
+          }
+        },
+        pointermove: e => {
+          if (state.annotationMode || !state.zoomPointers.has(e.pointerId)) return;
+          state.zoomPointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+          if (state.zoomPointers.size >= 2 && state.zoomPinchStart) {
+            e.preventDefault();
+            const touches = Array.from(state.zoomPointers.values()).slice(0, 2);
+            const distance = getDistanceBetweenTouches(touches);
+            if (distance > 0 && state.zoomPinchStart.distance > 0) {
+              const midpoint = midpointBetweenTouches(touches);
+              const stageRect = stage.getBoundingClientRect();
+              state.zoom = nextZoomTransform({
+                current: state.zoomPinchStart.zoom,
+                nextScale: state.zoomPinchStart.zoom.scale * (distance / state.zoomPinchStart.distance),
+                origin: midpoint ? { x: midpoint.x - stageRect.left, y: midpoint.y - stageRect.top } : undefined,
+                viewport: _zoomViewport(),
+              });
+              _applyLightboxZoom();
+            }
+          } else if ((state.zoom.scale || 1) > 1 && state.zoomPanLast) {
+            e.preventDefault();
+            state.zoom = panZoomTransform(state.zoom, {
+              dx: e.clientX - state.zoomPanLast.x,
+              dy: e.clientY - state.zoomPanLast.y,
+            });
+            state.zoomPanLast = { x: e.clientX, y: e.clientY };
+            _applyLightboxZoom();
+          }
+        },
+        endPointer: e => {
+          state.zoomPointers.delete(e.pointerId);
+          state.zoomPanLast = null;
+          state.zoomPinchStart = null;
+        },
+      };
+
+      if (stage.dataset.puZoomWired === '1') return;
+      stage.dataset.puZoomWired = '1';
+      stage.addEventListener('wheel', e => stage._puZoomHandlers?.wheel(e), { passive: false });
+      stage.addEventListener('dblclick', e => stage._puZoomHandlers?.dblclick(e));
+      stage.addEventListener('pointerdown', e => stage._puZoomHandlers?.pointerdown(e));
+      stage.addEventListener('pointermove', e => stage._puZoomHandlers?.pointermove(e));
+      stage.addEventListener('pointerup', e => stage._puZoomHandlers?.endPointer(e));
+      stage.addEventListener('pointercancel', e => stage._puZoomHandlers?.endPointer(e));
+      stage.addEventListener('lostpointercapture', e => stage._puZoomHandlers?.endPointer(e));
+    }
+
     function _layoutAnnotationStage() {
       const stage = document.querySelector('#pu-lightbox [data-pu-annotation-stage]');
       const canvas = document.querySelector('#pu-lightbox [data-pu-annotation-canvas]');
@@ -370,6 +527,7 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
       const scale = Math.min(maxW / canvas.width, maxH / canvas.height, 1);
       stage.style.width = Math.max(1, Math.round(canvas.width * scale)) + 'px';
       stage.style.height = Math.max(1, Math.round(canvas.height * scale)) + 'px';
+      _applyLightboxZoom();
     }
 
     function _wireAnnotationToolbar(lb) {

@@ -267,11 +267,17 @@
 .sp-lightbox .del:hover { background: rgba(229,69,69,1); }
 .sp-lightbox .annotate { bottom: 68px; right: 14px; }
 .sp-lightbox .annotate.active { background: rgba(var(--bs-primary-rgb), 0.95); }
+.sp-lightbox .zoom { bottom: 122px; right: 14px; }
+.sp-lightbox .zoom.active { background: rgba(var(--bs-primary-rgb), 0.95); }
 .pu-annotation-stage {
   position: relative;
   display: block;
   max-width: calc(100vw - 96px);
   max-height: calc(100vh - 96px);
+  transform-origin: 0 0;
+  touch-action: none;
+  user-select: none;
+  will-change: transform;
 }
 .pu-annotation-stage img,
 .pu-annotation-stage canvas {
@@ -291,6 +297,25 @@
 .sp-lightbox.annotation-mode .pu-annotation-stage canvas {
   pointer-events: auto;
   cursor: crosshair;
+}
+.pu-lightbox-hint {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  max-width: min(620px, calc(100vw - 120px));
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.42);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.78);
+  font-size: 0.82rem;
+  text-align: center;
+  pointer-events: none;
+}
+.sp-lightbox.is-zoomed .pu-lightbox-hint,
+.sp-lightbox.annotation-mode .pu-lightbox-hint {
+  display: none;
 }
 .pu-annotation-toolbar {
   position: absolute;
@@ -337,6 +362,14 @@
     padding: 16px;
   }
   .sp-lightbox .annotate { bottom: 64px; right: 10px; }
+  .sp-lightbox .zoom { bottom: 118px; right: 10px; }
+  .pu-lightbox-hint {
+    top: auto;
+    bottom: 10px;
+    max-width: calc(100vw - 24px);
+    border-radius: 16px;
+    font-size: 0.76rem;
+  }
   .pu-annotation-toolbar {
     bottom: 10px;
     max-width: calc(100vw - 20px);
