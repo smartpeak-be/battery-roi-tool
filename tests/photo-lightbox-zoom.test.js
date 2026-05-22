@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   clampLightboxScale,
   getDistanceBetweenTouches,
+  nextPinchZoomTransform,
   nextZoomTransform,
   panZoomTransform,
 } from '../assets/js/photo-lightbox-zoom.js';
@@ -29,6 +30,42 @@ describe('photo lightbox zoom helpers', () => {
     });
 
     expect(next).toEqual({ scale: 2, x: -250, y: -150 });
+  });
+
+  test('keeps the pinch start content point under the moving pinch midpoint', () => {
+    const start = { scale: 1.5, x: -120, y: -60 };
+    const next = nextPinchZoomTransform({
+      start,
+      startDistance: 100,
+      distance: 140,
+      startOrigin: { x: 240, y: 180 },
+      origin: { x: 260, y: 210 },
+    });
+
+    expect(next.scale).toBeCloseTo(2.1);
+    expect(next.x).toBeCloseTo(-244);
+    expect(next.y).toBeCloseTo(-126);
+  });
+
+  test('calculates pinch scale from the gesture start instead of compounding per move', () => {
+    const start = { scale: 1, x: 0, y: 0 };
+    const first = nextPinchZoomTransform({
+      start,
+      startDistance: 100,
+      distance: 120,
+      startOrigin: { x: 200, y: 150 },
+      origin: { x: 200, y: 150 },
+    });
+    const second = nextPinchZoomTransform({
+      start,
+      startDistance: 100,
+      distance: 140,
+      startOrigin: { x: 200, y: 150 },
+      origin: { x: 200, y: 150 },
+    });
+
+    expect(first.scale).toBeCloseTo(1.2);
+    expect(second.scale).toBeCloseTo(1.4);
   });
 
   test('pans while zoomed in but resets pan at fit scale', () => {

@@ -22,25 +22,50 @@ export function midpointBetweenTouches(touches) {
   };
 }
 
-export function nextZoomTransform({ current, nextScale, origin, viewport }) {
-  const from = {
-    scale: clampLightboxScale(current?.scale ?? 1),
-    x: Number(current?.x) || 0,
-    y: Number(current?.y) || 0,
+function normalizeZoom(zoom) {
+  return {
+    scale: clampLightboxScale(zoom?.scale ?? 1),
+    x: Number(zoom?.x) || 0,
+    y: Number(zoom?.y) || 0,
   };
+}
+
+export function nextZoomTransform({ current, nextScale, origin, viewport }) {
+  const from = normalizeZoom(current);
   const scale = clampLightboxScale(nextScale);
   if (scale === MIN_SCALE) return { scale: MIN_SCALE, x: 0, y: 0 };
 
   const width = Math.max(1, Number(viewport?.width) || 1);
   const height = Math.max(1, Number(viewport?.height) || 1);
-  const ox = Number(origin?.x) || width / 2;
-  const oy = Number(origin?.y) || height / 2;
+  const ox = Number.isFinite(Number(origin?.x)) ? Number(origin.x) : width / 2;
+  const oy = Number.isFinite(Number(origin?.y)) ? Number(origin.y) : height / 2;
   const scaleRatio = scale / from.scale;
 
   return {
     scale,
     x: ox - (ox - from.x) * scaleRatio,
     y: oy - (oy - from.y) * scaleRatio,
+  };
+}
+
+export function nextPinchZoomTransform({ start, startDistance, distance, startOrigin, origin }) {
+  const from = normalizeZoom(start);
+  const initialDistance = Math.max(1, Number(startDistance) || 1);
+  const currentDistance = Math.max(1, Number(distance) || initialDistance);
+  const scale = clampLightboxScale(from.scale * (currentDistance / initialDistance));
+  if (scale === MIN_SCALE) return { scale: MIN_SCALE, x: 0, y: 0 };
+
+  const sx = Number(startOrigin?.x) || 0;
+  const sy = Number(startOrigin?.y) || 0;
+  const ox = Number.isFinite(Number(origin?.x)) ? Number(origin.x) : sx;
+  const oy = Number.isFinite(Number(origin?.y)) ? Number(origin.y) : sy;
+  const contentX = (sx - from.x) / from.scale;
+  const contentY = (sy - from.y) / from.scale;
+
+  return {
+    scale,
+    x: ox - contentX * scale,
+    y: oy - contentY * scale,
   };
 }
 

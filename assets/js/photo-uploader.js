@@ -6,6 +6,7 @@ import { escapeHtml, showConfirm } from './shared-helpers.js';
 import {
   getDistanceBetweenTouches,
   midpointBetweenTouches,
+  nextPinchZoomTransform,
   nextZoomTransform,
   panZoomTransform,
 } from './photo-lightbox-zoom.js';
@@ -409,17 +410,31 @@ import {
 
     function _zoomViewport() {
       const stage = document.querySelector('#pu-lightbox [data-pu-annotation-stage]');
-      const rect = stage ? stage.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
-      return { width: Math.max(1, rect.width / (state.zoom.scale || 1)), height: Math.max(1, rect.height / (state.zoom.scale || 1)) };
+      return {
+        width: Math.max(1, stage?.offsetWidth || window.innerWidth),
+        height: Math.max(1, stage?.offsetHeight || window.innerHeight),
+      };
+    }
+
+    function _stageViewportOrigin(stage) {
+      const rect = stage ? stage.getBoundingClientRect() : { left: 0, top: 0 };
+      return {
+        left: rect.left - (state.zoom.x || 0),
+        top: rect.top - (state.zoom.y || 0),
+      };
+    }
+
+    function _pointWithinStage(clientX, clientY) {
+      const stage = document.querySelector('#pu-lightbox [data-pu-annotation-stage]');
+      const viewportOrigin = _stageViewportOrigin(stage);
+      return {
+        x: (Number(clientX) || viewportOrigin.left + _zoomViewport().width / 2) - viewportOrigin.left,
+        y: (Number(clientY) || viewportOrigin.top + _zoomViewport().height / 2) - viewportOrigin.top,
+      };
     }
 
     function _eventOriginWithinStage(e) {
-      const stage = document.querySelector('#pu-lightbox [data-pu-annotation-stage]');
-      const rect = stage ? stage.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-      return {
-        x: (Number(e.clientX) || rect.left + rect.width / 2) - rect.left,
-        y: (Number(e.clientY) || rect.top + rect.height / 2) - rect.top,
-      };
+      return _pointWithinStage(e.clientX, e.clientY);
     }
 
     function _setLightboxZoom(nextScale, origin) {
@@ -466,9 +481,11 @@ import {
           } else if (state.zoomPointers.size === 2) {
             e.preventDefault();
             const touches = Array.from(state.zoomPointers.values());
+            const midpoint = midpointBetweenTouches(touches);
             state.zoomPinchStart = {
               distance: getDistanceBetweenTouches(touches),
               zoom: { ...state.zoom },
+              origin: midpoint ? _pointWithinStage(midpoint.x, midpoint.y) : null,
             };
           }
         },
@@ -481,12 +498,12 @@ import {
             const distance = getDistanceBetweenTouches(touches);
             if (distance > 0 && state.zoomPinchStart.distance > 0) {
               const midpoint = midpointBetweenTouches(touches);
-              const stageRect = stage.getBoundingClientRect();
-              state.zoom = nextZoomTransform({
-                current: state.zoomPinchStart.zoom,
-                nextScale: state.zoomPinchStart.zoom.scale * (distance / state.zoomPinchStart.distance),
-                origin: midpoint ? { x: midpoint.x - stageRect.left, y: midpoint.y - stageRect.top } : undefined,
-                viewport: _zoomViewport(),
+              state.zoom = nextPinchZoomTransform({
+                start: state.zoomPinchStart.zoom,
+                startDistance: state.zoomPinchStart.distance,
+                distance,
+                startOrigin: state.zoomPinchStart.origin,
+                origin: midpoint ? _pointWithinStage(midpoint.x, midpoint.y) : state.zoomPinchStart.origin,
               });
               _applyLightboxZoom();
             }
