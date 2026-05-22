@@ -32,10 +32,24 @@ export function resetEnergyChartState() {
   setActiveLevel('month');
 }
 
-function buildChartConfig(buckets, dualTariff) {
+function maxSymmetricAxisValue(buckets, dualTariff) {
+  const maxValue = buckets.reduce((max, b) => {
+    const afname = dualTariff
+      ? (Number(b.afnamedag) || 0) + (Number(b.afnamenacht) || 0)
+      : (Number(b.afname) || 0);
+    const injectie = dualTariff
+      ? (Number(b.injectiedag) || 0) + (Number(b.injectienacht) || 0)
+      : (Number(b.injectie) || 0);
+    return Math.max(max, afname, injectie);
+  }, 0);
+  return Math.max(1, maxValue);
+}
+
+export function buildChartConfig(buckets, dualTariff) {
   const labels = buckets.map(b => b.label);
   const avgAfname   = buckets.length ? buckets.reduce((s, b) => s + b.afname,   0) / buckets.length : 0;
   const avgInjectie = buckets.length ? buckets.reduce((s, b) => s + b.injectie, 0) / buckets.length : 0;
+  const symmetricMax = maxSymmetricAxisValue(buckets, dualTariff);
 
   const datasets = [];
   if (dualTariff) {
@@ -60,6 +74,8 @@ function buildChartConfig(buckets, dualTariff) {
         x: { stacked: true },
         y: {
           stacked: true,
+          min: -symmetricMax,
+          max: symmetricMax,
           ticks: {
             callback: v => Math.abs(v).toLocaleString('nl-BE', { maximumFractionDigits: 0 }) + ' kWh',
           },
