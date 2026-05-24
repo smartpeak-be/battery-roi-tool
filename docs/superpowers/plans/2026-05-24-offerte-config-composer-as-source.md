@@ -210,6 +210,13 @@ npm run lint
 ## Rollout notes
 
 - Niet in één keer legacy-data verwijderen.
-- Eerst productconfigs + composer als primaire flow.
-- Daarna sheet/manuele calculator UI uitfaseren wanneer bestaande projecten veilig blijven renderen.
-- PR #48 was een nuttige tussenstap, maar moet inhoudelijk heroriënteren naar deze composer-flow.
+- Eerste fase: de nieuwe composer-flow **parallel naast de bestaande sheet-configs en manuele calculator-configs** laten draaien.
+- In die parallelle fase valideren we dat:
+  - bestaande sheet-configs exact hetzelfde blijven rekenen;
+  - bestaande manuele config-flow niet breekt;
+  - nieuwe productconfig/composer-flow correcte totalen en ROI geeft;
+  - bestaande projecten en share-links blijven werken;
+  - offerte-preview/PDF-status niet regressief verandert.
+- Pas nadat die parallelle flow functioneel gevalideerd is, faseren we de oude sheet-configs en aparte manuele calculator-configs uit de normale nieuwe flow.
+- Legacy-data blijft daarna nog leesbaar voor oude projecten/share-links; verwijderen/migreren is een aparte latere stap.
+- PR #48 was een nuttige tussenstap, maar moet inhoudelijk heroriënteren naar deze composer-flow met parallelle validatiefase vóór uitfasering.
