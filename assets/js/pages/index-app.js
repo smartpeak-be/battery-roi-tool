@@ -9,6 +9,7 @@ import {
 import { escapeHtml, showSpinner, hideSpinner, withSpinner, showConfirm } from '../shared-helpers.js';
 import { makeScenCard } from '../index/scenario-card.js';
 import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js';
+import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
 
 // ─── CSV PARSER ────────────────────────────────────────────────────────────────
 // CSV helpers (parseCSV, parseDate, parsVolume) are in assets/js/csv.js
@@ -244,7 +245,8 @@ function _buildConfigOptionsHtml(currentValue, otherSelected, isFirst) {
   const opts = (_sheetConfigs || []).map(c => {
     const disabled = otherSelected.includes(c.type) && c.type !== currentValue ? 'disabled' : '';
     const selected = c.type === currentValue ? 'selected' : '';
-    return `<option value="${c.type}" ${disabled} ${selected}>${c.type} — ${c.omschrijving} | ${fmt2(c.batCap)} kWh, ${fmt2(c.batInv)} kW | ${fmtEur(c.prices[priceKey])}</option>`;
+    const sourceLabel = c.source === 'productConfig' ? 'Samenstelling' : 'Sheet';
+    return `<option value="${c.type}" ${disabled} ${selected}>${sourceLabel}: ${c.type} — ${c.omschrijving} | ${fmt2(c.batCap)} kWh, ${fmt2(c.batInv)} kW | ${fmtEur(c.prices[priceKey])}</option>`;
   }).join('');
   return placeholder + opts;
 }
@@ -608,16 +610,47 @@ async function loadConfigs() {
   statusEl.innerHTML = '<span class="spinner"></span> Laden...';
   return withSpinner(async () => {
     try {
-      const cfg = await getProductsConfig();
-      if (!cfg || !cfg.csvUrl) throw new Error('config/products.csvUrl ontbreekt.');
-      const resp = await fetch(cfg.csvUrl);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      _sheetConfigs = parseSheetConfigs(await resp.text());
-      if (!_sheetConfigs.length) throw new Error('Geen configuraties gevonden in de sheet.');
+      const legacyConfigs = [];
+      let legacyError = null;
+      try {
+        const cfg = await getProductsConfig();
+        if (!cfg || !cfg.csvUrl) throw new Error('config/products.csvUrl ontbreekt.');
+        const resp = await fetch(cfg.csvUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        legacyConfigs.push(...parseSheetConfigs(await resp.text()).map(c => ({ ...c, source: 'sheet' })));
+      } catch (e) {
+        legacyError = e;
+        console.warn('Legacy sheet-configuraties laden mislukt:', e);
+      }
+
+      let productCalcConfigs = [];
+      let productConfigError = null;
+      try {
+        const [categories, products, productConfigs] = await Promise.all([
+          listProductCategories(),
+          listProducts({ isActive: true }),
+          listProductConfigs(),
+        ]);
+        const inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection');
+        productCalcConfigs = productConfigsToCalcConfigs(productConfigs, products, categories, {
+          inspectionProductId: inspectionProduct && inspectionProduct.id,
+        });
+      } catch (e) {
+        productConfigError = e;
+        console.warn('Nieuwe samenstellingen laden mislukt:', e);
+      }
+
+      _sheetConfigs = [...legacyConfigs, ...productCalcConfigs];
+      if (!_sheetConfigs.length) {
+        throw productConfigError || legacyError || new Error('Geen configuraties gevonden.');
+      }
       _populateConfigSelects();
       document.getElementById('configSelectorsArea').style.display = '';
       document.getElementById('addManualConfigBtn').style.display = '';
-      statusEl.textContent = `✅ ${_sheetConfigs.length} configuraties geladen.`;
+      const parts = [];
+      if (legacyConfigs.length) parts.push(`${legacyConfigs.length} sheet`);
+      if (productCalcConfigs.length) parts.push(`${productCalcConfigs.length} samenstellingen`);
+      statusEl.textContent = `✅ ${_sheetConfigs.length} configuraties geladen (${parts.join(' + ')}).`;
     } catch(e) {
       statusEl.textContent = `❌ Fout bij laden: ${e.message}`;
       throw e;
