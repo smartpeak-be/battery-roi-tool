@@ -1,0 +1,134 @@
+import { totalProductPrice } from './product-pricing.js';
+import {
+  BATTERY_CATEGORY_SLUGS,
+  categoryMap,
+  configSubtotalExVat,
+  generatedConfigDescription,
+  productMap,
+} from './product-configs.js';
+
+const DEFAULT_EFFICIENCY = 0.90;
+const PRODUCT_CONFIG_TYPE_PREFIX = 'PC_';
+
+function normalizeQty(qty) {
+  return Math.max(0, parseInt(qty, 10) || 0);
+}
+
+function isBatteryOrSystem(product, categoriesById) {
+  const cat = product && categoriesById && categoriesById[product.categoryId];
+  return !!(cat && BATTERY_CATEGORY_SLUGS.has(cat.slug));
+}
+
+function normalizeEfficiency(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n > 1 ? n / 100 : n;
+}
+
+function productCapacityKwh(product) {
+  const n = Number(product?.specs?.capacityKwh);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function productInverterPowerKw(product) {
+  const n = Number(product?.specs?.inverterPowerKw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function productEfficiency(product) {
+  return normalizeEfficiency(product?.specs?.efficiency)
+    || normalizeEfficiency(product?.specs?.eff)
+    || null;
+}
+
+function inferTechnicalSpecs(items, productsById, categoriesById) {
+  let batCap = 0;
+  let batInv = 0;
+  let weightedEffTotal = 0;
+  let effWeightTotal = 0;
+
+  (items || []).forEach(item => {
+    const product = productsById[item.productId];
+    if (!product || !isBatteryOrSystem(product, categoriesById)) return;
+    const qty = normalizeQty(item.qty);
+    const cap = productCapacityKwh(product) * qty;
+    const inv = productInverterPowerKw(product) * qty;
+    const eff = productEfficiency(product);
+
+    batCap += cap;
+    batInv += inv;
+    if (eff) {
+      const weight = cap > 0 ? cap : qty;
+      weightedEffTotal += eff * weight;
+      effWeightTotal += weight;
+    }
+  });
+
+  return {
+    batCap,
+    batInv,
+    eff: effWeightTotal > 0 ? weightedEffTotal / effWeightTotal : DEFAULT_EFFICIENCY,
+  };
+}
+
+function inspectionPriceInclVat(productsById, inspectionProductId) {
+  const inspection = inspectionProductId ? productsById[inspectionProductId] : null;
+  return inspection ? totalProductPrice(inspection, 1) * 1.21 : 0;
+}
+
+export function productConfigType(id) {
+  return `${PRODUCT_CONFIG_TYPE_PREFIX}${id}`;
+}
+
+export function isProductConfigType(type) {
+  return typeof type === 'string' && type.startsWith(PRODUCT_CONFIG_TYPE_PREFIX);
+}
+
+export function productConfigIdFromType(type) {
+  return isProductConfigType(type) ? type.slice(PRODUCT_CONFIG_TYPE_PREFIX.length) : '';
+}
+
+export function productConfigToCalcConfig(config, products, categories, opts = {}) {
+  if (!config || config.isActive === false) return null;
+
+  const productsById = productMap(products || []);
+  const categoriesById = categoryMap(categories || []);
+  const items = (config.items || [])
+    .map(item => ({ productId: item?.productId ? String(item.productId) : '', qty: normalizeQty(item?.qty) }))
+    .filter(item => item.productId && item.qty > 0 && productsById[item.productId]);
+
+  const { batCap, batInv, eff } = inferTechnicalSpecs(items, productsById, categoriesById);
+  if (!(batCap > 0) || !(batInv > 0) || !(eff > 0)) return null;
+
+  const subtotalExVat = configSubtotalExVat(items, productsById);
+  const inspectionInclVat = inspectionPriceInclVat(productsById, opts.inspectionProductId);
+  const type = productConfigType(config.id);
+  const omschrijving = generatedConfigDescription(items, productsById, categoriesById)
+    || config.description
+    || config.name
+    || type;
+
+  return {
+    type,
+    omschrijving,
+    batCap,
+    batInv,
+    eff,
+    prices: {
+      '6_no': subtotalExVat * 1.06,
+      '6_yes': subtotalExVat * 1.06 + inspectionInclVat,
+      '21_no': subtotalExVat * 1.21,
+      '21_yes': subtotalExVat * 1.21 + inspectionInclVat,
+    },
+    source: 'productConfig',
+    productConfigId: config.id,
+    productConfigName: config.name || '',
+    items,
+  };
+}
+
+export function productConfigsToCalcConfigs(configs, products, categories, opts = {}) {
+  return (configs || [])
+    .map(config => productConfigToCalcConfig(config, products, categories, opts))
+    .filter(Boolean);
+}
