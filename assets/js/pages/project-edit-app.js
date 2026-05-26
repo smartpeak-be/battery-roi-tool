@@ -365,9 +365,10 @@ function _serialListEqual(a, b) {
     const x = a[i], y = b[i];
     if (!x || !y) return false;
     if (x.id !== y.id) return false;
-    if ((x.value     || '')   !== (y.value     || ''))   return false;
-    if ((x.ocrStatus || null) !== (y.ocrStatus || null)) return false;
-    if ((x.category  || null) !== (y.category  || null)) return false;
+    if ((x.value       || '')   !== (y.value       || ''))   return false;
+    if ((x.ocrStatus   || null) !== (y.ocrStatus   || null)) return false;
+    if ((x.category    || null) !== (y.category    || null)) return false;
+    if ((x.bebatStatus || null) !== (y.bebatStatus || null)) return false;
   }
   return true;
 }
@@ -389,6 +390,11 @@ function renderSections() {
   renderBlokOffertes();
   document.getElementById('blokD-slot').innerHTML = sectionBlokD();
   wireBlokD();
+  const opsSlot = document.getElementById('blokOps-slot');
+  if (opsSlot) {
+    opsSlot.innerHTML = sectionOps();
+    wireOps();
+  }
   updateSaveCalcEnabled();
 }
 
@@ -1171,6 +1177,130 @@ function rerenderBlokC() {
   wireBlokC();
 }
 
+function sectionOps() {
+  const tasks = (_project.tasks || []).map(normalizeProjectTask);
+  const activities = (_project.activities || []).map(normalizeProjectActivity);
+  const nextActions = nextActionsForProject(_project);
+  const taskRows = tasks.length ? tasks.map(t => `
+    <div class="border rounded p-2 d-flex flex-column flex-md-row gap-2 align-items-md-center" data-task-id="${escapeHtml(t.id)}">
+      <select class="form-select form-select-sm w-auto" data-task-field="status">
+        ${['open','in_progress','done','cancelled'].map(s => `<option value="${s}" ${t.status === s ? 'selected' : ''}>${s === 'open' ? 'Open' : s === 'in_progress' ? 'Bezig' : s === 'done' ? 'Gedaan' : 'Geannuleerd'}</option>`).join('')}
+      </select>
+      <input class="form-control form-control-sm flex-grow-1" data-task-field="title" value="${escapeHtml(t.title || '')}" placeholder="Taak" />
+      <select class="form-select form-select-sm w-auto" data-task-field="assignee">
+        <option value="" ${!t.assignee ? 'selected' : ''}>Nog toe te wijzen</option>
+        <option value="kevin" ${t.assignee === 'kevin' ? 'selected' : ''}>Kevin</option>
+        <option value="ruben" ${t.assignee === 'ruben' ? 'selected' : ''}>Ruben</option>
+      </select>
+      <input type="date" class="form-control form-control-sm w-auto" data-task-field="dueDate" value="${escapeHtml(t.dueDate || '')}" />
+      <button type="button" class="btn btn-sm btn-outline-danger" data-task-delete="${escapeHtml(t.id)}" title="Taak verwijderen"><i class="fa-solid fa-trash"></i></button>
+    </div>`).join('') : '<p class="text-muted mb-0">Nog geen taken.</p>';
+  const activityRows = activities.length ? activities.slice().reverse().map(a => `
+    <div class="border-start border-3 ps-2 py-1">
+      <div class="small text-muted">${escapeHtml(a.type)} · ${escapeHtml(a.occurredAt || 'geen datum')} · bron: ${escapeHtml(a.source || 'manual')} · ${escapeHtml(a.confidence || 'zeker')}</div>
+      <div>${escapeHtml(a.title || a.notes || 'Activiteit')}</div>
+    </div>`).join('') : '<p class="text-muted mb-0">Nog geen gestructureerde activiteiten.</p>';
+  const suggestedRows = nextActions.length ? nextActions.map(a => `
+    <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1" data-add-suggested-task="${escapeHtml(a.type)}" data-title="${escapeHtml(a.label)}" data-assignee="${escapeHtml(a.assignee || '')}">
+      <i class="fa-solid fa-plus me-1"></i>${escapeHtml(a.label)}
+    </button>`).join('') : '<span class="text-muted small">Geen automatische suggesties.</span>';
+  return `
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fa-solid fa-list-check text-primary me-2"></i>Opvolging &amp; tijdlijn</h5>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-info small">
+          Taken zijn voorlopig bedoeld voor Kevin of Ruben. Onzekere info kan je hier bewust als taak/activiteit markeren in plaats van ze als feit te interpreteren.
+        </div>
+        <h6 class="text-muted">Volgende beste acties</h6>
+        <div class="mb-3">${suggestedRows}</div>
+        <h6 class="text-muted">Taken</h6>
+        <div class="d-flex flex-column gap-2 mb-2" id="opsTaskList">${taskRows}</div>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="opsAddTask"><i class="fa-solid fa-plus me-1"></i>Taak toevoegen</button>
+        <hr />
+        <h6 class="text-muted">Tijdlijn / activiteiten</h6>
+        <div class="d-flex flex-column gap-2 mb-2" id="opsActivityList">${activityRows}</div>
+        <div class="row g-2">
+          <div class="col-12 col-md-3">
+            <select class="form-select form-select-sm" id="opsActivityType">
+              <option value="phone_call">Telefoon</option>
+              <option value="mail_sent">Mail verstuurd</option>
+              <option value="mail_received">Mail ontvangen</option>
+              <option value="appointment_scheduled">Afspraak gepland</option>
+              <option value="site_visit">Plaatsbezoek</option>
+              <option value="offer_sent">Offerte verzonden</option>
+              <option value="installation_done">Installatie uitgevoerd</option>
+              <option value="internal_note">Interne notitie</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-2"><input type="date" class="form-control form-control-sm" id="opsActivityDate" /></div>
+          <div class="col-12 col-md"><input type="text" class="form-control form-control-sm" id="opsActivityTitle" placeholder="Korte omschrijving" /></div>
+          <div class="col-12 col-md-auto"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="opsAddActivity">Activiteit toevoegen</button></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function rerenderOps() {
+  const slot = document.getElementById('blokOps-slot');
+  if (!slot) return;
+  slot.innerHTML = sectionOps();
+  wireOps();
+}
+
+function wireOps() {
+  document.getElementById('opsAddTask')?.addEventListener('click', () => {
+    _project.tasks = _project.tasks || [];
+    _project.tasks.push(normalizeProjectTask({ title: '', assignee: 'kevin' }));
+    rerenderOps();
+  });
+  document.querySelectorAll('[data-add-suggested-task]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _project.tasks = _project.tasks || [];
+      _project.tasks.push(normalizeProjectTask({
+        type: btn.getAttribute('data-add-suggested-task'),
+        title: btn.getAttribute('data-title'),
+        assignee: btn.getAttribute('data-assignee'),
+        source: 'suggested',
+      }));
+      rerenderOps();
+    });
+  });
+  document.querySelectorAll('[data-task-field]').forEach(el => {
+    el.addEventListener('input', _updateTaskFromRow);
+    el.addEventListener('change', _updateTaskFromRow);
+  });
+  document.querySelectorAll('[data-task-delete]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-task-delete');
+      _project.tasks = (_project.tasks || []).filter(t => t.id !== id);
+      rerenderOps();
+    });
+  });
+  document.getElementById('opsAddActivity')?.addEventListener('click', () => {
+    const title = document.getElementById('opsActivityTitle')?.value.trim();
+    if (!title) return;
+    _project.activities = _project.activities || [];
+    _project.activities.push(normalizeProjectActivity({
+      type: document.getElementById('opsActivityType')?.value,
+      occurredAt: document.getElementById('opsActivityDate')?.value || new Date().toISOString().slice(0, 10),
+      title,
+      source: 'manual',
+    }));
+    rerenderOps();
+  });
+}
+
+function _updateTaskFromRow(e) {
+  const row = e.target.closest('[data-task-id]');
+  const id = row && row.getAttribute('data-task-id');
+  const task = (_project.tasks || []).find(t => t.id === id);
+  if (!task) return;
+  task[e.target.getAttribute('data-task-field')] = e.target.value || null;
+}
+
 function sectionBlokD() {
   const serials = _project.serialNumbers || [];
   const serialRowsHtml = serials.map(s => _renderSerialRow(s)).join('')
@@ -1197,17 +1327,11 @@ function _renderSerialRow(entry) {
   if (entry.id === '_new') {
     return `
       <div class="serial-row" data-serial-id="_new">
-        <input type="text" class="form-control serial-value" placeholder="Serienummer toevoegen&hellip;" value="" data-serial-field="value" />
+        <input type="text" class="form-control serial-value" placeholder="Batterijserienummer toevoegen&hellip;" value="" data-serial-field="value" />
       </div>
     `;
   }
   const cat = entry.category || 'null';
-  const catLabels = {
-    batterij: 'Batterij',
-    omvormer: 'Omvormer',
-    omvormer_batterij: 'Omvormer+Batterij',
-    'null': '?',
-  };
   const status = entry.ocrStatus || 'ok';
   const isPending = status === 'pending';
   const isFailed  = status === 'failed';
@@ -1229,10 +1353,16 @@ function _renderSerialRow(entry) {
   const rerunBtnHtml = (isOcr && isFailed)
     ? `<button type="button" class="serial-action-btn serial-rerun-btn" data-photo-id="${escapeHtml(entry.photoId || '')}" title="OCR opnieuw proberen"><i class="fa-solid fa-rotate"></i></button>`
     : '';
+  const bebatStatus = entry.bebatStatus || (cat === 'batterij' || cat === 'omvormer_batterij' ? 'pending' : 'not_required');
 
   return `
-    <div class="serial-row" data-serial-id="${escapeHtml(entry.id)}">
-      <span class="serial-cat-badge serial-cat-${escapeHtml(cat)}">${escapeHtml(catLabels[cat])}</span>
+    <div class="serial-row flex-wrap" data-serial-id="${escapeHtml(entry.id)}">
+      <select class="form-select form-select-sm w-auto" data-serial-field="category" title="Type serienummer">
+        <option value="batterij" ${cat === 'batterij' ? 'selected' : ''}>Batterij</option>
+        <option value="omvormer" ${cat === 'omvormer' ? 'selected' : ''}>Omvormer</option>
+        <option value="omvormer_batterij" ${cat === 'omvormer_batterij' ? 'selected' : ''}>Omv.+bat.</option>
+        <option value="" ${cat === 'null' ? 'selected' : ''}>?</option>
+      </select>
       ${statusIconHtml}
       ${sourceIconHtml}
       <input type="text" class="form-control form-control-sm serial-value"
@@ -1240,6 +1370,11 @@ function _renderSerialRow(entry) {
              placeholder="${escapeHtml(placeholder)}"
              data-serial-field="value"
              ${isPending ? 'readonly' : ''} />
+      <select class="form-select form-select-sm w-auto" data-serial-field="bebatStatus" title="Bebat-status">
+        <option value="pending" ${bebatStatus === 'pending' ? 'selected' : ''}>Bebat: nog</option>
+        <option value="registered" ${bebatStatus === 'registered' ? 'selected' : ''}>Bebat: geregistreerd</option>
+        <option value="not_required" ${bebatStatus === 'not_required' ? 'selected' : ''}>Bebat: n.v.t.</option>
+      </select>
       ${rerunBtnHtml}
       <button type="button" class="serial-action-btn serial-delete-btn" data-serial-delete="${escapeHtml(entry.id)}" title="Verwijderen"><i class="fa-solid fa-trash"></i></button>
     </div>
@@ -1260,20 +1395,22 @@ function wireBlokD() {
     });
   }
 
-  // Serials — value typing
-  document.querySelectorAll('[data-serial-field="value"]').forEach(inp => {
+  // Serials — value/category/Bebat typing
+  document.querySelectorAll('[data-serial-field]').forEach(inp => {
     inp.addEventListener('input', async e => {
       const row = e.target.closest('.serial-row');
       const id  = row.getAttribute('data-serial-id');
+      const field = e.target.getAttribute('data-serial-field');
       const val = e.target.value;
-      if (id === '_new' && val.trim().length > 0) {
+      if (id === '_new' && field === 'value' && val.trim().length > 0) {
         // Promote trailing empty to a real entry + add new trailing.
         if (!PROJECT_ID) {
           // New-project mode: stash on _project, save at createProject-time.
           _project.serialNumbers = _project.serialNumbers || [];
-          const entry = { id: _genSerialId(), value: val, photoStoragePath: null, uploadedAt: null, uploadedBy: null };
+          const entry = { id: _genSerialId(), value: val, category: 'batterij', source: 'manual', bebatStatus: 'pending', bebatRegisteredAt: null, bebatReference: null, photoStoragePath: null, uploadedAt: null, uploadedBy: null };
           _project.serialNumbers.push(entry);
           rerenderBlokD();
+          rerenderOps();
           // Focus what used to be the trailing input (now the last real row)
           setTimeout(() => {
             const rows = document.querySelectorAll('#peSerialList .serial-row');
@@ -1286,23 +1423,38 @@ function wireBlokD() {
             _project.serialNumbers = _project.serialNumbers || [];
             _project.serialNumbers.push(entry);
             rerenderBlokD();
+            rerenderOps();
           } catch (err) {
             showToast('Serienummer toevoegen mislukt: ' + (err && err.message ? err.message : String(err)), 'danger');
           }
         }
       } else if (id !== '_new') {
+        const entry = (_project.serialNumbers || []).find(x => x.id === id);
+        if (entry) {
+          entry[field] = field === 'category' && !val ? null : val;
+          if (field === 'category' && val === 'omvormer' && !entry.bebatStatus) entry.bebatStatus = 'not_required';
+          if (field === 'category' && (val === 'batterij' || val === 'omvormer_batterij') && (!entry.bebatStatus || entry.bebatStatus === 'not_required')) entry.bebatStatus = 'pending';
+        }
         if (!_serialSaveTimer) _serialSaveTimer = {};
+        if (!_serialSavePatch) _serialSavePatch = {};
+        const patch = _serialSavePatch[id] || {};
+        patch[field] = field === 'category' && !val ? null : val;
+        if (entry && field === 'category') patch.bebatStatus = entry.bebatStatus;
+        _serialSavePatch[id] = patch;
         clearTimeout(_serialSaveTimer[id]);
         _serialSaveTimer[id] = setTimeout(async () => {
-          const entry = (_project.serialNumbers || []).find(x => x.id === id);
-          if (entry) entry.value = val;
+          const patchToSave = { ...(_serialSavePatch && _serialSavePatch[id] ? _serialSavePatch[id] : {}) };
+          if (_serialSavePatch) delete _serialSavePatch[id];
+          if (!Object.keys(patchToSave).length) return;
           if (PROJECT_ID) {
-            try { await updateProjectSerial(PROJECT_ID, id, { value: val }); }
+            try { await updateProjectSerial(PROJECT_ID, id, patchToSave); }
             catch (err) { showToast('Opslaan mislukt: ' + (err && err.message ? err.message : String(err)), 'danger'); }
           }
+          if ('category' in patchToSave || 'bebatStatus' in patchToSave) rerenderOps();
         }, 600);
       }
     });
+    inp.addEventListener('change', e => e.target.dispatchEvent(new Event('input', { bubbles: true })));
   });
 
   // Serial delete
@@ -1322,6 +1474,7 @@ function wireBlokD() {
       }
       _project.serialNumbers = (_project.serialNumbers || []).filter(x => x.id !== id);
       rerenderBlokD();
+      rerenderOps();
     });
   });
 
@@ -1401,6 +1554,7 @@ function rerenderBlokD(opts = {}) {
 
 let _blokDUploader    = null;
 let _serialSaveTimer  = null;
+let _serialSavePatch  = null;
 let _pendingCsv       = null;
 
 
@@ -1526,6 +1680,11 @@ function collectFromForm() {
     inspection:    _project.inspection,
     supplier:      _project.supplier,
     calcDefaults:  _project.calcDefaults,
+    activities:    (_project.activities || []).map(normalizeProjectActivity),
+    tasks:         (_project.tasks || []).map(normalizeProjectTask).filter(t => t.title),
+    mailLinks:     _project.mailLinks || [],
+    filesInbox:    _project.filesInbox || [],
+    batteryRegistry: _project.batteryRegistry || { bebatStatus: 'not_needed', entries: [] },
     serialNumbers: _project.serialNumbers || [],
   };
   return { projectName, customerName, status: _project.status || DEFAULT_STATUS, metadata };

@@ -134,6 +134,16 @@ function newEmptyProjectMetadata() {
     calcDefaults: {
       keuring: 'yes',
     },
+    // Operationele backoffice-laag: gestructureerd naast comments zodat
+    // AmaAi/Kevin/Ruben later betrouwbaar kunnen zoeken, opvolgen en automatiseren.
+    activities: [],
+    tasks: [],
+    mailLinks: [],
+    filesInbox: [],
+    batteryRegistry: {
+      bebatStatus: 'not_needed',
+      entries: [],
+    },
     serialNumbers: [],
   };
 }
@@ -162,13 +172,128 @@ function mergeProjectMetadata(project) {
     ...((project.technical && project.technical.voltageMeasurements) || {}),
   };
   merged.offertes      = project.offertes || {};
+  merged.activities    = Array.isArray(project.activities) ? project.activities.map(normalizeProjectActivity) : [];
+  merged.tasks         = Array.isArray(project.tasks) ? project.tasks.map(normalizeProjectTask) : [];
+  merged.mailLinks     = Array.isArray(project.mailLinks) ? project.mailLinks : [];
+  merged.filesInbox    = Array.isArray(project.filesInbox) ? project.filesInbox : [];
+  merged.batteryRegistry = {
+    ...empty.batteryRegistry,
+    ...(project.batteryRegistry || {}),
+    entries: Array.isArray(project.batteryRegistry && project.batteryRegistry.entries)
+      ? project.batteryRegistry.entries
+      : [],
+  };
   merged.serialNumbers = (Array.isArray(project.serialNumbers) ? project.serialNumbers : []).map(e => ({
     ...e,
     category: (e && e.category != null) ? e.category : null,
     source: (e && e.source) || 'manual',
+    bebatStatus: (e && e.bebatStatus) || null,
+    bebatRegisteredAt: (e && e.bebatRegisteredAt) || null,
+    bebatReference: (e && e.bebatReference) || null,
   }));
   merged.manualConfigs = project.manualConfigs || {};
   return merged;
+}
+
+const SMARTPEAK_TASK_ASSIGNEES = ['kevin', 'ruben'];
+const SMARTPEAK_TASK_STATUSES = ['open', 'in_progress', 'done', 'cancelled'];
+const SMARTPEAK_ACTIVITY_TYPES = [
+  'phone_call', 'mail_received', 'mail_sent', 'appointment_scheduled',
+  'site_visit', 'offer_sent', 'offer_accepted', 'installation_planned',
+  'installation_done', 'inspection', 'invoice', 'follow_up', 'internal_note',
+];
+
+function _cleanString(value) {
+  return String(value == null ? '' : value).trim();
+}
+
+function _normalizeAssignee(value) {
+  const v = _cleanString(value).toLowerCase();
+  if (!v) return null;
+  if (SMARTPEAK_TASK_ASSIGNEES.includes(v)) return v;
+  // Future team members must not be destroyed by today's Kevin/Ruben-only UI.
+  return v;
+}
+
+function normalizeProjectTask(task = {}) {
+  return {
+    id: task.id || `task_${Math.random().toString(36).slice(2, 10)}`,
+    title: _cleanString(task.title),
+    type: task.type || 'follow_up',
+    status: SMARTPEAK_TASK_STATUSES.includes(task.status) ? task.status : 'open',
+    assignee: _normalizeAssignee(task.assignee),
+    dueDate: task.dueDate || null,
+    source: task.source || 'manual',
+    confidence: task.confidence || 'zeker',
+    linkedActivityId: task.linkedActivityId || null,
+    linkedMailId: task.linkedMailId || null,
+    createdAt: task.createdAt || null,
+    updatedAt: task.updatedAt || null,
+    notes: task.notes || null,
+  };
+}
+
+function normalizeProjectActivity(activity = {}) {
+  const type = SMARTPEAK_ACTIVITY_TYPES.includes(activity.type) ? activity.type : 'internal_note';
+  return {
+    id: activity.id || `act_${Math.random().toString(36).slice(2, 10)}`,
+    type,
+    title: activity.title || activity.label || '',
+    occurredAt: activity.occurredAt || activity.date || activity.createdAt || null,
+    source: activity.source || 'manual',
+    confidence: activity.confidence || 'zeker',
+    assignee: _normalizeAssignee(activity.assignee),
+    linkedMailId: activity.linkedMailId || null,
+    linkedFileId: activity.linkedFileId || null,
+    followUpTaskId: activity.followUpTaskId || null,
+    notes: activity.notes || activity.text || null,
+  };
+}
+
+function _batterySerialsForBebat(project) {
+  const serials = Array.isArray(project && project.serialNumbers) ? project.serialNumbers : [];
+  return serials.filter(s => ['batterij', 'omvormer_batterij'].includes(s && s.category));
+}
+
+function bebatSummaryForProject(project) {
+  const batteries = _batterySerialsForBebat(project);
+  const total = batteries.length;
+  const registered = batteries.filter(s => s.bebatStatus === 'registered').length;
+  const notRequired = batteries.filter(s => s.bebatStatus === 'not_required').length;
+  const pending = Math.max(0, total - registered - notRequired);
+  const explicitStatus = project && project.batteryRegistry && project.batteryRegistry.bebatStatus;
+  const status = total === 0
+    ? (explicitStatus || 'not_needed')
+    : pending > 0 ? 'pending' : 'registered';
+  return { total, registered, pending, notRequired, status };
+}
+
+function _hasActivity(project, type) {
+  return Array.isArray(project && project.activities) && project.activities.some(a => a && a.type === type);
+}
+
+function _hasOpenTask(project, type) {
+  return Array.isArray(project && project.tasks) && project.tasks.some(t => t && t.type === type && !['done', 'cancelled'].includes(t.status));
+}
+
+function nextActionsForProject(project) {
+  const p = mergeProjectMetadata(project || {});
+  const actions = [];
+  const appointmentPlanned = p.status === 'bezoek_gepland' || !!p.planning.visitPlannedDate;
+  if (appointmentPlanned && !_hasActivity(p, 'mail_sent') && !_hasOpenTask(p, 'send_appointment_confirmation')) {
+    actions.push({ type: 'send_appointment_confirmation', label: 'Bevestigingsmail afspraak sturen', assignee: 'kevin', priority: 'high' });
+  }
+  if (!p.csvUpload && !_hasOpenTask(p, 'request_energy_data')) {
+    actions.push({ type: 'request_energy_data', label: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin', priority: 'normal' });
+  }
+  const bebat = bebatSummaryForProject(p);
+  if (bebat.pending > 0 && !_hasOpenTask(p, 'register_bebat')) {
+    actions.push({ type: 'register_bebat', label: `${bebat.pending} batterijserienummer(s) nog Bebat registreren`, assignee: 'ruben', priority: 'high' });
+  }
+  if (p.status === 'offerte_uit' && !_hasOpenTask(p, 'follow_up_offer')) {
+    actions.push({ type: 'follow_up_offer', label: 'Offerte opvolgen', assignee: 'kevin', priority: 'normal' });
+  }
+  return actions;
 }
 
 // BTW afleidingsregel (single source of truth).
@@ -382,6 +507,11 @@ async function createProject({ projectName, customerName, status, csvData, metad
     if (metadata.inspection)   doc.inspection   = metadata.inspection;
     if (metadata.supplier)     doc.supplier     = metadata.supplier;
     if (metadata.calcDefaults) doc.calcDefaults = metadata.calcDefaults;
+    if (Array.isArray(metadata.activities)) doc.activities = metadata.activities;
+    if (Array.isArray(metadata.tasks)) doc.tasks = metadata.tasks;
+    if (Array.isArray(metadata.mailLinks)) doc.mailLinks = metadata.mailLinks;
+    if (Array.isArray(metadata.filesInbox)) doc.filesInbox = metadata.filesInbox;
+    if (metadata.batteryRegistry) doc.batteryRegistry = metadata.batteryRegistry;
     if (Array.isArray(metadata.serialNumbers)) doc.serialNumbers = metadata.serialNumbers;
   }
   return projectsCol().add(doc);
@@ -1305,6 +1435,11 @@ async function addProjectSerial(projectId, value) {
   const entry = {
     id:               _genSerialId(),
     value:            (value || '').trim(),
+    category:         'batterij',
+    source:           'manual',
+    bebatStatus:      null,
+    bebatRegisteredAt:null,
+    bebatReference:   null,
     photoStoragePath: null,
     uploadedAt:       null,
     uploadedBy:       null,
@@ -2095,3 +2230,7 @@ window.formatCustomerAddress = formatCustomerAddress;
 window.billitAddressForCustomer = billitAddressForCustomer;
 window.googleMapsUrlForCustomerAddress = googleMapsUrlForCustomerAddress;
 window.wazeUrlForCustomerAddress = wazeUrlForCustomerAddress;
+window.normalizeProjectTask = normalizeProjectTask;
+window.normalizeProjectActivity = normalizeProjectActivity;
+window.bebatSummaryForProject = bebatSummaryForProject;
+window.nextActionsForProject = nextActionsForProject;
