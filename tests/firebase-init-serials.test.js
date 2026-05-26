@@ -199,6 +199,21 @@ describe('operations workflow defaults', () => {
     expect(nextActionsForProject({ ...base, status: 'wachten_op_data' }).some(a => a.type === 'request_energy_data')).toBe(true);
   });
 
+  it('does not show a suggested action again after it was ignored/cancelled', () => {
+    const { nextActionsForProject, projectTaskRowsForProjects } = loadHelpers();
+    const project = {
+      id: 'project-ignored',
+      customerName: 'Genegeerd',
+      status: 'wachten_op_data',
+      tasks: [
+        { id: 'ignored-csv', type: 'request_energy_data', title: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin', status: 'cancelled', source: 'manual' },
+      ],
+    };
+
+    expect(nextActionsForProject(project).some(a => a.type === 'request_energy_data')).toBe(false);
+    expect(projectTaskRowsForProjects([project], { assignee: 'kevin' })).toEqual([]);
+  });
+
   it('builds cross-project Bebat rows only for battery serials and sorts pending first', () => {
     const { bebatRowsForProjects } = loadHelpers();
     const projects = [

@@ -324,6 +324,14 @@ function _hasOpenTask(project, type) {
   return Array.isArray(project && project.tasks) && project.tasks.some(t => t && t.type === type && !['done', 'cancelled'].includes(t.status));
 }
 
+function _hasCancelledTask(project, type) {
+  return Array.isArray(project && project.tasks) && project.tasks.some(t => t && t.type === type && t.status === 'cancelled');
+}
+
+function _isActionSuppressed(project, type) {
+  return _hasOpenTask(project, type) || _hasCancelledTask(project, type);
+}
+
 function _hasEnergyDataForCalculation(project) {
   return !!(
     (project && project.csvUpload && project.csvUpload.dailyCompact) ||
@@ -343,17 +351,17 @@ function nextActionsForProject(project) {
   const p = { ...mergeProjectMetadata(project || {}), ...(project || {}) };
   const actions = [];
   const appointmentPlanned = p.status === 'bezoek_gepland' || !!p.planning.visitPlannedDate;
-  if (appointmentPlanned && !_hasActivity(p, 'mail_sent') && !_hasOpenTask(p, 'send_appointment_confirmation')) {
+  if (appointmentPlanned && !_hasActivity(p, 'mail_sent') && !_isActionSuppressed(p, 'send_appointment_confirmation')) {
     actions.push({ type: 'send_appointment_confirmation', label: 'Bevestigingsmail afspraak sturen', assignee: 'kevin', priority: 'high' });
   }
-  if (_shouldRequestEnergyData(p) && !_hasOpenTask(p, 'request_energy_data')) {
+  if (_shouldRequestEnergyData(p) && !_isActionSuppressed(p, 'request_energy_data')) {
     actions.push({ type: 'request_energy_data', label: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin', priority: 'normal' });
   }
   const bebat = bebatSummaryForProject(p);
-  if (bebat.pending > 0 && !_hasOpenTask(p, 'register_bebat')) {
+  if (bebat.pending > 0 && !_isActionSuppressed(p, 'register_bebat')) {
     actions.push({ type: 'register_bebat', label: `${bebat.pending} batterijserienummer(s) nog Bebat registreren`, assignee: 'ruben', priority: 'high' });
   }
-  if (p.status === 'offerte_uit' && !_hasOpenTask(p, 'follow_up_offer')) {
+  if (p.status === 'offerte_uit' && !_isActionSuppressed(p, 'follow_up_offer')) {
     actions.push({ type: 'follow_up_offer', label: 'Offerte opvolgen', assignee: 'kevin', priority: 'normal' });
   }
   return actions;

@@ -53,6 +53,7 @@ function rowHTML(row) {
       <div class="d-flex gap-1 justify-content-lg-end">
         <button type="button" class="btn btn-sm btn-outline-primary taskStartBtn" ${row.status === 'in_progress' ? 'disabled' : ''}>${startLabel}</button>
         ${row.rowType === 'task' ? '<button type="button" class="btn btn-sm btn-outline-success taskDoneBtn">Gedaan</button>' : ''}
+        <button type="button" class="btn btn-sm btn-outline-warning taskIgnoreBtn">Negeer</button>
         <a class="btn btn-sm btn-outline-secondary" href="project-edit.html?project=${encodeURIComponent(row.projectId)}">Project</a>
       </div>
     </div>`;
@@ -98,10 +99,11 @@ async function updateTask(rowEl, targetStatus) {
         type: rowEl.dataset.taskType,
         title: rowEl.dataset.taskTitle,
         assignee: rowEl.dataset.taskAssignee,
-        status: 'in_progress',
+        status: targetStatus === 'cancelled' ? 'cancelled' : 'in_progress',
         source: 'manual',
         createdAt: now,
         updatedAt: now,
+        notes: targetStatus === 'cancelled' ? 'Genegeerd vanuit takenoverzicht.' : null,
       }));
     } else {
       const task = tasks.find(t => t.id === rowEl.dataset.taskId);
@@ -109,9 +111,15 @@ async function updateTask(rowEl, targetStatus) {
       task.status = targetStatus;
       task.updatedAt = now;
       if (targetStatus === 'done') task.completedAt = now;
+      if (targetStatus === 'cancelled') task.cancelledAt = now;
     }
     await updateProjectMetadata(projectId, { tasks });
-    showToast(targetStatus === 'done' ? 'Taak afgewerkt' : 'Taak gestart', 'success');
+    const message = targetStatus === 'done'
+      ? 'Taak afgewerkt'
+      : targetStatus === 'cancelled'
+        ? 'Taak/suggestie genegeerd'
+        : 'Taak gestart';
+    showToast(message, 'success');
     await loadTasks(false);
   } catch (e) {
     showToast('Taak bijwerken mislukt: ' + (e && e.message ? e.message : String(e)), 'danger');
@@ -139,6 +147,8 @@ function wireEvents() {
     if (startBtn) updateTask(startBtn.closest('[data-project-id]'), 'in_progress');
     const doneBtn = event.target.closest('.taskDoneBtn');
     if (doneBtn) updateTask(doneBtn.closest('[data-project-id]'), 'done');
+    const ignoreBtn = event.target.closest('.taskIgnoreBtn');
+    if (ignoreBtn) updateTask(ignoreBtn.closest('[data-project-id]'), 'cancelled');
   });
 }
 
