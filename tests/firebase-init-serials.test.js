@@ -207,8 +207,8 @@ describe('operations workflow defaults', () => {
     ];
 
     expect(bebatRowsForProjects(projects)).toEqual([
-      expect.objectContaining({ projectId: 'project-pending', serialId: 'bat-pending', serial: 'BATT-001', status: 'pending', customerName: 'Nog te doen' }),
-      expect.objectContaining({ projectId: 'project-registered', serialId: 'bat-registered', serial: 'BATT-002', status: 'registered', registeredAt: '2026-05-24', reference: 'BE-42' }),
+      expect.objectContaining({ projectId: 'project-pending', serialId: 'bat-pending', serial: 'BATT-001', status: 'pending', customerName: 'Nog te doen', projectStatusLabel: 'Bezoek gepland' }),
+      expect.objectContaining({ projectId: 'project-registered', serialId: 'bat-registered', serial: 'BATT-002', status: 'registered', registeredAt: '2026-05-24', reference: 'BE-42', projectStatusLabel: 'Klaar voor inplannen keuring' }),
     ]);
   });
 });

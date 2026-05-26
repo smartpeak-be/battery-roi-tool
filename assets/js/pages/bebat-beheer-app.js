@@ -18,7 +18,7 @@ function statusBadge(status) {
 function rowMatches(row, query, status) {
   if (status !== 'all' && row.status !== status) return false;
   if (!query) return true;
-  const hay = [row.projectLabel, row.customerName, row.serial, row.reference, row.projectStatus]
+  const hay = [row.projectLabel, row.customerName, row.serial, row.reference, row.projectStatus, row.projectStatusLabel]
     .join(' ')
     .toLowerCase();
   return hay.includes(query);
@@ -47,7 +47,7 @@ function renderRows() {
     <tr data-project-id="${escapeHtml(row.projectId || '')}" data-serial-id="${escapeHtml(row.serialId || '')}">
       <td>
         <a href="project-edit.html?project=${encodeURIComponent(row.projectId)}" class="fw-semibold text-decoration-none">${escapeHtml(row.projectLabel || '(zonder naam)')}</a>
-        <div class="text-muted small">${escapeHtml(row.projectStatus || '')}</div>
+        <div class="text-muted small">${escapeHtml(row.projectStatusLabel || row.projectStatus || '')}</div>
       </td>
       <td>${escapeHtml(row.customerName || '')}</td>
       <td><code>${escapeHtml(row.serial || '')}</code></td>

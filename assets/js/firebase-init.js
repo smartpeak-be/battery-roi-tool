@@ -276,11 +276,13 @@ function bebatRowsForProjects(projects = []) {
       const projectId = project && project.id;
       return _batterySerialsForBebat(p).map(serial => {
         const status = serial.bebatStatus || 'pending';
+        const projectStatus = project && project.status || p.status || '';
         return {
           projectId,
           projectLabel: getProjectLabel({ ...project, ...p }),
           customerName: project && project.customerName || p.customer.name || '',
-          projectStatus: project && project.status || p.status || '',
+          projectStatus,
+          projectStatusLabel: getStatusMeta(projectStatus).label,
           serialId: serial.id,
           serial: serial.value || '',
           category: serial.category || null,
