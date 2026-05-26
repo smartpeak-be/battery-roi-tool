@@ -145,9 +145,17 @@ function rowHTML(p, isDeleted) {
   const warnOfferte = needsOfferteWarning(p)
     ? `<span class="row-warning row-warning-offerte" role="img" aria-label="Offertes ontbreken" title="Offertes ontbreken — klant zit in offerte-fase maar er zijn configs zonder PDF."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
     : '';
+  const nextActionCount = nextActionsForProject(p).length;
+  const opsBadge = nextActionCount > 0
+    ? `<span class="badge text-bg-info ms-1" title="${nextActionCount} voorgestelde opvolgactie(s)">${nextActionCount}</span>`
+    : '';
+  const bebat = bebatSummaryForProject(p);
+  const bebatWarn = bebat.pending > 0
+    ? `<span class="row-warning" role="img" aria-label="Bebat nog te registreren" title="${bebat.pending} batterijserienummer(s) nog Bebat registreren."><i class="fa-solid fa-recycle icon-warn" aria-hidden="true"></i></span>`
+    : '';
   return `
     <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${p.id}">
-      <td>${chat}${warn}${warnOfferte}<button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold projectNameBtn" data-id="${p.id}">${escapeHtml(getProjectLabel(p))}</button></td>
+      <td>${chat}${warn}${warnOfferte}${bebatWarn}<button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold projectNameBtn" data-id="${p.id}">${escapeHtml(getProjectLabel(p))}</button>${opsBadge}</td>
       <td class="d-none d-sm-table-cell">${escapeHtml(p.customerName || '')}</td>
       <td>${statusChipHTML(p.status, p.id)}</td>
       <td class="d-none d-sm-table-cell text-muted small">${updated}</td>
@@ -335,9 +343,13 @@ function kanbanCardHTML(p) {
   const warnOfferte = needsOfferteWarning(p)
     ? `<span class="row-warning row-warning-offerte" role="img" aria-label="Offertes ontbreken" title="Offertes ontbreken — klant zit in offerte-fase maar er zijn configs zonder PDF."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
     : '';
+  const nextActionCount = nextActionsForProject(p).length;
+  const opsBadge = nextActionCount > 0 ? `<span class="badge text-bg-info ms-1">${nextActionCount}</span>` : '';
+  const bebat = bebatSummaryForProject(p);
+  const bebatWarn = bebat.pending > 0 ? `<span class="row-warning" title="Bebat nog te registreren"><i class="fa-solid fa-recycle icon-warn" aria-hidden="true"></i></span>` : '';
   return `
     <div class="kanban-card" draggable="true" data-id="${p.id}">
-      <div class="kanban-card-title" data-id="${p.id}">${chat}${warn}${warnOfferte}${escapeHtml(getProjectLabel(p))}</div>
+      <div class="kanban-card-title" data-id="${p.id}">${chat}${warn}${warnOfferte}${bebatWarn}${escapeHtml(getProjectLabel(p))}${opsBadge}</div>
       <div class="kanban-card-customer">${escapeHtml(p.customerName || '')}</div>
       <div class="kanban-card-footer">
         ${statusChipHTML(p.status, p.id)}
@@ -697,6 +709,41 @@ function renderDrawer(project) {
       <section class="border-bottom pb-3 mb-3">
         <h6 class="mb-2 text-uppercase text-muted">Planning</h6>
         ${planningHtml}
+      </section>
+    `);
+  }
+
+  const nextActions = nextActionsForProject(project);
+  const openTasks = (m.tasks || []).filter(t => !['done', 'cancelled'].includes(t.status));
+  const bebat = bebatSummaryForProject(project);
+  const nextActionsHtml = nextActions.length
+    ? `<div class="d-flex flex-column gap-1">${nextActions.map(a => `<div class="small"><i class="fa-solid fa-arrow-right text-primary me-1"></i>${escapeHtml(a.label)} <span class="badge text-bg-light">${escapeHtml(a.assignee || '')}</span></div>`).join('')}</div>`
+    : '<p class="text-muted small mb-0">Geen automatische suggesties.</p>';
+  const tasksHtml = openTasks.length
+    ? `<div class="d-flex flex-column gap-1">${openTasks.slice(0, 6).map(t => `<div class="small"><span class="badge ${t.status === 'in_progress' ? 'text-bg-primary' : 'text-bg-secondary'}">${t.status === 'in_progress' ? 'Bezig' : 'Open'}</span> ${escapeHtml(t.title)}${t.assignee ? ` · ${escapeHtml(t.assignee)}` : ''}${t.dueDate ? ` · ${escapeHtml(fmtDateString(t.dueDate))}` : ''}</div>`).join('')}</div>`
+    : '<p class="text-muted small mb-0">Geen open taken.</p>';
+  sections.push(`
+    <section class="border-bottom pb-3 mb-3">
+      <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Opvolging</h6>
+      <div class="mb-2"><strong class="small">Volgende acties</strong>${nextActionsHtml}</div>
+      <div><strong class="small">Open taken</strong>${tasksHtml}</div>
+    </section>
+  `);
+  sections.push(`
+    <section class="border-bottom pb-3 mb-3">
+      <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-recycle" aria-hidden="true"></i> Bebat</h6>
+      <div class="small">Batterijserienummers: <strong>${bebat.total}</strong> · geregistreerd: <strong>${bebat.registered}</strong> · nog te registreren: <strong>${bebat.pending}</strong></div>
+    </section>
+  `);
+
+  const recentActivities = (m.activities || []).slice().reverse().slice(0, 5);
+  if (recentActivities.length) {
+    sections.push(`
+      <section class="border-bottom pb-3 mb-3">
+        <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-timeline" aria-hidden="true"></i> Tijdlijn</h6>
+        <div class="d-flex flex-column gap-2">
+          ${recentActivities.map(a => `<div class="border-start border-3 ps-2"><div class="text-muted small">${escapeHtml(a.type)} · ${escapeHtml(a.occurredAt || '')} · ${escapeHtml(a.source || 'manual')}</div><div class="small">${escapeHtml(a.title || a.notes || 'Activiteit')}</div></div>`).join('')}
+        </div>
       </section>
     `);
   }

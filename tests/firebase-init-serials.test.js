@@ -127,3 +127,88 @@ describe('customer address helpers', () => {
     });
   });
 });
+
+describe('operations workflow defaults', () => {
+  it('adds activities, tasks, mail links and battery registry defaults for legacy projects', () => {
+    const { mergeProjectMetadata } = loadHelpers();
+    const merged = mergeProjectMetadata({});
+
+    expect(merged.activities).toEqual([]);
+    expect(merged.tasks).toEqual([]);
+    expect(merged.mailLinks).toEqual([]);
+    expect(merged.filesInbox).toEqual([]);
+    expect(merged.batteryRegistry).toEqual({ bebatStatus: 'not_needed', entries: [] });
+  });
+
+  it('normalizes task assignees to Kevin/Ruben and preserves future unknown team members', () => {
+    const { normalizeProjectTask } = loadHelpers();
+
+    expect(normalizeProjectTask({ title: 'Offerte opvolgen', assignee: 'kevin' })).toMatchObject({
+      title: 'Offerte opvolgen', assignee: 'kevin', status: 'open', source: 'manual', type: 'follow_up', confidence: 'zeker',
+    });
+    expect(normalizeProjectTask({ title: 'Bestelling plaatsen', assignee: 'Ruben' }).assignee).toBe('ruben');
+    expect(normalizeProjectTask({ title: 'Later iemand anders', assignee: 'sofie' }).assignee).toBe('sofie');
+  });
+
+  it('classifies Bebat registration status from battery serial entries', () => {
+    const { bebatSummaryForProject } = loadHelpers();
+    const project = {
+      serialNumbers: [
+        { id: 'bat-1', value: 'BATT-001', category: 'batterij', bebatStatus: 'registered' },
+        { id: 'bat-2', value: 'BATT-002', category: 'batterij' },
+        { id: 'inv-1', value: 'INV-001', category: 'omvormer' },
+      ],
+    };
+
+    expect(bebatSummaryForProject(project)).toEqual({
+      total: 2,
+      registered: 1,
+      pending: 1,
+      notRequired: 0,
+      status: 'pending',
+    });
+  });
+
+  it('suggests next actions for appointment, data and Bebat gaps', () => {
+    const { nextActionsForProject } = loadHelpers();
+    const project = {
+      status: 'bezoek_gepland',
+      planning: { visitPlannedDate: '2026-05-29' },
+      activities: [{ type: 'appointment_scheduled', occurredAt: '2026-05-26' }],
+      serialNumbers: [{ id: 'bat-1', value: 'BATT-001', category: 'batterij' }],
+      batteryRegistry: { bebatStatus: 'pending', entries: [] },
+    };
+
+    expect(nextActionsForProject(project).map(a => a.type)).toEqual([
+      'send_appointment_confirmation',
+      'request_energy_data',
+      'register_bebat',
+    ]);
+  });
+
+  it('builds cross-project Bebat rows only for battery serials and sorts pending first', () => {
+    const { bebatRowsForProjects } = loadHelpers();
+    const projects = [
+      {
+        id: 'project-registered',
+        customerName: 'Geregistreerd',
+        status: 'klaar_voor_inplannen_keuring',
+        serialNumbers: [{ id: 'bat-registered', value: 'BATT-002', category: 'batterij', bebatStatus: 'registered', bebatRegisteredAt: '2026-05-24', bebatReference: 'BE-42' }],
+      },
+      {
+        id: 'project-pending',
+        customerName: 'Nog te doen',
+        status: 'bezoek_gepland',
+        serialNumbers: [
+          { id: 'inv', value: 'INV-001', category: 'omvormer' },
+          { id: 'bat-pending', value: 'BATT-001', category: 'batterij' },
+        ],
+      },
+    ];
+
+    expect(bebatRowsForProjects(projects)).toEqual([
+      expect.objectContaining({ projectId: 'project-pending', serialId: 'bat-pending', serial: 'BATT-001', status: 'pending', customerName: 'Nog te doen', projectStatusLabel: 'Bezoek gepland' }),
+      expect.objectContaining({ projectId: 'project-registered', serialId: 'bat-registered', serial: 'BATT-002', status: 'registered', registeredAt: '2026-05-24', reference: 'BE-42', projectStatusLabel: 'Klaar voor inplannen keuring' }),
+    ]);
+  });
+});

@@ -111,6 +111,11 @@ const firebaseInitGlobals = {
   billitAddressForCustomer: 'readonly',
   googleMapsUrlForCustomerAddress: 'readonly',
   wazeUrlForCustomerAddress: 'readonly',
+  normalizeProjectTask: 'readonly',
+  normalizeProjectActivity: 'readonly',
+  bebatSummaryForProject: 'readonly',
+  bebatRowsForProjects: 'readonly',
+  nextActionsForProject: 'readonly',
   // UI helpers exported by non-module/module helper scripts
   statusChipHTML: 'readonly',
   wireStatusChipClicks: 'readonly',
