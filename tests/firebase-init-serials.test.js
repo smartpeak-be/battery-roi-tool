@@ -169,10 +169,10 @@ describe('operations workflow defaults', () => {
     });
   });
 
-  it('suggests next actions for appointment, data and Bebat gaps', () => {
+  it('suggests next actions for appointment, early missing data and Bebat gaps', () => {
     const { nextActionsForProject } = loadHelpers();
     const project = {
-      status: 'bezoek_gepland',
+      status: 'klaar_voor_bezoek',
       planning: { visitPlannedDate: '2026-05-29' },
       activities: [{ type: 'appointment_scheduled', occurredAt: '2026-05-26' }],
       serialNumbers: [{ id: 'bat-1', value: 'BATT-001', category: 'batterij' }],
@@ -184,6 +184,34 @@ describe('operations workflow defaults', () => {
       'request_energy_data',
       'register_bebat',
     ]);
+  });
+
+  it('does not suggest CSV/data once data exists or the project passed data collection', () => {
+    const { nextActionsForProject } = loadHelpers();
+    const base = {
+      customerName: 'Klant',
+      status: 'nieuw_contact',
+    };
+
+    expect(nextActionsForProject({ ...base, csvUpload: { dailyCompact: { afname: [1], injectie: [0] } } }).some(a => a.type === 'request_energy_data')).toBe(false);
+    expect(nextActionsForProject({ ...base, lastCalcRun: { calculatedAt: '2026-05-26T10:00:00Z' } }).some(a => a.type === 'request_energy_data')).toBe(false);
+    expect(nextActionsForProject({ ...base, status: 'klaar_voor_inplannen_keuring' }).some(a => a.type === 'request_energy_data')).toBe(false);
+    expect(nextActionsForProject({ ...base, status: 'wachten_op_data' }).some(a => a.type === 'request_energy_data')).toBe(true);
+  });
+
+  it('does not show a suggested action again after it was ignored/cancelled', () => {
+    const { nextActionsForProject, projectTaskRowsForProjects } = loadHelpers();
+    const project = {
+      id: 'project-ignored',
+      customerName: 'Genegeerd',
+      status: 'wachten_op_data',
+      tasks: [
+        { id: 'ignored-csv', type: 'request_energy_data', title: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin', status: 'cancelled', source: 'manual' },
+      ],
+    };
+
+    expect(nextActionsForProject(project).some(a => a.type === 'request_energy_data')).toBe(false);
+    expect(projectTaskRowsForProjects([project], { assignee: 'kevin' })).toEqual([]);
   });
 
   it('builds cross-project Bebat rows only for battery serials and sorts pending first', () => {
@@ -210,5 +238,54 @@ describe('operations workflow defaults', () => {
       expect.objectContaining({ projectId: 'project-pending', serialId: 'bat-pending', serial: 'BATT-001', status: 'pending', customerName: 'Nog te doen', projectStatusLabel: 'Bezoek gepland' }),
       expect.objectContaining({ projectId: 'project-registered', serialId: 'bat-registered', serial: 'BATT-002', status: 'registered', registeredAt: '2026-05-24', reference: 'BE-42', projectStatusLabel: 'Klaar voor inplannen keuring' }),
     ]);
+  });
+
+  it('builds a cross-project task inbox with own tasks by default and suggested actions', () => {
+    const { projectTaskRowsForProjects } = loadHelpers();
+    const projects = [
+      {
+        id: 'project-kevin',
+        customerName: 'Kevin klant',
+        status: 'offerte_uit',
+        tasks: [
+          { id: 'task-kevin', title: 'Klant bellen', assignee: 'kevin', status: 'open', dueDate: '2026-05-25' },
+          { id: 'task-ruben', title: 'Bebat nakijken', assignee: 'ruben', status: 'open' },
+          { id: 'task-done', title: 'Afgewerkt', assignee: 'kevin', status: 'done' },
+        ],
+      },
+      {
+        id: 'project-data',
+        customerName: 'Data klant',
+        status: 'wachten_op_data',
+      },
+      {
+        id: 'project-ruben',
+        customerName: 'Ruben klant',
+        status: 'bezoek_gepland',
+        planning: { visitPlannedDate: '2026-05-29' },
+        activities: [{ type: 'appointment_scheduled', occurredAt: '2026-05-26' }],
+        serialNumbers: [{ id: 'bat-1', value: 'BAT-1', category: 'batterij' }],
+      },
+    ];
+
+    const kevinRows = projectTaskRowsForProjects(projects, { assignee: 'kevin' });
+    expect(kevinRows[0]).toEqual(expect.objectContaining({ rowType: 'task', projectId: 'project-kevin', taskId: 'task-kevin', title: 'Klant bellen', assignee: 'kevin', dueDate: '2026-05-25' }));
+    expect(kevinRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rowType: 'suggested', projectId: 'project-ruben', type: 'send_appointment_confirmation', title: 'Bevestigingsmail afspraak sturen', assignee: 'kevin' }),
+      expect.objectContaining({ rowType: 'suggested', projectId: 'project-data', type: 'request_energy_data', title: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin' }),
+    ]));
+    expect(kevinRows.some(row => row.projectId === 'project-kevin' && row.type === 'request_energy_data')).toBe(false);
+    expect(kevinRows.some(row => row.taskId === 'task-ruben' || row.taskId === 'task-done')).toBe(false);
+    expect(projectTaskRowsForProjects(projects, { assignee: 'ruben' })).toEqual([
+      expect.objectContaining({ rowType: 'task', projectId: 'project-kevin', taskId: 'task-ruben', title: 'Bebat nakijken', assignee: 'ruben' }),
+      expect.objectContaining({ rowType: 'suggested', projectId: 'project-ruben', type: 'register_bebat', title: '1 batterijserienummer(s) nog Bebat registreren', assignee: 'ruben' }),
+    ]);
+  });
+
+  it('maps whitelisted emails to the default dashboard task owner', () => {
+    const { assigneeForEmail } = loadHelpers();
+    expect(assigneeForEmail('kevin@bloxit.be')).toBe('kevin');
+    expect(assigneeForEmail('ledsrepair@gmail.com')).toBe('ruben');
+    expect(assigneeForEmail('someone@example.com')).toBe('all');
   });
 });

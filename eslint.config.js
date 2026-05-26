@@ -113,8 +113,11 @@ const firebaseInitGlobals = {
   wazeUrlForCustomerAddress: 'readonly',
   normalizeProjectTask: 'readonly',
   normalizeProjectActivity: 'readonly',
+  assigneeForEmail: 'readonly',
+  assigneeLabel: 'readonly',
   bebatSummaryForProject: 'readonly',
   bebatRowsForProjects: 'readonly',
+  projectTaskRowsForProjects: 'readonly',
   nextActionsForProject: 'readonly',
   // UI helpers exported by non-module/module helper scripts
   statusChipHTML: 'readonly',

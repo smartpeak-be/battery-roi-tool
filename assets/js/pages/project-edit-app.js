@@ -1201,9 +1201,14 @@ function sectionOps() {
       <div>${escapeHtml(a.title || a.notes || 'Activiteit')}</div>
     </div>`).join('') : '<p class="text-muted mb-0">Nog geen gestructureerde activiteiten.</p>';
   const suggestedRows = nextActions.length ? nextActions.map(a => `
-    <button type="button" class="btn btn-sm btn-outline-primary me-1 mb-1" data-add-suggested-task="${escapeHtml(a.type)}" data-title="${escapeHtml(a.label)}" data-assignee="${escapeHtml(a.assignee || '')}">
-      <i class="fa-solid fa-plus me-1"></i>${escapeHtml(a.label)}
-    </button>`).join('') : '<span class="text-muted small">Geen automatische suggesties.</span>';
+    <span class="d-inline-flex gap-1 me-1 mb-1">
+      <button type="button" class="btn btn-sm btn-outline-primary" data-add-suggested-task="${escapeHtml(a.type)}" data-title="${escapeHtml(a.label)}" data-assignee="${escapeHtml(a.assignee || '')}">
+        <i class="fa-solid fa-plus me-1"></i>${escapeHtml(a.label)}
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-warning" data-ignore-suggested-task="${escapeHtml(a.type)}" data-title="${escapeHtml(a.label)}" data-assignee="${escapeHtml(a.assignee || '')}">
+        Negeer
+      </button>
+    </span>`).join('') : '<span class="text-muted small">Geen automatische suggesties.</span>';
   return `
     <div class="card">
       <div class="card-header">
@@ -1264,6 +1269,20 @@ function wireOps() {
         title: btn.getAttribute('data-title'),
         assignee: btn.getAttribute('data-assignee'),
         source: 'suggested',
+      }));
+      rerenderOps();
+    });
+  });
+  document.querySelectorAll('[data-ignore-suggested-task]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _project.tasks = _project.tasks || [];
+      _project.tasks.push(normalizeProjectTask({
+        type: btn.getAttribute('data-ignore-suggested-task'),
+        title: btn.getAttribute('data-title'),
+        assignee: btn.getAttribute('data-assignee'),
+        status: 'cancelled',
+        source: 'manual',
+        notes: 'Genegeerd vanuit projectopvolging.',
       }));
       rerenderOps();
     });

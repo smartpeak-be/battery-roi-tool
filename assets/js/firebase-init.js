@@ -196,6 +196,11 @@ function mergeProjectMetadata(project) {
 }
 
 const SMARTPEAK_TASK_ASSIGNEES = ['kevin', 'ruben'];
+const SMARTPEAK_ASSIGNEE_LABELS = { kevin: 'Kevin', ruben: 'Ruben' };
+const SMARTPEAK_ASSIGNEE_EMAILS = {
+  'kevin@bloxit.be': 'kevin',
+  'ledsrepair@gmail.com': 'ruben',
+};
 const SMARTPEAK_TASK_STATUSES = ['open', 'in_progress', 'done', 'cancelled'];
 const SMARTPEAK_ACTIVITY_TYPES = [
   'phone_call', 'mail_received', 'mail_sent', 'appointment_scheduled',
@@ -213,6 +218,16 @@ function _normalizeAssignee(value) {
   if (SMARTPEAK_TASK_ASSIGNEES.includes(v)) return v;
   // Future team members must not be destroyed by today's Kevin/Ruben-only UI.
   return v;
+}
+
+function assigneeForEmail(email) {
+  const key = _cleanString(email).toLowerCase();
+  return SMARTPEAK_ASSIGNEE_EMAILS[key] || 'all';
+}
+
+function assigneeLabel(value) {
+  const key = _normalizeAssignee(value);
+  return key ? (SMARTPEAK_ASSIGNEE_LABELS[key] || key) : 'Niet toegewezen';
 }
 
 function normalizeProjectTask(task = {}) {
@@ -309,24 +324,119 @@ function _hasOpenTask(project, type) {
   return Array.isArray(project && project.tasks) && project.tasks.some(t => t && t.type === type && !['done', 'cancelled'].includes(t.status));
 }
 
+function _hasCancelledTask(project, type) {
+  return Array.isArray(project && project.tasks) && project.tasks.some(t => t && t.type === type && t.status === 'cancelled');
+}
+
+function _isActionSuppressed(project, type) {
+  return _hasOpenTask(project, type) || _hasCancelledTask(project, type);
+}
+
+function _hasEnergyDataForCalculation(project) {
+  return !!(
+    (project && project.csvUpload && project.csvUpload.dailyCompact) ||
+    (project && project.lastCalcRun)
+  );
+}
+
+const ENERGY_DATA_REQUEST_STATUSES = ['nieuw_contact', 'wachten_op_data', 'klaar_voor_bezoek'];
+
+function _shouldRequestEnergyData(project) {
+  const status = (project && project.status) || DEFAULT_STATUS;
+  if (!ENERGY_DATA_REQUEST_STATUSES.includes(status)) return false;
+  return !_hasEnergyDataForCalculation(project);
+}
+
 function nextActionsForProject(project) {
-  const p = mergeProjectMetadata(project || {});
+  const p = { ...mergeProjectMetadata(project || {}), ...(project || {}) };
   const actions = [];
   const appointmentPlanned = p.status === 'bezoek_gepland' || !!p.planning.visitPlannedDate;
-  if (appointmentPlanned && !_hasActivity(p, 'mail_sent') && !_hasOpenTask(p, 'send_appointment_confirmation')) {
+  if (appointmentPlanned && !_hasActivity(p, 'mail_sent') && !_isActionSuppressed(p, 'send_appointment_confirmation')) {
     actions.push({ type: 'send_appointment_confirmation', label: 'Bevestigingsmail afspraak sturen', assignee: 'kevin', priority: 'high' });
   }
-  if (!p.csvUpload && !_hasOpenTask(p, 'request_energy_data')) {
+  if (_shouldRequestEnergyData(p) && !_isActionSuppressed(p, 'request_energy_data')) {
     actions.push({ type: 'request_energy_data', label: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin', priority: 'normal' });
   }
   const bebat = bebatSummaryForProject(p);
-  if (bebat.pending > 0 && !_hasOpenTask(p, 'register_bebat')) {
+  if (bebat.pending > 0 && !_isActionSuppressed(p, 'register_bebat')) {
     actions.push({ type: 'register_bebat', label: `${bebat.pending} batterijserienummer(s) nog Bebat registreren`, assignee: 'ruben', priority: 'high' });
   }
-  if (p.status === 'offerte_uit' && !_hasOpenTask(p, 'follow_up_offer')) {
+  if (p.status === 'offerte_uit' && !_isActionSuppressed(p, 'follow_up_offer')) {
     actions.push({ type: 'follow_up_offer', label: 'Offerte opvolgen', assignee: 'kevin', priority: 'normal' });
   }
   return actions;
+}
+
+function projectTaskRowsForProjects(projects = [], options = {}) {
+  const assigneeFilter = options.assignee || 'all';
+  const statusRank = { in_progress: 0, open: 1, suggested: 2 };
+  const priorityRank = { high: 0, normal: 1, low: 2 };
+  const includeSuggested = options.includeSuggested !== false;
+  const rows = [];
+  for (const project of (Array.isArray(projects) ? projects : [])) {
+    if (!project || project.deletedAt) continue;
+    const p = { ...mergeProjectMetadata(project), ...project };
+    const projectId = project.id;
+    const projectLabel = getProjectLabel({ ...project, ...p });
+    const customerName = project.customerName || p.customer.name || '';
+    const projectStatus = project.status || p.status || '';
+    const projectStatusLabel = getStatusMeta(projectStatus).label;
+
+    for (const task of (p.tasks || []).map(normalizeProjectTask)) {
+      if (!task.title || ['done', 'cancelled'].includes(task.status)) continue;
+      if (assigneeFilter !== 'all' && task.assignee !== assigneeFilter) continue;
+      rows.push({
+        rowType: 'task',
+        projectId,
+        projectLabel,
+        customerName,
+        projectStatus,
+        projectStatusLabel,
+        taskId: task.id,
+        type: task.type,
+        title: task.title,
+        status: task.status,
+        assignee: task.assignee,
+        assigneeLabel: assigneeLabel(task.assignee),
+        dueDate: task.dueDate || null,
+        source: task.source || 'manual',
+        priority: task.priority || 'normal',
+      });
+    }
+
+    if (includeSuggested) {
+      for (const action of nextActionsForProject(p)) {
+        if (assigneeFilter !== 'all' && action.assignee !== assigneeFilter) continue;
+        rows.push({
+          rowType: 'suggested',
+          projectId,
+          projectLabel,
+          customerName,
+          projectStatus,
+          projectStatusLabel,
+          taskId: null,
+          type: action.type,
+          title: action.label,
+          status: 'suggested',
+          assignee: action.assignee || null,
+          assigneeLabel: assigneeLabel(action.assignee),
+          dueDate: null,
+          source: 'suggested',
+          priority: action.priority || 'normal',
+        });
+      }
+    }
+  }
+  return rows.sort((a, b) => {
+    const dueA = a.dueDate || '9999-12-31';
+    const dueB = b.dueDate || '9999-12-31';
+    if (dueA !== dueB) return String(dueA).localeCompare(String(dueB), 'nl-BE');
+    const statusDiff = (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
+    if (statusDiff) return statusDiff;
+    const priorityDiff = (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9);
+    if (priorityDiff) return priorityDiff;
+    return String(a.projectLabel || '').localeCompare(String(b.projectLabel || ''), 'nl-BE');
+  });
 }
 
 // BTW afleidingsregel (single source of truth).
@@ -2265,6 +2375,9 @@ window.googleMapsUrlForCustomerAddress = googleMapsUrlForCustomerAddress;
 window.wazeUrlForCustomerAddress = wazeUrlForCustomerAddress;
 window.normalizeProjectTask = normalizeProjectTask;
 window.normalizeProjectActivity = normalizeProjectActivity;
+window.assigneeForEmail = assigneeForEmail;
+window.assigneeLabel = assigneeLabel;
 window.bebatSummaryForProject = bebatSummaryForProject;
 window.bebatRowsForProjects = bebatRowsForProjects;
+window.projectTaskRowsForProjects = projectTaskRowsForProjects;
 window.nextActionsForProject = nextActionsForProject;
