@@ -169,10 +169,10 @@ describe('operations workflow defaults', () => {
     });
   });
 
-  it('suggests next actions for appointment, data and Bebat gaps', () => {
+  it('suggests next actions for appointment, early missing data and Bebat gaps', () => {
     const { nextActionsForProject } = loadHelpers();
     const project = {
-      status: 'bezoek_gepland',
+      status: 'klaar_voor_bezoek',
       planning: { visitPlannedDate: '2026-05-29' },
       activities: [{ type: 'appointment_scheduled', occurredAt: '2026-05-26' }],
       serialNumbers: [{ id: 'bat-1', value: 'BATT-001', category: 'batterij' }],
@@ -184,6 +184,19 @@ describe('operations workflow defaults', () => {
       'request_energy_data',
       'register_bebat',
     ]);
+  });
+
+  it('does not suggest CSV/data once data exists or the project passed data collection', () => {
+    const { nextActionsForProject } = loadHelpers();
+    const base = {
+      customerName: 'Klant',
+      status: 'nieuw_contact',
+    };
+
+    expect(nextActionsForProject({ ...base, csvUpload: { dailyCompact: { afname: [1], injectie: [0] } } }).some(a => a.type === 'request_energy_data')).toBe(false);
+    expect(nextActionsForProject({ ...base, lastCalcRun: { calculatedAt: '2026-05-26T10:00:00Z' } }).some(a => a.type === 'request_energy_data')).toBe(false);
+    expect(nextActionsForProject({ ...base, status: 'klaar_voor_inplannen_keuring' }).some(a => a.type === 'request_energy_data')).toBe(false);
+    expect(nextActionsForProject({ ...base, status: 'wachten_op_data' }).some(a => a.type === 'request_energy_data')).toBe(true);
   });
 
   it('builds cross-project Bebat rows only for battery serials and sorts pending first', () => {
@@ -226,6 +239,11 @@ describe('operations workflow defaults', () => {
         ],
       },
       {
+        id: 'project-data',
+        customerName: 'Data klant',
+        status: 'wachten_op_data',
+      },
+      {
         id: 'project-ruben',
         customerName: 'Ruben klant',
         status: 'bezoek_gepland',
@@ -239,8 +257,9 @@ describe('operations workflow defaults', () => {
     expect(kevinRows[0]).toEqual(expect.objectContaining({ rowType: 'task', projectId: 'project-kevin', taskId: 'task-kevin', title: 'Klant bellen', assignee: 'kevin', dueDate: '2026-05-25' }));
     expect(kevinRows).toEqual(expect.arrayContaining([
       expect.objectContaining({ rowType: 'suggested', projectId: 'project-ruben', type: 'send_appointment_confirmation', title: 'Bevestigingsmail afspraak sturen', assignee: 'kevin' }),
-      expect.objectContaining({ rowType: 'suggested', projectId: 'project-kevin', type: 'request_energy_data', title: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin' }),
+      expect.objectContaining({ rowType: 'suggested', projectId: 'project-data', type: 'request_energy_data', title: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin' }),
     ]));
+    expect(kevinRows.some(row => row.projectId === 'project-kevin' && row.type === 'request_energy_data')).toBe(false);
     expect(kevinRows.some(row => row.taskId === 'task-ruben' || row.taskId === 'task-done')).toBe(false);
     expect(projectTaskRowsForProjects(projects, { assignee: 'ruben' })).toEqual([
       expect.objectContaining({ rowType: 'task', projectId: 'project-kevin', taskId: 'task-ruben', title: 'Bebat nakijken', assignee: 'ruben' }),

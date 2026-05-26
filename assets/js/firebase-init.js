@@ -324,14 +324,29 @@ function _hasOpenTask(project, type) {
   return Array.isArray(project && project.tasks) && project.tasks.some(t => t && t.type === type && !['done', 'cancelled'].includes(t.status));
 }
 
+function _hasEnergyDataForCalculation(project) {
+  return !!(
+    (project && project.csvUpload && project.csvUpload.dailyCompact) ||
+    (project && project.lastCalcRun)
+  );
+}
+
+const ENERGY_DATA_REQUEST_STATUSES = ['nieuw_contact', 'wachten_op_data', 'klaar_voor_bezoek'];
+
+function _shouldRequestEnergyData(project) {
+  const status = (project && project.status) || DEFAULT_STATUS;
+  if (!ENERGY_DATA_REQUEST_STATUSES.includes(status)) return false;
+  return !_hasEnergyDataForCalculation(project);
+}
+
 function nextActionsForProject(project) {
-  const p = mergeProjectMetadata(project || {});
+  const p = { ...mergeProjectMetadata(project || {}), ...(project || {}) };
   const actions = [];
   const appointmentPlanned = p.status === 'bezoek_gepland' || !!p.planning.visitPlannedDate;
   if (appointmentPlanned && !_hasActivity(p, 'mail_sent') && !_hasOpenTask(p, 'send_appointment_confirmation')) {
     actions.push({ type: 'send_appointment_confirmation', label: 'Bevestigingsmail afspraak sturen', assignee: 'kevin', priority: 'high' });
   }
-  if (!p.csvUpload && !_hasOpenTask(p, 'request_energy_data')) {
+  if (_shouldRequestEnergyData(p) && !_hasOpenTask(p, 'request_energy_data')) {
     actions.push({ type: 'request_energy_data', label: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin', priority: 'normal' });
   }
   const bebat = bebatSummaryForProject(p);
@@ -352,7 +367,7 @@ function projectTaskRowsForProjects(projects = [], options = {}) {
   const rows = [];
   for (const project of (Array.isArray(projects) ? projects : [])) {
     if (!project || project.deletedAt) continue;
-    const p = mergeProjectMetadata(project);
+    const p = { ...mergeProjectMetadata(project), ...project };
     const projectId = project.id;
     const projectLabel = getProjectLabel({ ...project, ...p });
     const customerName = project.customerName || p.customer.name || '';
