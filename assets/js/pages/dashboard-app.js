@@ -48,6 +48,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Debounce: re-render only (already-loaded list) without re-fetching Firestore.
     renderCurrent(true);
   });
+  document.querySelectorAll('[data-task-assignee]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _taskAssigneeFilter = btn.dataset.taskAssignee || 'mine';
+      document.querySelectorAll('[data-task-assignee]').forEach(b => b.classList.toggle('active', b === btn));
+      renderTaskInbox();
+    });
+  });
 
   // Leads "Toon verwijderde" toggle: persisted, re-render only (cache already loaded).
   const leadsToggle = document.getElementById('toggleShowDeletedLeads');
@@ -172,6 +179,7 @@ function rowHTML(p, isDeleted) {
 
 // Cached list of projects from Firestore. Filtering + render happens on this cache.
 let _projectsCache = { active: [], deleted: [] };
+let _taskAssigneeFilter = 'mine';
 
 // Pagination state (list view only; board view shows all projects).
 const PAGE_SIZE = 25;
@@ -188,6 +196,7 @@ async function refreshProjectList(showSpinnerOverlay = false) {
       _projectsCache.active  = await listActiveProjects();
       _projectsCache.deleted = showDeleted ? await listDeletedProjects() : [];
       renderCurrent();
+      renderTaskInbox();
     } catch (e) {
       el.innerHTML = `<div class="alert alert-danger">Kon projecten niet laden: ${escapeHtml(e && e.message ? e.message : String(e))}</div>`;
     }
@@ -203,6 +212,111 @@ async function refreshProjectList(showSpinnerOverlay = false) {
 function currentView() {
   if (window.innerWidth < 992) return 'list';
   return localStorage.getItem('smartpeak.dashboardView') || 'list';
+}
+
+function currentTaskAssignee() {
+  if (_taskAssigneeFilter === 'mine') return assigneeForEmail(currentUserEmail());
+  return _taskAssigneeFilter || 'all';
+}
+
+function taskStatusBadge(row) {
+  if (row.rowType === 'suggested') return '<span class="badge text-bg-info">Suggestie</span>';
+  if (row.status === 'in_progress') return '<span class="badge text-bg-primary">Bezig</span>';
+  return '<span class="badge text-bg-secondary">Open</span>';
+}
+
+function taskRowHTML(row) {
+  const assignee = row.assigneeLabel || assigneeLabel(row.assignee);
+  const due = row.dueDate ? ` · deadline ${escapeHtml(fmtDateString(row.dueDate))}` : '';
+  const source = row.source === 'assistant' ? 'AmaAi' : row.source === 'suggested' ? 'suggestie' : 'manueel';
+  const startLabel = row.rowType === 'suggested' ? 'Maak taak' : row.status === 'in_progress' ? 'Bezig' : 'Start';
+  return `
+    <div class="border rounded p-2 d-flex flex-column flex-lg-row gap-2 align-items-lg-center" data-task-row-type="${escapeHtml(row.rowType)}" data-project-id="${escapeHtml(row.projectId || '')}" data-task-id="${escapeHtml(row.taskId || '')}" data-task-type="${escapeHtml(row.type || '')}" data-task-title="${escapeHtml(row.title || '')}" data-task-assignee="${escapeHtml(row.assignee || '')}">
+      <div class="flex-grow-1">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          ${taskStatusBadge(row)}
+          <span class="fw-semibold">${escapeHtml(row.title || '')}</span>
+        </div>
+        <div class="small text-muted">
+          <a href="project-edit.html?project=${encodeURIComponent(row.projectId)}" class="text-decoration-none">${escapeHtml(row.projectLabel || '(zonder naam)')}</a>
+          ${row.customerName ? ` · ${escapeHtml(row.customerName)}` : ''}
+          · ${escapeHtml(row.projectStatusLabel || row.projectStatus || '')}
+          · ${escapeHtml(assignee)}${due}
+          · bron: ${escapeHtml(source)}
+        </div>
+      </div>
+      <div class="d-flex gap-1 justify-content-lg-end">
+        <button type="button" class="btn btn-sm btn-outline-primary taskStartBtn" ${row.status === 'in_progress' ? 'disabled' : ''}>${startLabel}</button>
+        ${row.rowType === 'task' ? '<button type="button" class="btn btn-sm btn-outline-success taskDoneBtn">Gedaan</button>' : ''}
+        <button type="button" class="btn btn-sm btn-outline-secondary taskDrawerBtn">Project</button>
+      </div>
+    </div>`;
+}
+
+function renderTaskInbox() {
+  const list = document.getElementById('taskInboxList');
+  const count = document.getElementById('taskInboxCount');
+  if (!list || !count) return;
+  const assignee = currentTaskAssignee();
+  const rows = projectTaskRowsForProjects(_projectsCache.active, { assignee }).slice(0, 12);
+  count.textContent = rows.length;
+  if (!rows.length) {
+    const who = assignee === 'all' ? 'iedereen' : assigneeLabel(assignee);
+    list.innerHTML = `<p class="sp-empty-state">Geen open taken of voorgestelde acties voor ${escapeHtml(who)}.</p>`;
+    return;
+  }
+  list.innerHTML = `<div class="d-flex flex-column gap-2">${rows.map(taskRowHTML).join('')}</div>`;
+  wireTaskInboxActions(list);
+}
+
+async function updateTaskFromDashboard(rowEl, targetStatus) {
+  const projectId = rowEl.dataset.projectId;
+  if (!projectId) return;
+  await withSpinner(async () => {
+    try {
+      const project = await getProject(projectId);
+      if (!project) throw new Error('Project niet gevonden');
+      const now = new Date().toISOString();
+      const tasks = (mergeProjectMetadata(project).tasks || []).map(normalizeProjectTask);
+      if (rowEl.dataset.taskRowType === 'suggested') {
+        tasks.push(normalizeProjectTask({
+          type: rowEl.dataset.taskType,
+          title: rowEl.dataset.taskTitle,
+          assignee: rowEl.dataset.taskAssignee,
+          status: 'in_progress',
+          source: 'manual',
+          createdAt: now,
+          updatedAt: now,
+        }));
+      } else {
+        const task = tasks.find(t => t.id === rowEl.dataset.taskId);
+        if (!task) throw new Error('Taak niet gevonden');
+        task.status = targetStatus;
+        task.updatedAt = now;
+        if (targetStatus === 'done') task.completedAt = now;
+      }
+      await updateProjectMetadata(projectId, { tasks });
+      const idx = _projectsCache.active.findIndex(p => p.id === projectId);
+      if (idx >= 0) _projectsCache.active[idx] = { ..._projectsCache.active[idx], tasks };
+      renderTaskInbox();
+      renderCurrent();
+      showToast(targetStatus === 'done' ? 'Taak afgewerkt' : 'Taak gestart', 'success');
+    } catch (err) {
+      showToast('Taak bijwerken mislukt: ' + (err && err.message ? err.message : err), 'danger');
+    }
+  });
+}
+
+function wireTaskInboxActions(root) {
+  root.querySelectorAll('.taskStartBtn').forEach(btn => {
+    btn.addEventListener('click', () => updateTaskFromDashboard(btn.closest('[data-project-id]'), 'in_progress'));
+  });
+  root.querySelectorAll('.taskDoneBtn').forEach(btn => {
+    btn.addEventListener('click', () => updateTaskFromDashboard(btn.closest('[data-project-id]'), 'done'));
+  });
+  root.querySelectorAll('.taskDrawerBtn').forEach(btn => {
+    btn.addEventListener('click', () => openDrawer(btn.closest('[data-project-id]').dataset.projectId));
+  });
 }
 
 // Apply filters (search + show-finished) to the cached projects and render in the
