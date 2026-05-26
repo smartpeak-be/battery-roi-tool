@@ -114,6 +114,7 @@ const firebaseInitGlobals = {
   normalizeProjectTask: 'readonly',
   normalizeProjectActivity: 'readonly',
   bebatSummaryForProject: 'readonly',
+  bebatRowsForProjects: 'readonly',
   nextActionsForProject: 'readonly',
   // UI helpers exported by non-module/module helper scripts
   statusChipHTML: 'readonly',

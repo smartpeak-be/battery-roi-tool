@@ -268,6 +268,37 @@ function bebatSummaryForProject(project) {
   return { total, registered, pending, notRequired, status };
 }
 
+function bebatRowsForProjects(projects = []) {
+  const statusRank = { pending: 0, registered: 1, not_required: 2 };
+  return (Array.isArray(projects) ? projects : [])
+    .flatMap(project => {
+      const p = mergeProjectMetadata(project || {});
+      const projectId = project && project.id;
+      return _batterySerialsForBebat(p).map(serial => {
+        const status = serial.bebatStatus || 'pending';
+        return {
+          projectId,
+          projectLabel: getProjectLabel({ ...project, ...p }),
+          customerName: project && project.customerName || p.customer.name || '',
+          projectStatus: project && project.status || p.status || '',
+          serialId: serial.id,
+          serial: serial.value || '',
+          category: serial.category || null,
+          status,
+          registeredAt: serial.bebatRegisteredAt || null,
+          reference: serial.bebatReference || null,
+          uploadedAt: serial.uploadedAt || null,
+          source: serial.source || 'manual',
+        };
+      });
+    })
+    .sort((a, b) => {
+      const statusDiff = (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
+      if (statusDiff) return statusDiff;
+      return String(a.projectLabel || '').localeCompare(String(b.projectLabel || ''), 'nl-BE');
+    });
+}
+
 function _hasActivity(project, type) {
   return Array.isArray(project && project.activities) && project.activities.some(a => a && a.type === type);
 }
@@ -2233,4 +2264,5 @@ window.wazeUrlForCustomerAddress = wazeUrlForCustomerAddress;
 window.normalizeProjectTask = normalizeProjectTask;
 window.normalizeProjectActivity = normalizeProjectActivity;
 window.bebatSummaryForProject = bebatSummaryForProject;
+window.bebatRowsForProjects = bebatRowsForProjects;
 window.nextActionsForProject = nextActionsForProject;
