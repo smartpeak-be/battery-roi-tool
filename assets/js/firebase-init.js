@@ -347,6 +347,19 @@ function _shouldRequestEnergyData(project) {
   return !_hasEnergyDataForCalculation(project);
 }
 
+function _hasAttachedOffer(project) {
+  const offres = project && project.offertes;
+  if (!offres || typeof offres !== 'object') return false;
+  return Object.values(offres).some(entry => entry && (entry.storagePath || entry.downloadUrl || entry.filename));
+}
+
+function _shouldSendOfferMail(project) {
+  const status = (project && project.status) || DEFAULT_STATUS;
+  if (['offerte_uit', 'wacht_op_beslissing', 'akkoord', 'niet_akkoord', 'afgesloten'].includes(status)) return false;
+  if (!_hasAttachedOffer(project)) return false;
+  return !_hasActivity(project, 'offer_sent');
+}
+
 function nextActionsForProject(project) {
   const p = { ...mergeProjectMetadata(project || {}), ...(project || {}) };
   const actions = [];
@@ -356,6 +369,9 @@ function nextActionsForProject(project) {
   }
   if (_shouldRequestEnergyData(p) && !_isActionSuppressed(p, 'request_energy_data')) {
     actions.push({ type: 'request_energy_data', label: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin', priority: 'normal' });
+  }
+  if (_shouldSendOfferMail(p) && !_isActionSuppressed(p, 'send_offer_mail')) {
+    actions.push({ type: 'send_offer_mail', label: 'Offertemail naar klant versturen', assignee: 'kevin', priority: 'high' });
   }
   const bebat = bebatSummaryForProject(p);
   if (bebat.pending > 0 && !_isActionSuppressed(p, 'register_bebat')) {
