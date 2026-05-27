@@ -33,37 +33,10 @@ const OFFERTE_MODAL_HTML = `
   </div>
 `;
 
-const QUOTE_PREVIEW_MODAL_HTML = `
-  <div class="modal fade" id="quotePreviewModal" tabindex="-1" aria-labelledby="quotePreviewModalTitle" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="quotePreviewModalTitle"><i class="fa-solid fa-file-invoice-dollar me-2" aria-hidden="true"></i>Offerte-preview</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
-        </div>
-        <div class="modal-body p-0">
-          <iframe id="quotePreviewFrame" title="Offerte-preview" style="display:block;width:100%;height:min(78vh, 900px);border:0;"></iframe>
-        </div>
-      </div>
-    </div>
-  </div>
-`;
 
 function ensureOfferteModal() {
   if (document.getElementById('offerteModal')) return;
   document.body.insertAdjacentHTML('beforeend', OFFERTE_MODAL_HTML);
-}
-
-function ensureQuotePreviewModal() {
-  if (document.getElementById('quotePreviewModal')) return;
-  document.body.insertAdjacentHTML('beforeend', QUOTE_PREVIEW_MODAL_HTML);
-}
-
-function openQuotePreviewModal(url) {
-  ensureQuotePreviewModal();
-  const frame = document.getElementById('quotePreviewFrame');
-  if (frame) frame.src = url;
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('quotePreviewModal')).show();
 }
 
 function _findConfigByType(project, configType) {
@@ -195,7 +168,7 @@ function wireOffertesClicks(containerEl, getProjectFn, onChange) {
         if (!context.configId) {
           throw new Error('Deze configuratie kan nog niet automatisch naar het offertevenster worden doorgestuurd.');
         }
-        openQuotePreviewModal(quoteTools.buildQuoteContextUrl(context));
+        window.location.href = quoteTools.buildQuoteContextUrl(context);
       }
       else if (btn.classList.contains('offerte-download-btn')) {
         const pdf = (project.offertes || {})[type];

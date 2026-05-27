@@ -4,10 +4,10 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../assets/js/offertes-ui.js', import.meta.url), 'utf8');
 
 describe('offertes-ui quote preview action', () => {
-  it('opent de Billit/offerte-preview in een modal zonder van de dashboardpagina weg te navigeren', () => {
-    expect(source).toContain('function openQuotePreviewModal');
-    expect(source).toContain('quotePreviewFrame');
-    expect(source).toContain('openQuotePreviewModal(quoteTools.buildQuoteContextUrl(context))');
-    expect(source).not.toMatch(/window\.location\.href\s*=\s*quoteTools\.buildQuoteContextUrl/);
+  it('stuurt vanuit het dashboard door naar het bestaande offertevenster zonder iframe-modal', () => {
+    expect(source).toContain('window.location.href = quoteTools.buildQuoteContextUrl(context)');
+    expect(source).not.toContain('quotePreviewFrame');
+    expect(source).not.toContain('openQuotePreviewModal');
+    expect(source).not.toContain('QUOTE_PREVIEW_MODAL_HTML');
   });
 });
