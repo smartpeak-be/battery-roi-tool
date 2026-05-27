@@ -46,13 +46,16 @@ export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, e
     <div class="stat-row"><span class="stat-label">Totale jaarlijkse besparing</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${feur(scen.annualSaving)}${avgSavingLine}</span></div>
     ${(() => {
   const installPrice = cfg.price;
-  const lines = Array.isArray(cfg.meerkostLines) ? cfg.meerkostLines : [];
+  const lines = Array.isArray(cfg.compositionLines) && cfg.compositionLines.length
+    ? cfg.compositionLines
+    : (Array.isArray(cfg.meerkostLines) ? cfg.meerkostLines : []);
   if (lines.length === 0) {
     return `<div class="stat-row"><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></div>`;
   }
   const lineRows = lines.map((ln, i) => {
-    const label = (ln.description && ln.description.trim() !== '') ? escapeHtml(ln.description) : `Meerkost #${i+1}`;
-    return `<div class="breakdown-row"><span>${label}</span><span>${fmtEur(ln.amountInclBtw)}</span></div>`;
+    const label = (ln.description && ln.description.trim() !== '') ? escapeHtml(ln.description) : `Lijn #${i+1}`;
+    const amount = ln.amountInclBtw != null ? ln.amountInclBtw : ln.amountExBtw;
+    return `<div class="breakdown-row"><span>${label}</span><span>${fmtEur(amount)}</span></div>`;
   }).join('');
   return `
     <details class="installprice-details">

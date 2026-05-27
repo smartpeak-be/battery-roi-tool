@@ -18,6 +18,8 @@ import {
   quoteGroupSubtotalExVat,
 } from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
+import { normalizeBillitEmail, normalizeBillitPhone } from '../billit-helpers.js';
+import { quoteContextFromSearchParams } from '../quote-context.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
@@ -179,6 +181,7 @@ let _settings = {};
 let _allConfigs = [];
 let _editingConfigId = null;
 let _quoteProjects = [];
+let _quoteModalOpenedFromUrl = false;
 
 async function seedDefaultCategories() {
   const cats = await listProductCategories();
@@ -1493,7 +1496,17 @@ async function openQuoteModal(context = {}) {
   updateQuotePreview();
 }
 
-function buildQuoteModalHtml(projects, context) {
+function buildQuoteModalHtml(projects, context = {}) {
+  const selectedVat = Number(context.vat) === 6 ? 6 : 21;
+  const discount = context.discount || {};
+  const discountType = discount.type === 'percent' ? 'percent' : 'fixed';
+  const discountValue = Number(discount.value) > 0 ? Number(discount.value) : '';
+  const extraProductRows = (Array.isArray(context.extraProducts) ? context.extraProducts : [])
+    .map(row => quoteExtraProductRowHtml({ ...row, vat: row.vat || selectedVat }))
+    .join('');
+  const manualRows = (Array.isArray(context.manualLines) ? context.manualLines : [])
+    .map(row => quoteManualLineRowHtml({ ...row, vat: row.vat || selectedVat }))
+    .join('');
   const configOptions = _allConfigs.filter(c => c.isActive !== false).map(c => (
     `<option value="${escapeAttr(c.id)}" ${context.configId === c.id ? 'selected' : ''}>${escapeHtml(c.name || '(zonder naam)')}</option>`
   )).join('');
@@ -1502,6 +1515,7 @@ function buildQuoteModalHtml(projects, context) {
   )).join('');
   return `
     <div class="row g-3">
+      <input type="hidden" id="quoteConfigType" value="${escapeAttr(context.configType || '')}">
       <div class="col-md-6">
         <label class="form-label">Klant/project</label>
         <select class="form-select" id="quoteProject"><option value="">— Nog geen klantcontext —</option>${projectOptions}</select>
@@ -1512,16 +1526,16 @@ function buildQuoteModalHtml(projects, context) {
       </div>
       <div class="col-md-4">
         <label class="form-label">BTW config/services</label>
-        <select class="form-select" id="quoteVat"><option value="6">6% woning 10+ jaar</option><option value="21" selected>21%</option></select>
+        <select class="form-select" id="quoteVat"><option value="6" ${selectedVat === 6 ? 'selected' : ''}>6% woning 10+ jaar</option><option value="21" ${selectedVat === 21 ? 'selected' : ''}>21%</option></select>
       </div>
       <div class="col-md-4">
         <label class="form-label">Korting op samenstelling</label>
         <div class="input-group">
           <select class="form-select" id="quoteDiscountType" style="max-width:110px">
-            <option value="percent">%</option>
-            <option value="fixed">€</option>
+            <option value="percent" ${discountType === 'percent' ? 'selected' : ''}>%</option>
+            <option value="fixed" ${discountType === 'fixed' ? 'selected' : ''}>€</option>
           </select>
-          <input type="number" class="form-control" id="quoteDiscountValue" min="0" step="0.01" value="" placeholder="Geen">
+          <input type="number" class="form-control" id="quoteDiscountValue" min="0" step="0.01" value="${escapeAttr(discountValue)}" placeholder="Geen">
         </div>
       </div>
       <div class="col-12">
@@ -1531,7 +1545,7 @@ function buildQuoteModalHtml(projects, context) {
             <i class="fa-solid fa-plus me-1"></i>Productlijn toevoegen
           </button>
         </div>
-        <div id="quoteExtraProducts"></div>
+        <div id="quoteExtraProducts">${extraProductRows}</div>
       </div>
       <div class="col-12">
         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -1540,7 +1554,7 @@ function buildQuoteModalHtml(projects, context) {
             <i class="fa-solid fa-plus me-1"></i>Manuele lijn toevoegen
           </button>
         </div>
-        <div id="quoteManualLines"></div>
+        <div id="quoteManualLines">${manualRows}</div>
       </div>
       <div class="col-12">
         <div id="quotePreview" class="border rounded p-3 bg-light"></div>
@@ -1896,14 +1910,12 @@ function projectBillitCustomer(project) {
     City: address.city,
     Zipcode: address.zipcode,
     CountryCode: 'BE',
-    Email: customer.email || '',
-    Phone: customer.phone || '',
+    Email: normalizeBillitEmail(customer.email),
+    Phone: normalizeBillitPhone(customer.phone),
   };
 }
 
-function buildBillitOfferPayload() {
-  const computed = buildQuoteComputation();
-  if (!computed) throw new Error('Kies eerst een configuratie.');
+function buildBillitOfferPayloadForComputed(computed) {
   if (!computed.project) throw new Error('Kies eerst een klant/project voor de Billit-offerte.');
   const customer = projectBillitCustomer(computed.project);
   if (!customer.Name) throw new Error('Het gekozen project heeft geen klantnaam.');
@@ -1928,11 +1940,46 @@ function buildBillitOfferPayload() {
   };
 }
 
+function billitConfigTypeForComputed(computed) {
+  const explicitType = document.getElementById('quoteConfigType')?.value || '';
+  const fallbackType = computed?.cfg?.id ? `PC_${computed.cfg.id}` : '';
+  if (explicitType && (!fallbackType || explicitType === fallbackType)) return explicitType;
+  return fallbackType;
+}
+
+function billitPdfToFile(pdf, orderId) {
+  if (!pdf || !pdf.fileContent) throw new Error('Billit gaf geen PDF-bestand terug.');
+  const byteChars = atob(pdf.fileContent);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNumbers[i] = byteChars.charCodeAt(i);
+  }
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: pdf.mimeType || 'application/pdf' });
+  const fileName = pdf.fileName || `billit-offerte-${orderId}.pdf`;
+  return new File([blob], fileName, { type: pdf.mimeType || 'application/pdf' });
+}
+
+async function attachBillitPdfToProjectConfig(computed, pdf, billitId) {
+  const configType = billitConfigTypeForComputed(computed);
+  if (!computed?.project?.id || !configType) {
+    throw new Error('Kan Billit-offerte niet aan een projectconfig koppelen.');
+  }
+  const file = billitPdfToFile(pdf, billitId);
+  return uploadProjectOfferte(computed.project.id, configType, file, {
+    source: 'billit',
+    billitOrderId: String(billitId),
+    billitFileName: pdf.fileName || file.name,
+    productConfigId: computed.cfg.id || null,
+  });
+}
+
 async function createBillitOfferFromPreview() {
   const btn = document.getElementById('btnCreateBillitOffer');
   const status = document.getElementById('billitOfferStatus');
   try {
-    const order = buildBillitOfferPayload();
+    const computed = buildQuoteComputation();
+    if (!computed) throw new Error('Kies eerst een configuratie.');
+    const order = buildBillitOfferPayloadForComputed(computed);
     const user = firebase.auth().currentUser;
     if (!user) throw new Error('Niet ingelogd.');
     btn.disabled = true;
@@ -1956,8 +2003,10 @@ async function createBillitOfferFromPreview() {
     status.textContent = `Billit-offerte aangemaakt (#${billitId}). PDF wordt voorbereid...`;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> PDF voorbereiden...';
     const pdf = await waitForBillitPdf(endpoint, token, billitId, status);
+    status.textContent = `PDF voor Billit-offerte #${billitId} wordt aan de projectconfig gekoppeld...`;
+    await attachBillitPdfToProjectConfig(computed, pdf, billitId);
     wireBillitPdfDownloadButton(btn, status, pdf, billitId);
-    showToast(`Billit-offerte #${billitId} is klaar om te downloaden.`, 'success');
+    showToast(`Billit-offerte #${billitId} is klaar en gekoppeld aan de configuratie.`, 'success');
   } catch (e) {
     if (status) status.textContent = e.message || String(e);
     showToast('Billit-offerte maken mislukt: ' + (e.message || e), 'danger');
@@ -2022,6 +2071,14 @@ function wireProductInteractions() {
   document.getElementById('btnOpenQuoteModal').addEventListener('click', () => openQuoteModal());
 }
 
+async function maybeOpenQuoteModalFromUrl() {
+  if (_quoteModalOpenedFromUrl) return;
+  const context = quoteContextFromSearchParams(new URLSearchParams(window.location.search));
+  if (!context) return;
+  _quoteModalOpenedFromUrl = true;
+  await openQuoteModal(context);
+}
+
 // ─── AUTH STATE HANDLING ─────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2077,6 +2134,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await loadCategories();
       await loadProducts();
       await loadConfigs();
+      await maybeOpenQuoteModalFromUrl();
     } catch (e) {
       console.error('seedDefaultCategories/loadCategories/loadProducts/loadConfigs error:', e);
     }

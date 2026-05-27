@@ -186,6 +186,37 @@ describe('operations workflow defaults', () => {
     ]);
   });
 
+  it('suggests sending an offer mail once a config PDF offer is attached to the project', () => {
+    const { nextActionsForProject } = loadHelpers();
+    const project = {
+      status: 'klaar_voor_offerte',
+      offertes: {
+        PC_zendure_5kwh: { storagePath: 'projects/project-1/offertes/PC_zendure_5kwh.pdf', source: 'billit' },
+      },
+    };
+
+    expect(nextActionsForProject(project)).toEqual([
+      expect.objectContaining({
+        type: 'send_offer_mail',
+        label: 'Offertemail naar klant versturen',
+        assignee: 'kevin',
+        priority: 'high',
+      }),
+    ]);
+  });
+
+  it('does not suggest sending an offer mail once the offer was sent or the suggestion was ignored', () => {
+    const { nextActionsForProject } = loadHelpers();
+    const base = {
+      status: 'klaar_voor_offerte',
+      offertes: { PC_zendure_5kwh: { storagePath: 'projects/project-1/offertes/PC_zendure_5kwh.pdf' } },
+    };
+
+    expect(nextActionsForProject({ ...base, activities: [{ type: 'offer_sent' }] }).some(a => a.type === 'send_offer_mail')).toBe(false);
+    expect(nextActionsForProject({ ...base, status: 'offerte_uit' }).some(a => a.type === 'send_offer_mail')).toBe(false);
+    expect(nextActionsForProject({ ...base, tasks: [{ type: 'send_offer_mail', status: 'cancelled' }] }).some(a => a.type === 'send_offer_mail')).toBe(false);
+  });
+
   it('does not suggest CSV/data once data exists or the project passed data collection', () => {
     const { nextActionsForProject } = loadHelpers();
     const base = {

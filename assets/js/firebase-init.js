@@ -347,6 +347,19 @@ function _shouldRequestEnergyData(project) {
   return !_hasEnergyDataForCalculation(project);
 }
 
+function _hasAttachedOffer(project) {
+  const offres = project && project.offertes;
+  if (!offres || typeof offres !== 'object') return false;
+  return Object.values(offres).some(entry => entry && (entry.storagePath || entry.downloadUrl || entry.filename));
+}
+
+function _shouldSendOfferMail(project) {
+  const status = (project && project.status) || DEFAULT_STATUS;
+  if (['offerte_uit', 'wacht_op_beslissing', 'akkoord', 'niet_akkoord', 'afgesloten'].includes(status)) return false;
+  if (!_hasAttachedOffer(project)) return false;
+  return !_hasActivity(project, 'offer_sent');
+}
+
 function nextActionsForProject(project) {
   const p = { ...mergeProjectMetadata(project || {}), ...(project || {}) };
   const actions = [];
@@ -356,6 +369,9 @@ function nextActionsForProject(project) {
   }
   if (_shouldRequestEnergyData(p) && !_isActionSuppressed(p, 'request_energy_data')) {
     actions.push({ type: 'request_energy_data', label: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin', priority: 'normal' });
+  }
+  if (_shouldSendOfferMail(p) && !_isActionSuppressed(p, 'send_offer_mail')) {
+    actions.push({ type: 'send_offer_mail', label: 'Offertemail naar klant versturen', assignee: 'kevin', priority: 'high' });
   }
   const bebat = bebatSummaryForProject(p);
   if (bebat.pending > 0 && !_isActionSuppressed(p, 'register_bebat')) {
@@ -930,17 +946,23 @@ function hasUnreadComments(project, email) {
 // ─── GROUND-FAULT WARNING PREDICATE ──────────────────────────────────────────
 function isMarstekConfig(type) { return typeof type === 'string' && type.startsWith('MARVE'); }
 function isZendureConfig(type) { return typeof type === 'string' && type.startsWith('ZSF'); }
+function isProductConfig(type) { return typeof type === 'string' && type.startsWith('PC_'); }
 function isSupportedConfig(type) { return isMarstekConfig(type) || isZendureConfig(type); }
 function isManualConfig(type) { return typeof type === 'string' && type.startsWith('MANUAL_'); }
+function isGroundFaultIgnoredConfig(type) { return isManualConfig(type) || isProductConfig(type); }
 
 // Returns: false (no warning), 'no-measurement' (warning), 'unsupported' (error)
 function groundFaultStatus(project) {
   const lcr = project && project.lastCalcRun;
   if (!lcr) return false;
   const types = (lcr.inputs && lcr.inputs.selectedConfigTypes) || [];
-  if (types.length === 0) return false;
-  // Error: config that's neither Zendure nor Marstek
-  if (types.some(t => !isSupportedConfig(t))) return 'unsupported';
+  const groundFaultTypes = types.filter(t => !isGroundFaultIgnoredConfig(t));
+  if (groundFaultTypes.length === 0) return false;
+  // Error: legacy config that's neither Zendure nor Marstek. Product-config and
+  // manual calculator configs are intentionally ignored here: their brand is
+  // resolved through the composer/product data, so they must not show the old
+  // "geen ondersteunde Zendure/Marstek" dashboard warning.
+  if (groundFaultTypes.some(t => !isSupportedConfig(t))) return 'unsupported';
   // Warning: measurement not yet performed
   const m = mergeProjectMetadata(project);
   const v = m.cabinet.lineGroundChecked;
@@ -1442,7 +1464,7 @@ async function setPhotoSerialTag(projectId, photoId, category) {
 
 // ─── OFFERTES (per-config PDF upload) ────────────────────────────────────────
 
-async function uploadProjectOfferte(projectId, configType, file) {
+async function uploadProjectOfferte(projectId, configType, file, extraMetadata = {}) {
   if (!file) throw new Error('Geen bestand opgegeven');
   if (file.type !== 'application/pdf') throw new Error('Enkel PDF-bestanden worden aanvaard');
   if (file.size > 10 * 1024 * 1024) throw new Error('PDF is groter dan 10 MB');
@@ -1465,6 +1487,7 @@ async function uploadProjectOfferte(projectId, configType, file) {
   await ref.put(file, { contentType: 'application/pdf' });
 
   const metadata = {
+    ...extraMetadata,
     storagePath,
     filename:    file.name,
     sizeBytes:   file.size,
@@ -2339,6 +2362,7 @@ window.isMarstekConfig = isMarstekConfig;
 window.isZendureConfig = isZendureConfig;
 window.isSupportedConfig = isSupportedConfig;
 window.isManualConfig = isManualConfig;
+window.isProductConfig = isProductConfig;
 window.getSettings = getSettings;
 window.saveSettings = saveSettings;
 window.listProductCategories = listProductCategories;

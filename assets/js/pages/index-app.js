@@ -10,6 +10,12 @@ import { escapeHtml, showSpinner, hideSpinner, withSpinner, showConfirm } from '
 import { makeScenCard } from '../index/scenario-card.js';
 import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js';
 import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
+import {
+  ensureInspectionLine,
+  resolveCompositionToCalculatorConfig,
+  selectableComposerProducts,
+  serializeCompositionLines,
+} from '../config-composer.js';
 
 // ─── CSV PARSER ────────────────────────────────────────────────────────────────
 // CSV helpers (parseCSV, parseDate, parsVolume) are in assets/js/csv.js
@@ -51,15 +57,23 @@ function _serializeState() {
   const d = _saved;
   // Strip empty lines (no description AND zero amount) at serialize-time.
   const meerkostLines = {};
+  const compositionLines = {};
   (d.configResults || []).forEach(cr => {
-    if (!cr.cfg || !Array.isArray(cr.cfg.meerkostLines)) return;
+    if (!cr.cfg) return;
+    if (Array.isArray(cr.cfg.compositionLines)) {
+      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
+        inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+      });
+      if (keepComposition.length > 0) compositionLines[cr.cfg.type] = keepComposition;
+    }
+    if (!Array.isArray(cr.cfg.meerkostLines)) return;
     const keep = cr.cfg.meerkostLines
       .map(ln => ({
         id: ln.id || _genMeerkostId(),
         description: ln.description || '',
         amount: Number(ln.amountExBtw != null ? ln.amountExBtw : ln.amount) || 0,
       }))
-      .filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount > 0);
+      .filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount !== 0);
     if (keep.length > 0) meerkostLines[cr.cfg.type] = keep;
   });
   return {
@@ -72,6 +86,7 @@ function _serializeState() {
     },
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
     meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
+    compositionLines: Object.keys(compositionLines).length > 0 ? compositionLines : null,
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
@@ -178,6 +193,22 @@ async function copyShareLink() {
   }, { message: 'Deellink aanmaken...' });
 }
 
+function _compositionMapToMeerkostLines(map) {
+  const out = {};
+  Object.entries(map || {}).forEach(([type, lines]) => {
+    const converted = (lines || [])
+      .filter(ln => ln && ln.kind !== 'inspection' && !ln.automatic)
+      .map(ln => ({
+        id: ln.id || _genMeerkostId(),
+        description: ln.description || '',
+        amount: Number(ln.amountExVat != null ? ln.amountExVat : ln.amount) || 0,
+      }))
+      .filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount !== 0);
+    if (converted.length) out[type] = converted;
+  });
+  return out;
+}
+
 function _applyLoadedState(state, showBanner) {
   if (!state || ![1,2,3,4,5,6].includes(state.v)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
   const f = state.form || {};
@@ -199,7 +230,11 @@ function _applyLoadedState(state, showBanner) {
     const meerkostLines = (state.v === 6)
       ? (state.meerkostLines || {})
       : _migrateMeerkostMapToLines(state.meerkostMap || {});   // v:5 fallback
-    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), meerkostLines)).catch(() => {});
+    const compositionLines = state.v === 6 ? (state.compositionLines || {}) : {};
+    Object.entries(_compositionMapToMeerkostLines(compositionLines)).forEach(([type, lines]) => {
+      if (!meerkostLines[type]) meerkostLines[type] = lines;
+    });
+    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), meerkostLines, compositionLines)).catch(() => {});
   }
   const r = _restoreState(state.r);
   if (showBanner) {
@@ -225,12 +260,23 @@ function showToast(msg) {
 // CSV URL lives in Firestore `config/products` doc (auth-gated read).
 // Fetched via getProductsConfig() in loadConfigs().
 let _sheetConfigs = null;
+let _sheetProducts = [];
+let _sheetCategories = [];
+let _settings = {};
+let _inspectionProduct = null;
+let _compositionLinesByType = {};
 
 // Manual configs — keyed by type ('MANUAL_<timestamp>'). Same resolved shape as sheet configs.
 let _manualConfigs = {};
 
 function _getPriceKey() {
   return `${document.getElementById('btwSelect').value}_${document.getElementById('keuringSelect').value}`;
+}
+
+function currentBebatPricePerKg() {
+  const fromSettings = parseFloat(_settings.bebatPricePerKg);
+  if (!isNaN(fromSettings) && fromSettings > 0) return fromSettings;
+  return 2.89;
 }
 
 // Build all `<option>` HTML for a single picker. `otherSelected` is the list of
@@ -268,12 +314,21 @@ function readAllSelectedConfigObjects() {
 
   function resolveLines(rawLines) {
     return (rawLines || [])
-      .filter(ln => (ln && ((ln.amount && Number(ln.amount) > 0) || (ln.description && ln.description.trim() !== ''))))
+      .filter(ln => (ln && ((ln.amount && Number(ln.amount) !== 0) || (ln.description && ln.description.trim() !== ''))))
       .map(ln => ({
+        id: ln.id || _genMeerkostId(),
         description: ln.description || '',
         amountExBtw: Number(ln.amount) || 0,
         amountInclBtw: (Number(ln.amount) || 0) * btwFactor,
       }));
+  }
+
+  function resolveCompositionLinesFor(type) {
+    const keuringChoice = document.getElementById('keuringSelect').value;
+    const manualLines = serializeCompositionLines(_compositionLinesByType[type] || [], {
+      inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+    });
+    return ensureInspectionLine(manualLines, _inspectionProduct, keuringChoice);
   }
 
   // Sheet configs from dropdowns
@@ -282,6 +337,17 @@ function readAllSelectedConfigObjects() {
     .map(type => {
       const c = _sheetConfigs.find(x => x.type === type);
       if (!c) return null;
+      if (c.source === 'productConfig') {
+        return resolveCompositionToCalculatorConfig(c, {
+          type,
+          baseProductConfigId: c.productConfigId,
+          lines: resolveCompositionLinesFor(type),
+        }, _sheetProducts, {
+          btwPercent,
+          categories: _sheetCategories,
+          bebatPricePerKg: currentBebatPricePerKg(),
+        });
+      }
       const basePrice = c.prices[priceKey];
       const lines = resolveLines(lineMap[type]);
       const meerkostTotalInclBtw = lines.reduce((s, l) => s + l.amountInclBtw, 0);
@@ -345,10 +411,13 @@ function _readMeerkostLinesFromDom() {
 // Render N+1 sheet-config pickers. `meerkostLines` is an optional
 // { [type]: MeerkostLine[] } map used to seed the disclosure on restore.
 // Live DOM lines are preserved across re-renders via _readMeerkostLinesFromDom().
-function renderConfigPickers(selectedTypes, meerkostLines) {
+function renderConfigPickers(selectedTypes, meerkostLines, compositionLines) {
   const list = document.getElementById('configPickerList');
   if (!list) return;
   const currentLines = { ..._readMeerkostLinesFromDom(), ...(meerkostLines || {}) };
+  if (compositionLines && typeof compositionLines === 'object') {
+    _compositionLinesByType = { ..._compositionLinesByType, ...compositionLines };
+  }
   const chosen = (selectedTypes || []).filter(v => v);
   list.innerHTML = '';
   for (let i = 0; i <= chosen.length; i++) {
@@ -362,12 +431,27 @@ function renderConfigPickers(selectedTypes, meerkostLines) {
       ? 'Configuratie 1 <span style="color:var(--danger);font-size:1rem;">*</span>'
       : `Configuratie ${i + 1} <span style="font-weight:400;text-transform:none;color:var(--muted)">(optioneel)</span>`;
     const linesForRow = (currentValue && currentLines[currentValue]) || [];
+    const currentConfig = currentValue ? (_sheetConfigs || []).find(c => c.type === currentValue) : null;
+    if (currentConfig && currentConfig.source === 'productConfig' && !_compositionLinesByType[currentValue] && linesForRow.length) {
+      _compositionLinesByType[currentValue] = linesForRow.map(ln => ({
+        id: ln.id || _genMeerkostId(),
+        kind: Number(ln.amount) < 0 ? 'discount' : 'manual',
+        description: ln.description || '',
+        amountExVat: Number(ln.amount) || 0,
+        vat: parseFloat(document.getElementById('btwSelect')?.value) || 21,
+      }));
+    }
+    const adjustmentHtml = !currentValue
+      ? ''
+      : (currentConfig && currentConfig.source === 'productConfig'
+        ? _composerButtonHtml(currentValue, _compositionLinesByType[currentValue] || [])
+        : _meerkostDisclosureHtml(linesForRow));
     row.innerHTML = `
       <div class="form-group" style="flex:1;">
         <label>${labelTxt}</label>
         <select class="config-select">${_buildConfigOptionsHtml(currentValue, others, isFirst)}</select>
       </div>
-      ${currentValue ? _meerkostDisclosureHtml(linesForRow) : ''}
+      ${adjustmentHtml}
     `;
     row.querySelector('.config-select').addEventListener('change', () => {
       renderConfigPickers(readSelectedConfigs(), _readMeerkostLinesFromDom());
@@ -378,8 +462,186 @@ function renderConfigPickers(selectedTypes, meerkostLines) {
 }
 
 // Legacy shim — _applyLoadedState calls this name.
-function _populateConfigSelects(selectedTypes, meerkostLines) {
-  renderConfigPickers(selectedTypes, meerkostLines);
+function _populateConfigSelects(selectedTypes, meerkostLines, compositionLines) {
+  renderConfigPickers(selectedTypes, meerkostLines, compositionLines);
+}
+
+function _composerButtonHtml(type, lines) {
+  const savedLines = serializeCompositionLines(lines || [], {
+    inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+  });
+  const productCount = savedLines.filter(ln => ln.kind === 'product').length;
+  const manualCount = savedLines.filter(ln => ln.kind === 'manual').length;
+  const discountCount = savedLines.filter(ln => ln.kind === 'discount').length;
+  const bits = [];
+  if (productCount) bits.push(`${productCount} product${productCount === 1 ? '' : 'en'}`);
+  if (manualCount) bits.push(`${manualCount} manueel`);
+  if (discountCount) bits.push(`${discountCount} korting${discountCount === 1 ? '' : 'en'}`);
+  const summary = bits.length ? bits.join(' · ') : 'geen aanpassingen';
+  return `
+    <div class="composer-summary" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button type="button" class="btn btn-secondary composer-open-btn" data-composer-type="${escapeHtml(type)}">
+        <i class="fa-solid fa-sliders" aria-hidden="true"></i> Samenstelling aanpassen
+      </button>
+      <span class="meerkost-summary-sum">${escapeHtml(summary)}</span>
+    </div>`;
+}
+
+function _productLabel(product) {
+  return [product?.brand, product?.model].filter(Boolean).join(' ').trim()
+    || product?.description
+    || product?.id
+    || '(product zonder naam)';
+}
+
+function _composerProductOptionsHtml(selectedId) {
+  return '<option value="">— Kies product —</option>' + selectableComposerProducts(_sheetProducts, _inspectionProduct && _inspectionProduct.id)
+    .map(product => `<option value="${escapeHtml(product.id)}" ${product.id === selectedId ? 'selected' : ''}>${escapeHtml(_productLabel(product))}</option>`)
+    .join('');
+}
+
+function _composerProductRowHtml(line = {}) {
+  return `
+    <div class="composer-line composer-product-row" data-line-id="${escapeHtml(line.id || _genMeerkostId())}" style="display:grid;grid-template-columns:minmax(180px,1fr) 90px 90px 44px;gap:8px;align-items:end;margin-bottom:8px;">
+      <div class="form-group" style="margin:0;"><label>Product</label><select class="composer-product-id">${_composerProductOptionsHtml(line.productId || '')}</select></div>
+      <div class="form-group" style="margin:0;"><label>Aantal</label><input type="number" class="composer-product-qty" min="1" step="1" value="${Number(line.qty) || 1}"></div>
+      <div class="form-group" style="margin:0;"><label>BTW</label><select class="composer-product-vat"><option value="6" ${Number(line.vat) === 6 ? 'selected' : ''}>6%</option><option value="21" ${Number(line.vat) !== 6 ? 'selected' : ''}>21%</option></select></div>
+      <button type="button" class="btn btn-secondary composer-remove" title="Verwijderen">✕</button>
+    </div>`;
+}
+
+function _composerManualRowHtml(line = {}) {
+  const isDiscount = line.kind === 'discount';
+  const amount = Math.abs(Number(line.amountExVat) || 0);
+  return `
+    <div class="composer-line composer-manual-row" data-line-id="${escapeHtml(line.id || _genMeerkostId())}" style="display:grid;grid-template-columns:135px minmax(180px,1fr) 120px 90px 44px;gap:8px;align-items:end;margin-bottom:8px;">
+      <div class="form-group" style="margin:0;"><label>Type</label><select class="composer-manual-kind"><option value="manual" ${!isDiscount ? 'selected' : ''}>Manuele lijn</option><option value="discount" ${isDiscount ? 'selected' : ''}>Korting</option></select></div>
+      <div class="form-group" style="margin:0;"><label>Omschrijving</label><input type="text" class="composer-manual-desc" value="${escapeHtml(line.description || '')}" placeholder="Omschrijving"></div>
+      <div class="form-group" style="margin:0;"><label>Bedrag ex BTW</label><input type="number" class="composer-manual-amount" min="0" step="0.01" value="${amount || ''}"></div>
+      <div class="form-group" style="margin:0;"><label>BTW</label><select class="composer-manual-vat"><option value="6" ${Number(line.vat) === 6 ? 'selected' : ''}>6%</option><option value="21" ${Number(line.vat) !== 6 ? 'selected' : ''}>21%</option></select></div>
+      <button type="button" class="btn btn-secondary composer-remove" title="Verwijderen">✕</button>
+    </div>`;
+}
+
+function _ensureComposerModal() {
+  let modal = document.getElementById('configComposerModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'configComposerModal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px;';
+  modal.innerHTML = `
+    <div role="dialog" aria-modal="true" aria-labelledby="configComposerTitle" style="background:var(--card-bg,#fff);color:var(--text,#111);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(980px,100%);max-height:92vh;display:flex;flex-direction:column;">
+      <div style="padding:18px 20px;border-bottom:1px solid var(--border,#ddd);display:flex;justify-content:space-between;gap:12px;align-items:center;">
+        <h3 id="configComposerTitle" style="margin:0;font-size:1.15rem;">Samenstelling aanpassen</h3>
+        <button type="button" class="btn btn-secondary" data-composer-close>Sluiten</button>
+      </div>
+      <div id="configComposerBody" style="padding:18px 20px;overflow:auto;"></div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border,#ddd);display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+        <span id="configComposerSummary" class="meerkost-summary-sum"></span>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-secondary" data-composer-close>Annuleren</button>
+          <button type="button" class="btn btn-calculate" id="configComposerSave" style="margin:0;">Toepassen</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => {
+    if (e.target === modal || e.target.closest('[data-composer-close]')) _closeComposerModal();
+    if (e.target.closest('#configComposerSave')) _saveComposerModal();
+    const removeBtn = e.target.closest('.composer-remove');
+    if (removeBtn) {
+      removeBtn.closest('.composer-line')?.remove();
+      _updateComposerPreview();
+    }
+    if (e.target.closest('#configComposerAddProduct')) {
+      document.getElementById('configComposerProducts')?.insertAdjacentHTML('beforeend', _composerProductRowHtml({ vat: parseFloat(document.getElementById('btwSelect')?.value) || 21 }));
+      _updateComposerPreview();
+    }
+    if (e.target.closest('#configComposerAddManual')) {
+      document.getElementById('configComposerManuals')?.insertAdjacentHTML('beforeend', _composerManualRowHtml({ vat: parseFloat(document.getElementById('btwSelect')?.value) || 21 }));
+      _updateComposerPreview();
+    }
+  });
+  modal.addEventListener('input', _updateComposerPreview);
+  modal.addEventListener('change', _updateComposerPreview);
+  return modal;
+}
+
+function _openComposerModal(type) {
+  const cfg = (_sheetConfigs || []).find(c => c.type === type && c.source === 'productConfig');
+  if (!cfg) return;
+  const modal = _ensureComposerModal();
+  modal.dataset.configType = type;
+  const body = modal.querySelector('#configComposerBody');
+  const saved = serializeCompositionLines(_compositionLinesByType[type] || [], { inspectionProductId: _inspectionProduct && _inspectionProduct.id });
+  const productRows = saved.filter(ln => ln.kind === 'product').map(_composerProductRowHtml).join('');
+  const manualRows = saved.filter(ln => ln.kind === 'manual' || ln.kind === 'discount').map(_composerManualRowHtml).join('');
+  body.innerHTML = `
+    <p style="margin-top:0;color:var(--muted);">Basis: <strong>${escapeHtml(cfg.omschrijving || cfg.type)}</strong>. Keuring wordt automatisch bepaald door de keuring-keuze buiten dit venster en staat hier bewust niet tussen de producten.</p>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 8px;"><h4 style="margin:0;">Extra producten</h4><button type="button" class="btn btn-secondary" id="configComposerAddProduct">+ Product toevoegen</button></div>
+    <div id="configComposerProducts">${productRows || ''}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px;"><h4 style="margin:0;">Manuele lijnen en kortingen</h4><button type="button" class="btn btn-secondary" id="configComposerAddManual">+ Lijn toevoegen</button></div>
+    <div id="configComposerManuals">${manualRows || ''}</div>
+    <div id="configComposerPreview" class="alert alert-info" style="margin-top:14px;"></div>`;
+  modal.style.display = 'flex';
+  _updateComposerPreview();
+}
+
+function _closeComposerModal() {
+  const modal = document.getElementById('configComposerModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function _readComposerModalLines() {
+  const modal = document.getElementById('configComposerModal');
+  if (!modal) return [];
+  const productLines = Array.from(modal.querySelectorAll('.composer-product-row')).map(row => {
+    const productId = row.querySelector('.composer-product-id')?.value || '';
+    const qty = parseInt(row.querySelector('.composer-product-qty')?.value, 10) || 0;
+    const vat = parseFloat(row.querySelector('.composer-product-vat')?.value) || 21;
+    if (!productId || qty <= 0) return null;
+    return { id: row.dataset.lineId || _genMeerkostId(), kind: 'product', productId, qty, vat };
+  }).filter(Boolean);
+  const manualLines = Array.from(modal.querySelectorAll('.composer-manual-row')).map(row => {
+    const kind = row.querySelector('.composer-manual-kind')?.value === 'discount' ? 'discount' : 'manual';
+    const description = row.querySelector('.composer-manual-desc')?.value || '';
+    const rawAmount = parseFloat(row.querySelector('.composer-manual-amount')?.value) || 0;
+    const vat = parseFloat(row.querySelector('.composer-manual-vat')?.value) || 21;
+    const amountExVat = kind === 'discount' ? -Math.abs(rawAmount) : rawAmount;
+    return { id: row.dataset.lineId || _genMeerkostId(), kind, description, amountExVat, vat };
+  });
+  return serializeCompositionLines([...productLines, ...manualLines], { inspectionProductId: _inspectionProduct && _inspectionProduct.id });
+}
+
+function _updateComposerPreview() {
+  const modal = document.getElementById('configComposerModal');
+  if (!modal || modal.style.display === 'none') return;
+  const type = modal.dataset.configType;
+  const cfg = (_sheetConfigs || []).find(c => c.type === type);
+  const lines = _readComposerModalLines();
+  const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
+  const withInspection = ensureInspectionLine(lines, _inspectionProduct, document.getElementById('keuringSelect')?.value || 'no');
+  const resolved = resolveCompositionToCalculatorConfig(cfg, { type, baseProductConfigId: cfg?.productConfigId, lines: withInspection }, _sheetProducts, {
+    btwPercent,
+    categories: _sheetCategories,
+    bebatPricePerKg: currentBebatPricePerKg(),
+  });
+  const preview = modal.querySelector('#configComposerPreview');
+  const summary = modal.querySelector('#configComposerSummary');
+  const adjustableTotal = (resolved?.compositionLines || []).filter(ln => !ln.automatic).reduce((sum, ln) => sum + ln.amountInclBtw, 0);
+  const inspection = (resolved?.compositionLines || []).find(ln => ln.kind === 'inspection');
+  const html = `Aanpassingen: <strong>${fmtEur(adjustableTotal)}</strong> incl. BTW${inspection ? ` · automatische keuring: <strong>${fmtEur(inspection.amountInclBtw)}</strong>` : ''} · totaal: <strong>${fmtEur(resolved?.price || 0)}</strong>`;
+  if (preview) preview.innerHTML = html;
+  if (summary) summary.innerHTML = html;
+}
+
+function _saveComposerModal() {
+  const modal = document.getElementById('configComposerModal');
+  const type = modal?.dataset.configType;
+  if (!type) return;
+  _compositionLinesByType[type] = _readComposerModalLines();
+  _closeComposerModal();
+  renderConfigPickers(readSelectedConfigs(), _readMeerkostLinesFromDom());
 }
 
 // Build the <details> block for one config row. `lines` is the seeded
@@ -626,15 +888,17 @@ async function loadConfigs() {
       let productCalcConfigs = [];
       let productConfigError = null;
       try {
-        const [categories, products, productConfigs] = await Promise.all([
+        const [categories, products, productConfigs, settings] = await Promise.all([
           listProductCategories(),
           listProducts({ isActive: true }),
           listProductConfigs(),
+          typeof getSettings === 'function' ? getSettings().catch(() => ({})) : Promise.resolve({}),
         ]);
-        const inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection');
-        productCalcConfigs = productConfigsToCalcConfigs(productConfigs, products, categories, {
-          inspectionProductId: inspectionProduct && inspectionProduct.id,
-        });
+        _sheetProducts = products;
+        _sheetCategories = categories;
+        _settings = settings || {};
+        _inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection') || null;
+        productCalcConfigs = productConfigsToCalcConfigs(productConfigs, products, categories);
       } catch (e) {
         productConfigError = e;
         console.warn('Nieuwe samenstellingen laden mislukt:', e);
@@ -1034,15 +1298,24 @@ async function saveProjectCalcRun(d) {
   const priceNight = (priceNightRaw && priceNightRaw.trim() !== '') ? parseFloat(priceNightRaw) : null;
   const selectedConfigTypes = (d.configResults || []).map(cr => cr.cfg && cr.cfg.type).filter(Boolean);
 
-  // Build meerkostLines from configResults (already in the new shape).
+  // Build adjustable lines from configResults.
   const meerkostLines = {};
+  const compositionLines = {};
   (d.configResults || []).forEach(cr => {
-    if (cr.cfg && Array.isArray(cr.cfg.meerkostLines) && cr.cfg.meerkostLines.length > 0) {
-      meerkostLines[cr.cfg.type] = cr.cfg.meerkostLines.map(ln => ({
+    if (!cr.cfg) return;
+    if (Array.isArray(cr.cfg.compositionLines)) {
+      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
+        inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+      });
+      if (keepComposition.length > 0) compositionLines[cr.cfg.type] = keepComposition;
+    }
+    if (Array.isArray(cr.cfg.meerkostLines) && cr.cfg.meerkostLines.length > 0) {
+      const keep = cr.cfg.meerkostLines.map(ln => ({
         id: ln.id || _genMeerkostId(),
         description: ln.description || '',
         amount: Number(ln.amountExBtw != null ? ln.amountExBtw : ln.amount) || 0,
-      }));
+      })).filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount !== 0);
+      if (keep.length > 0) meerkostLines[cr.cfg.type] = keep;
     }
   });
 
@@ -1067,8 +1340,14 @@ async function saveProjectCalcRun(d) {
   }
 
   await saveLastCalcRun(_projectId, {
-    inputs: { pvInv: pvInverter, priceDay, priceNight, selectedConfigTypes,
-              meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null },
+    inputs: {
+      pvInv: pvInverter,
+      priceDay,
+      priceNight,
+      selectedConfigTypes,
+      meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
+      compositionLines: Object.keys(compositionLines).length > 0 ? compositionLines : null,
+    },
     results,
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
   });
@@ -1209,6 +1488,11 @@ function wireIndexActions() {
   document.getElementById('shareUrlInput')?.addEventListener('click', e => e.currentTarget.select());
   document.getElementById('copyShareUrlBtn')?.addEventListener('click', () => {
     copyShareUrlInput().catch(() => {});
+  });
+  document.getElementById('configPickerList')?.addEventListener('click', e => {
+    const btn = e.target.closest('.composer-open-btn');
+    if (!btn) return;
+    _openComposerModal(btn.dataset.composerType);
   });
   document.getElementById('manualConfigArea')?.addEventListener('click', e => {
     const submitBtn = e.target.closest('[data-manual-submit]');
@@ -1724,6 +2008,9 @@ function buildSavedFromProject(proj) {
   const meerkostLines = (inputs.meerkostLines && Object.keys(inputs.meerkostLines).length > 0)
     ? inputs.meerkostLines
     : (inputs.meerkostMap ? _migrateMeerkostMapToLines(inputs.meerkostMap) : null);
+  const compositionLines = (inputs.compositionLines && Object.keys(inputs.compositionLines).length > 0)
+    ? inputs.compositionLines
+    : null;
   return {
     v: 6,
     form: {
@@ -1734,6 +2021,7 @@ function buildSavedFromProject(proj) {
     },
     manualConfigs: proj.manualConfigs || {},
     meerkostLines: meerkostLines || null,
+    compositionLines,
     r,
   };
 }

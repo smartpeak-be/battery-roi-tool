@@ -33,6 +33,7 @@ const OFFERTE_MODAL_HTML = `
   </div>
 `;
 
+
 function ensureOfferteModal() {
   if (document.getElementById('offerteModal')) return;
   document.body.insertAdjacentHTML('beforeend', OFFERTE_MODAL_HTML);
@@ -50,7 +51,8 @@ function _findConfigByType(project, configType) {
     omschrijving:cfg.omschrijving || '',
     batCap:      cfg.batCap || null,
     batInv:      cfg.batInv || null,
-    priceEur
+    priceEur,
+    productConfigId: cfg.productConfigId || (cfg.composition && cfg.composition.baseProductConfigId) || ''
   };
 }
 
@@ -87,12 +89,18 @@ function renderOffertesCards(project) {
     const fileRow = pdf
       ? `<div class="offerte-row-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> ${escapeHtml(pdf.filename || '')}</div>`
       : `<div class="offerte-row-pdf" style="color:var(--sp-muted);">Nog geen offerte</div>`;
+    const canCreateOffer = cfg.productConfigId || (typeof window.isProductConfig === 'function' && window.isProductConfig(t));
+    const createOfferAction = canCreateOffer
+      ? `<button class="btn btn-sm btn-outline-success offerte-create-btn" data-offerte-action data-type="${escapeHtml(t)}" title="Omzetten naar Billit-offerte" aria-label="Omzetten naar Billit-offerte"><i class="fa-solid fa-file-invoice" aria-hidden="true"></i></button>`
+      : '';
     const actions = pdf
       ? `<button class="btn btn-sm btn-outline-secondary offerte-download-btn" data-offerte-action data-type="${escapeHtml(t)}" title="Download PDF" aria-label="Download PDF"><i class="fa-solid fa-download" aria-hidden="true"></i></button>
          <button class="btn btn-sm btn-outline-secondary offerte-replace-btn"  data-offerte-action data-type="${escapeHtml(t)}" title="Vervang PDF" aria-label="Vervang PDF"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></button>
          <button class="btn btn-sm btn-outline-warning   offerte-deletepdf-btn" data-offerte-action data-type="${escapeHtml(t)}" title="Alleen PDF verwijderen" aria-label="Alleen PDF verwijderen"><i class="fa-solid fa-file-circle-xmark" aria-hidden="true"></i></button>
+         ${createOfferAction}
          <button class="btn btn-sm btn-outline-danger    offerte-trash-btn"     data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen" aria-label="Config verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`
       : `<button class="btn btn-sm btn-outline-primary offerte-upload-btn"     data-offerte-action data-type="${escapeHtml(t)}" title="Upload offerte" aria-label="Upload offerte"><i class="fa-solid fa-upload" aria-hidden="true"></i></button>
+         ${createOfferAction}
          <button class="btn btn-sm btn-outline-danger  offerte-trash-btn"      data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen" aria-label="Config verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
 
     const isManual = typeof window.isManualConfig === 'function' && window.isManualConfig(t);
@@ -148,6 +156,24 @@ function wireOffertesClicks(containerEl, getProjectFn, onChange) {
     try {
       if (btn.classList.contains('offerte-upload-btn') || btn.classList.contains('offerte-replace-btn')) {
         openOfferteModal(project, type, onChange);
+      }
+      else if (btn.classList.contains('offerte-create-btn')) {
+        const quoteTools = window.SmartPeakQuoteContext;
+        if (!quoteTools || typeof quoteTools.buildQuoteContextFromProjectConfig !== 'function') {
+          throw new Error('Offerte-context is nog niet geladen. Herlaad de pagina en probeer opnieuw.');
+        }
+        if (!window.SmartPeakQuotePreview || typeof window.SmartPeakQuotePreview.openQuoteModal !== 'function') {
+          throw new Error('Offerte-preview is nog niet geladen. Herlaad de pagina en probeer opnieuw.');
+        }
+        const context = quoteTools.buildQuoteContextFromProjectConfig(project, type, {
+          vat: (typeof effectiveBtwFor === 'function') ? effectiveBtwFor(project) : 21,
+        });
+        if (!context.configId) {
+          throw new Error('Deze configuratie kan nog niet automatisch naar de offerte-preview worden doorgestuurd.');
+        }
+        window.SmartPeakQuotePreview.openQuoteModal(context, {
+          onBillitPdfAttached: () => onChange && onChange(),
+        });
       }
       else if (btn.classList.contains('offerte-download-btn')) {
         const pdf = (project.offertes || {})[type];

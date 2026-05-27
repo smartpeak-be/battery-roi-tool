@@ -114,11 +114,13 @@ describe('productConfigToCalcConfig', () => {
     expect(resolved.batInv).toBeCloseTo(2.4);
     expect(resolved.eff).toBeCloseTo(0.93);
 
-    // Excl: 1200 + 650 + 350 + 98.1376 = 2298.1376. Keuring adds 150 excl at 21%.
+    // Excl: 1200 + 650 + 350 + 98.1376 = 2298.1376.
     expect(resolved.prices['6_no']).toBeCloseTo(2298.1376 * 1.06);
     expect(resolved.prices['21_no']).toBeCloseTo(2298.1376 * 1.21);
-    expect(resolved.prices['6_yes']).toBeCloseTo(2298.1376 * 1.06 + 150 * 1.21);
-    expect(resolved.prices['21_yes']).toBeCloseTo((2298.1376 + 150) * 1.21);
+    // Product-samenstellingen voegen keuring later als expliciete composer-lijn toe,
+    // zodat alle gekozen samenstellingen samen reageren op de keuringkeuze.
+    expect(resolved.prices['6_yes']).toBeCloseTo(2298.1376 * 1.06);
+    expect(resolved.prices['21_yes']).toBeCloseTo(2298.1376 * 1.21);
   });
 
   it('keeps product-config prices compatible with existing extra-cost lines', () => {
