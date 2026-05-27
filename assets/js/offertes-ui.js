@@ -162,13 +162,18 @@ function wireOffertesClicks(containerEl, getProjectFn, onChange) {
         if (!quoteTools || typeof quoteTools.buildQuoteContextFromProjectConfig !== 'function') {
           throw new Error('Offerte-context is nog niet geladen. Herlaad de pagina en probeer opnieuw.');
         }
+        if (!window.SmartPeakQuotePreview || typeof window.SmartPeakQuotePreview.openQuoteModal !== 'function') {
+          throw new Error('Offerte-preview is nog niet geladen. Herlaad de pagina en probeer opnieuw.');
+        }
         const context = quoteTools.buildQuoteContextFromProjectConfig(project, type, {
           vat: (typeof effectiveBtwFor === 'function') ? effectiveBtwFor(project) : 21,
         });
         if (!context.configId) {
-          throw new Error('Deze configuratie kan nog niet automatisch naar het offertevenster worden doorgestuurd.');
+          throw new Error('Deze configuratie kan nog niet automatisch naar de offerte-preview worden doorgestuurd.');
         }
-        window.location.href = quoteTools.buildQuoteContextUrl(context);
+        window.SmartPeakQuotePreview.openQuoteModal(context, {
+          onBillitPdfAttached: () => onChange && onChange(),
+        });
       }
       else if (btn.classList.contains('offerte-download-btn')) {
         const pdf = (project.offertes || {})[type];

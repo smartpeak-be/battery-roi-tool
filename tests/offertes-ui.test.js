@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../assets/js/offertes-ui.js', import.meta.url), 'utf8');
+const dashboardHtml = readFileSync(new URL('../dashboard.html', import.meta.url), 'utf8');
+const quotePreviewSource = readFileSync(new URL('../assets/js/quote-preview.js', import.meta.url), 'utf8');
 
 describe('offertes-ui quote preview action', () => {
-  it('stuurt vanuit het dashboard door naar het bestaande offertevenster zonder iframe-modal', () => {
-    expect(source).toContain('window.location.href = quoteTools.buildQuoteContextUrl(context)');
+  it('opent de volledige Billit/offerte-preview op het dashboard zonder redirect of iframe', () => {
+    expect(dashboardHtml).toContain('assets/js/quote-preview.js');
+    expect(source).toContain('window.SmartPeakQuotePreview.openQuoteModal(context');
+    expect(source).not.toMatch(/window\.location\.href\s*=\s*quoteTools\.buildQuoteContextUrl/);
     expect(source).not.toContain('quotePreviewFrame');
-    expect(source).not.toContain('openQuotePreviewModal');
-    expect(source).not.toContain('QUOTE_PREVIEW_MODAL_HTML');
+    expect(quotePreviewSource).toContain('id="quoteModal"');
+    expect(quotePreviewSource).toContain('id="btnCreateBillitOffer"');
+    expect(quotePreviewSource).toContain('function createBillitOfferFromPreview');
+    expect(quotePreviewSource).not.toContain('<iframe');
   });
 });
