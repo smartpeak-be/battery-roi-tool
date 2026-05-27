@@ -261,6 +261,8 @@ function showToast(msg) {
 // Fetched via getProductsConfig() in loadConfigs().
 let _sheetConfigs = null;
 let _sheetProducts = [];
+let _sheetCategories = [];
+let _settings = {};
 let _inspectionProduct = null;
 let _compositionLinesByType = {};
 
@@ -269,6 +271,12 @@ let _manualConfigs = {};
 
 function _getPriceKey() {
   return `${document.getElementById('btwSelect').value}_${document.getElementById('keuringSelect').value}`;
+}
+
+function currentBebatPricePerKg() {
+  const fromSettings = parseFloat(_settings.bebatPricePerKg);
+  if (!isNaN(fromSettings) && fromSettings > 0) return fromSettings;
+  return 2.89;
 }
 
 // Build all `<option>` HTML for a single picker. `otherSelected` is the list of
@@ -334,7 +342,11 @@ function readAllSelectedConfigObjects() {
           type,
           baseProductConfigId: c.productConfigId,
           lines: resolveCompositionLinesFor(type),
-        }, _sheetProducts, { btwPercent });
+        }, _sheetProducts, {
+          btwPercent,
+          categories: _sheetCategories,
+          bebatPricePerKg: currentBebatPricePerKg(),
+        });
       }
       const basePrice = c.prices[priceKey];
       const lines = resolveLines(lineMap[type]);
@@ -609,7 +621,11 @@ function _updateComposerPreview() {
   const lines = _readComposerModalLines();
   const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
   const withInspection = ensureInspectionLine(lines, _inspectionProduct, document.getElementById('keuringSelect')?.value || 'no');
-  const resolved = resolveCompositionToCalculatorConfig(cfg, { type, baseProductConfigId: cfg?.productConfigId, lines: withInspection }, _sheetProducts, { btwPercent });
+  const resolved = resolveCompositionToCalculatorConfig(cfg, { type, baseProductConfigId: cfg?.productConfigId, lines: withInspection }, _sheetProducts, {
+    btwPercent,
+    categories: _sheetCategories,
+    bebatPricePerKg: currentBebatPricePerKg(),
+  });
   const preview = modal.querySelector('#configComposerPreview');
   const summary = modal.querySelector('#configComposerSummary');
   const adjustableTotal = (resolved?.compositionLines || []).filter(ln => !ln.automatic).reduce((sum, ln) => sum + ln.amountInclBtw, 0);
@@ -872,12 +888,15 @@ async function loadConfigs() {
       let productCalcConfigs = [];
       let productConfigError = null;
       try {
-        const [categories, products, productConfigs] = await Promise.all([
+        const [categories, products, productConfigs, settings] = await Promise.all([
           listProductCategories(),
           listProducts({ isActive: true }),
           listProductConfigs(),
+          typeof getSettings === 'function' ? getSettings().catch(() => ({})) : Promise.resolve({}),
         ]);
         _sheetProducts = products;
+        _sheetCategories = categories;
+        _settings = settings || {};
         _inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection') || null;
         productCalcConfigs = productConfigsToCalcConfigs(productConfigs, products, categories);
       } catch (e) {

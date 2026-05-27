@@ -1,4 +1,9 @@
 import { totalProductPrice } from './product-pricing.js';
+import {
+  bebatTotalInclVat,
+  categoryMap,
+  configBatteryWeightKg,
+} from './product-configs.js';
 
 const INSPECTION_LINE_ID = 'auto-inspection';
 
@@ -36,6 +41,33 @@ function lineDescription(line, productsById) {
       || line.productId;
   }
   return line.description || '';
+}
+
+function compositionProductItems(lines) {
+  return (lines || [])
+    .filter(line => line && line.kind === 'product' && line.productId)
+    .map(line => ({ productId: String(line.productId), qty: normalizeQty(line.qty) }));
+}
+
+function bebatLineFor(baseConfig, resolvedLines, productsById, categoriesById, bebatPricePerKg) {
+  const pricePerKg = Number(bebatPricePerKg);
+  if (!Number.isFinite(pricePerKg) || pricePerKg <= 0) return null;
+  const items = [
+    ...(Array.isArray(baseConfig?.items) ? baseConfig.items : []),
+    ...compositionProductItems(resolvedLines),
+  ];
+  const kg = configBatteryWeightKg(items, productsById, categoriesById);
+  const amountInclBtw = bebatTotalInclVat(kg, pricePerKg);
+  if (!(amountInclBtw > 0)) return null;
+  return {
+    id: 'auto-bebat',
+    kind: 'bebat',
+    description: `Bebat bijdrage (${kg.toFixed(2)} kg x EUR ${pricePerKg.toFixed(2)}/kg)`,
+    amountExVat: amountInclBtw / 1.21,
+    amountInclBtw,
+    vat: 21,
+    automatic: true,
+  };
 }
 
 export function isInspectionProduct(product, inspectionProductId = '') {
@@ -91,6 +123,7 @@ export function resolveCompositionToCalculatorConfig(baseConfig, composition, pr
   if (!baseConfig) return null;
   const btwPercent = normalizeVat(opts.btwPercent, 21);
   const productsById = productLookup(products);
+  const categoriesById = opts.categoriesById || categoryMap(opts.categories || []);
   const basePrice = Number(baseConfig.prices && baseConfig.prices[`${btwPercent}_no`]);
   const normalizedBasePrice = Number.isFinite(basePrice) ? basePrice : Number(baseConfig.basePrice || baseConfig.price || 0);
   const resolvedLines = (composition && composition.lines ? composition.lines : []).map(line => {
@@ -108,7 +141,9 @@ export function resolveCompositionToCalculatorConfig(baseConfig, composition, pr
       automatic: line.automatic === true,
     };
   });
-  const compositionTotalInclBtw = resolvedLines.reduce((sum, line) => sum + line.amountInclBtw, 0);
+  const bebatLine = bebatLineFor(baseConfig, resolvedLines, productsById, categoriesById, opts.bebatPricePerKg);
+  const allLines = bebatLine ? [...resolvedLines, bebatLine] : resolvedLines;
+  const compositionTotalInclBtw = allLines.reduce((sum, line) => sum + line.amountInclBtw, 0);
 
   return {
     type: baseConfig.type,
@@ -123,11 +158,11 @@ export function resolveCompositionToCalculatorConfig(baseConfig, composition, pr
     productConfigName: baseConfig.productConfigName,
     items: baseConfig.items,
     compositionTotalInclBtw,
-    compositionLines: resolvedLines,
+    compositionLines: allLines,
     composition: {
       type: baseConfig.type,
       baseProductConfigId: baseConfig.productConfigId || (composition && composition.baseProductConfigId) || '',
-      lines: resolvedLines,
+      lines: allLines,
     },
   };
 }

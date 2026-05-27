@@ -26,6 +26,11 @@ const baseConfig = {
 const products = [
   { id: 'inspection', brand: '', model: 'Keuring', purchasePrice: 150, marginType: 'fixed', marginValue: 0, serviceKey: 'inspection', specs: { serviceKey: 'inspection' } },
   { id: 'shelf', brand: 'Rack', model: 'Batterijschap', purchasePrice: 100, marginType: 'fixed', marginValue: 50, specs: {} },
+  { id: 'battery', categoryId: 'battery-cat', brand: 'Zendure', model: 'AB3000X', purchasePrice: 500, marginType: 'fixed', marginValue: 100, specs: { weightKg: 27.8 } },
+];
+
+const categories = [
+  { id: 'battery-cat', slug: 'batterijen', name: 'Batterijen' },
 ];
 
 describe('config composer', () => {
@@ -73,7 +78,28 @@ describe('config composer', () => {
     ]);
   });
 
+  it('adds Bebat to the calculator customer price for battery items', () => {
+    const resolved = resolveCompositionToCalculatorConfig({
+      ...baseConfig,
+      items: [{ productId: 'battery', qty: 1 }],
+    }, { type: 'PC_cfg-1', baseProductConfigId: 'cfg-1', lines: [] }, products, {
+      btwPercent: 6,
+      categories,
+      bebatPricePerKg: 2.89,
+    });
+
+    expect(resolved.price).toBeCloseTo(2000 + (27.8 * 2.89 * 1.21));
+    expect(resolved.compositionLines).toEqual([
+      expect.objectContaining({
+        kind: 'bebat',
+        automatic: true,
+        vat: 21,
+        amountInclBtw: 27.8 * 2.89 * 1.21,
+      }),
+    ]);
+  });
+
   it('hides inspection products from composer product choices', () => {
-    expect(selectableComposerProducts(products).map(p => p.id)).toEqual(['shelf']);
+    expect(selectableComposerProducts(products).map(p => p.id)).toEqual(['shelf', 'battery']);
   });
 });
