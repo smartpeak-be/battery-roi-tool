@@ -17,6 +17,7 @@ import {
   quoteGroupSubtotalExVat,
 } from './product-configs.js';
 import { escapeHtml } from './shared-helpers.js';
+import { normalizeBillitEmail, normalizeBillitPhone } from './billit-helpers.js';
 
 const QUOTE_MODAL_HTML = `
   <div class="modal fade" id="quoteModal" tabindex="-1" aria-labelledby="quoteModalTitle" aria-hidden="true">
@@ -569,8 +570,8 @@ function projectBillitCustomer(project) {
     City: address.city,
     Zipcode: address.zipcode,
     CountryCode: 'BE',
-    Email: customer.email || '',
-    Phone: customer.phone || '',
+    Email: normalizeBillitEmail(customer.email),
+    Phone: normalizeBillitPhone(customer.phone),
   };
 }
 

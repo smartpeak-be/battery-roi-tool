@@ -18,6 +18,7 @@ import {
   quoteGroupSubtotalExVat,
 } from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
+import { normalizeBillitEmail, normalizeBillitPhone } from '../billit-helpers.js';
 import { quoteContextFromSearchParams } from '../quote-context.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
 
@@ -1909,8 +1910,8 @@ function projectBillitCustomer(project) {
     City: address.city,
     Zipcode: address.zipcode,
     CountryCode: 'BE',
-    Email: customer.email || '',
-    Phone: customer.phone || '',
+    Email: normalizeBillitEmail(customer.email),
+    Phone: normalizeBillitPhone(customer.phone),
   };
 }
 
