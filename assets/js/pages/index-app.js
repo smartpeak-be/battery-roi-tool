@@ -10,6 +10,11 @@ import { escapeHtml, showSpinner, hideSpinner, withSpinner, showConfirm } from '
 import { makeScenCard } from '../index/scenario-card.js';
 import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js';
 import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
+import {
+  ensureInspectionLine,
+  resolveCompositionToCalculatorConfig,
+  serializeCompositionLines,
+} from '../config-composer.js';
 
 // ─── CSV PARSER ────────────────────────────────────────────────────────────────
 // CSV helpers (parseCSV, parseDate, parsVolume) are in assets/js/csv.js
@@ -51,15 +56,21 @@ function _serializeState() {
   const d = _saved;
   // Strip empty lines (no description AND zero amount) at serialize-time.
   const meerkostLines = {};
+  const compositionLines = {};
   (d.configResults || []).forEach(cr => {
-    if (!cr.cfg || !Array.isArray(cr.cfg.meerkostLines)) return;
+    if (!cr.cfg) return;
+    if (Array.isArray(cr.cfg.compositionLines)) {
+      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines);
+      if (keepComposition.length > 0) compositionLines[cr.cfg.type] = keepComposition;
+    }
+    if (!Array.isArray(cr.cfg.meerkostLines)) return;
     const keep = cr.cfg.meerkostLines
       .map(ln => ({
         id: ln.id || _genMeerkostId(),
         description: ln.description || '',
         amount: Number(ln.amountExBtw != null ? ln.amountExBtw : ln.amount) || 0,
       }))
-      .filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount > 0);
+      .filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount !== 0);
     if (keep.length > 0) meerkostLines[cr.cfg.type] = keep;
   });
   return {
@@ -72,6 +83,7 @@ function _serializeState() {
     },
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
     meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
+    compositionLines: Object.keys(compositionLines).length > 0 ? compositionLines : null,
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
@@ -178,6 +190,22 @@ async function copyShareLink() {
   }, { message: 'Deellink aanmaken...' });
 }
 
+function _compositionMapToMeerkostLines(map) {
+  const out = {};
+  Object.entries(map || {}).forEach(([type, lines]) => {
+    const converted = (lines || [])
+      .filter(ln => ln && ln.kind !== 'inspection' && !ln.automatic)
+      .map(ln => ({
+        id: ln.id || _genMeerkostId(),
+        description: ln.description || '',
+        amount: Number(ln.amountExVat != null ? ln.amountExVat : ln.amount) || 0,
+      }))
+      .filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount !== 0);
+    if (converted.length) out[type] = converted;
+  });
+  return out;
+}
+
 function _applyLoadedState(state, showBanner) {
   if (!state || ![1,2,3,4,5,6].includes(state.v)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
   const f = state.form || {};
@@ -197,7 +225,7 @@ function _applyLoadedState(state, showBanner) {
 
   if (state.v >= 2 && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
     const meerkostLines = (state.v === 6)
-      ? (state.meerkostLines || {})
+      ? { ...(state.meerkostLines || {}), ..._compositionMapToMeerkostLines(state.compositionLines || {}) }
       : _migrateMeerkostMapToLines(state.meerkostMap || {});   // v:5 fallback
     loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), meerkostLines)).catch(() => {});
   }
@@ -225,6 +253,8 @@ function showToast(msg) {
 // CSV URL lives in Firestore `config/products` doc (auth-gated read).
 // Fetched via getProductsConfig() in loadConfigs().
 let _sheetConfigs = null;
+let _sheetProducts = [];
+let _inspectionProduct = null;
 
 // Manual configs — keyed by type ('MANUAL_<timestamp>'). Same resolved shape as sheet configs.
 let _manualConfigs = {};
@@ -268,12 +298,25 @@ function readAllSelectedConfigObjects() {
 
   function resolveLines(rawLines) {
     return (rawLines || [])
-      .filter(ln => (ln && ((ln.amount && Number(ln.amount) > 0) || (ln.description && ln.description.trim() !== ''))))
+      .filter(ln => (ln && ((ln.amount && Number(ln.amount) !== 0) || (ln.description && ln.description.trim() !== ''))))
       .map(ln => ({
+        id: ln.id || _genMeerkostId(),
         description: ln.description || '',
         amountExBtw: Number(ln.amount) || 0,
         amountInclBtw: (Number(ln.amount) || 0) * btwFactor,
       }));
+  }
+
+  function resolveCompositionLinesFor(type) {
+    const keuringChoice = document.getElementById('keuringSelect').value;
+    const manualLines = serializeCompositionLines((lineMap[type] || []).map(ln => ({
+      id: ln.id || _genMeerkostId(),
+      kind: Number(ln.amount) < 0 ? 'discount' : 'manual',
+      description: ln.description || '',
+      amountExVat: Number(ln.amount) || 0,
+      vat: btwPercent,
+    })));
+    return ensureInspectionLine(manualLines, _inspectionProduct, keuringChoice);
   }
 
   // Sheet configs from dropdowns
@@ -282,6 +325,13 @@ function readAllSelectedConfigObjects() {
     .map(type => {
       const c = _sheetConfigs.find(x => x.type === type);
       if (!c) return null;
+      if (c.source === 'productConfig') {
+        return resolveCompositionToCalculatorConfig(c, {
+          type,
+          baseProductConfigId: c.productConfigId,
+          lines: resolveCompositionLinesFor(type),
+        }, _sheetProducts, { btwPercent });
+      }
       const basePrice = c.prices[priceKey];
       const lines = resolveLines(lineMap[type]);
       const meerkostTotalInclBtw = lines.reduce((s, l) => s + l.amountInclBtw, 0);
@@ -631,10 +681,9 @@ async function loadConfigs() {
           listProducts({ isActive: true }),
           listProductConfigs(),
         ]);
-        const inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection');
-        productCalcConfigs = productConfigsToCalcConfigs(productConfigs, products, categories, {
-          inspectionProductId: inspectionProduct && inspectionProduct.id,
-        });
+        _sheetProducts = products;
+        _inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection') || null;
+        productCalcConfigs = productConfigsToCalcConfigs(productConfigs, products, categories);
       } catch (e) {
         productConfigError = e;
         console.warn('Nieuwe samenstellingen laden mislukt:', e);
@@ -1034,15 +1083,22 @@ async function saveProjectCalcRun(d) {
   const priceNight = (priceNightRaw && priceNightRaw.trim() !== '') ? parseFloat(priceNightRaw) : null;
   const selectedConfigTypes = (d.configResults || []).map(cr => cr.cfg && cr.cfg.type).filter(Boolean);
 
-  // Build meerkostLines from configResults (already in the new shape).
+  // Build adjustable lines from configResults.
   const meerkostLines = {};
+  const compositionLines = {};
   (d.configResults || []).forEach(cr => {
-    if (cr.cfg && Array.isArray(cr.cfg.meerkostLines) && cr.cfg.meerkostLines.length > 0) {
-      meerkostLines[cr.cfg.type] = cr.cfg.meerkostLines.map(ln => ({
+    if (!cr.cfg) return;
+    if (Array.isArray(cr.cfg.compositionLines)) {
+      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines);
+      if (keepComposition.length > 0) compositionLines[cr.cfg.type] = keepComposition;
+    }
+    if (Array.isArray(cr.cfg.meerkostLines) && cr.cfg.meerkostLines.length > 0) {
+      const keep = cr.cfg.meerkostLines.map(ln => ({
         id: ln.id || _genMeerkostId(),
         description: ln.description || '',
         amount: Number(ln.amountExBtw != null ? ln.amountExBtw : ln.amount) || 0,
-      }));
+      })).filter(ln => (ln.description && ln.description.trim() !== '') || ln.amount !== 0);
+      if (keep.length > 0) meerkostLines[cr.cfg.type] = keep;
     }
   });
 
@@ -1067,8 +1123,14 @@ async function saveProjectCalcRun(d) {
   }
 
   await saveLastCalcRun(_projectId, {
-    inputs: { pvInv: pvInverter, priceDay, priceNight, selectedConfigTypes,
-              meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null },
+    inputs: {
+      pvInv: pvInverter,
+      priceDay,
+      priceNight,
+      selectedConfigTypes,
+      meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
+      compositionLines: Object.keys(compositionLines).length > 0 ? compositionLines : null,
+    },
     results,
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
   });
@@ -1724,6 +1786,9 @@ function buildSavedFromProject(proj) {
   const meerkostLines = (inputs.meerkostLines && Object.keys(inputs.meerkostLines).length > 0)
     ? inputs.meerkostLines
     : (inputs.meerkostMap ? _migrateMeerkostMapToLines(inputs.meerkostMap) : null);
+  const compositionLines = (inputs.compositionLines && Object.keys(inputs.compositionLines).length > 0)
+    ? inputs.compositionLines
+    : null;
   return {
     v: 6,
     form: {
@@ -1734,6 +1799,7 @@ function buildSavedFromProject(proj) {
     },
     manualConfigs: proj.manualConfigs || {},
     meerkostLines: meerkostLines || null,
+    compositionLines,
     r,
   };
 }

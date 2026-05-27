@@ -1,4 +1,3 @@
-import { totalProductPrice } from './product-pricing.js';
 import {
   BATTERY_CATEGORY_SLUGS,
   categoryMap,
@@ -71,11 +70,6 @@ function inferTechnicalSpecs(items, productsById, categoriesById) {
   };
 }
 
-function inspectionPriceInclVat(productsById, inspectionProductId) {
-  const inspection = inspectionProductId ? productsById[inspectionProductId] : null;
-  return inspection ? totalProductPrice(inspection, 1) * 1.21 : 0;
-}
-
 export function productConfigType(id) {
   return `${PRODUCT_CONFIG_TYPE_PREFIX}${id}`;
 }
@@ -88,7 +82,7 @@ export function productConfigIdFromType(type) {
   return isProductConfigType(type) ? type.slice(PRODUCT_CONFIG_TYPE_PREFIX.length) : '';
 }
 
-export function productConfigToCalcConfig(config, products, categories, opts = {}) {
+export function productConfigToCalcConfig(config, products, categories) {
   if (!config || config.isActive === false) return null;
 
   const productsById = productMap(products || []);
@@ -101,7 +95,6 @@ export function productConfigToCalcConfig(config, products, categories, opts = {
   if (!(batCap > 0) || !(batInv > 0) || !(eff > 0)) return null;
 
   const subtotalExVat = configSubtotalExVat(items, productsById);
-  const inspectionInclVat = inspectionPriceInclVat(productsById, opts.inspectionProductId);
   const type = productConfigType(config.id);
   const omschrijving = generatedConfigDescription(items, productsById, categoriesById)
     || config.description
@@ -116,9 +109,9 @@ export function productConfigToCalcConfig(config, products, categories, opts = {
     eff,
     prices: {
       '6_no': subtotalExVat * 1.06,
-      '6_yes': subtotalExVat * 1.06 + inspectionInclVat,
+      '6_yes': subtotalExVat * 1.06,
       '21_no': subtotalExVat * 1.21,
-      '21_yes': subtotalExVat * 1.21 + inspectionInclVat,
+      '21_yes': subtotalExVat * 1.21,
     },
     source: 'productConfig',
     productConfigId: config.id,
@@ -127,8 +120,8 @@ export function productConfigToCalcConfig(config, products, categories, opts = {
   };
 }
 
-export function productConfigsToCalcConfigs(configs, products, categories, opts = {}) {
+export function productConfigsToCalcConfigs(configs, products, categories) {
   return (configs || [])
-    .map(config => productConfigToCalcConfig(config, products, categories, opts))
+    .map(config => productConfigToCalcConfig(config, products, categories))
     .filter(Boolean);
 }
