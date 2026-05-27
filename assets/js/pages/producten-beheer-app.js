@@ -18,6 +18,7 @@ import {
   quoteGroupSubtotalExVat,
 } from '../product-configs.js';
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
+import { quoteContextFromSearchParams } from '../quote-context.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
@@ -179,6 +180,7 @@ let _settings = {};
 let _allConfigs = [];
 let _editingConfigId = null;
 let _quoteProjects = [];
+let _quoteModalOpenedFromUrl = false;
 
 async function seedDefaultCategories() {
   const cats = await listProductCategories();
@@ -1493,7 +1495,17 @@ async function openQuoteModal(context = {}) {
   updateQuotePreview();
 }
 
-function buildQuoteModalHtml(projects, context) {
+function buildQuoteModalHtml(projects, context = {}) {
+  const selectedVat = Number(context.vat) === 6 ? 6 : 21;
+  const discount = context.discount || {};
+  const discountType = discount.type === 'percent' ? 'percent' : 'fixed';
+  const discountValue = Number(discount.value) > 0 ? Number(discount.value) : '';
+  const extraProductRows = (Array.isArray(context.extraProducts) ? context.extraProducts : [])
+    .map(row => quoteExtraProductRowHtml({ ...row, vat: row.vat || selectedVat }))
+    .join('');
+  const manualRows = (Array.isArray(context.manualLines) ? context.manualLines : [])
+    .map(row => quoteManualLineRowHtml({ ...row, vat: row.vat || selectedVat }))
+    .join('');
   const configOptions = _allConfigs.filter(c => c.isActive !== false).map(c => (
     `<option value="${escapeAttr(c.id)}" ${context.configId === c.id ? 'selected' : ''}>${escapeHtml(c.name || '(zonder naam)')}</option>`
   )).join('');
@@ -1512,16 +1524,16 @@ function buildQuoteModalHtml(projects, context) {
       </div>
       <div class="col-md-4">
         <label class="form-label">BTW config/services</label>
-        <select class="form-select" id="quoteVat"><option value="6">6% woning 10+ jaar</option><option value="21" selected>21%</option></select>
+        <select class="form-select" id="quoteVat"><option value="6" ${selectedVat === 6 ? 'selected' : ''}>6% woning 10+ jaar</option><option value="21" ${selectedVat === 21 ? 'selected' : ''}>21%</option></select>
       </div>
       <div class="col-md-4">
         <label class="form-label">Korting op samenstelling</label>
         <div class="input-group">
           <select class="form-select" id="quoteDiscountType" style="max-width:110px">
-            <option value="percent">%</option>
-            <option value="fixed">€</option>
+            <option value="percent" ${discountType === 'percent' ? 'selected' : ''}>%</option>
+            <option value="fixed" ${discountType === 'fixed' ? 'selected' : ''}>€</option>
           </select>
-          <input type="number" class="form-control" id="quoteDiscountValue" min="0" step="0.01" value="" placeholder="Geen">
+          <input type="number" class="form-control" id="quoteDiscountValue" min="0" step="0.01" value="${escapeAttr(discountValue)}" placeholder="Geen">
         </div>
       </div>
       <div class="col-12">
@@ -1531,7 +1543,7 @@ function buildQuoteModalHtml(projects, context) {
             <i class="fa-solid fa-plus me-1"></i>Productlijn toevoegen
           </button>
         </div>
-        <div id="quoteExtraProducts"></div>
+        <div id="quoteExtraProducts">${extraProductRows}</div>
       </div>
       <div class="col-12">
         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -1540,7 +1552,7 @@ function buildQuoteModalHtml(projects, context) {
             <i class="fa-solid fa-plus me-1"></i>Manuele lijn toevoegen
           </button>
         </div>
-        <div id="quoteManualLines"></div>
+        <div id="quoteManualLines">${manualRows}</div>
       </div>
       <div class="col-12">
         <div id="quotePreview" class="border rounded p-3 bg-light"></div>
@@ -2022,6 +2034,14 @@ function wireProductInteractions() {
   document.getElementById('btnOpenQuoteModal').addEventListener('click', () => openQuoteModal());
 }
 
+async function maybeOpenQuoteModalFromUrl() {
+  if (_quoteModalOpenedFromUrl) return;
+  const context = quoteContextFromSearchParams(new URLSearchParams(window.location.search));
+  if (!context) return;
+  _quoteModalOpenedFromUrl = true;
+  await openQuoteModal(context);
+}
+
 // ─── AUTH STATE HANDLING ─────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -2077,6 +2097,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await loadCategories();
       await loadProducts();
       await loadConfigs();
+      await maybeOpenQuoteModalFromUrl();
     } catch (e) {
       console.error('seedDefaultCategories/loadCategories/loadProducts/loadConfigs error:', e);
     }
