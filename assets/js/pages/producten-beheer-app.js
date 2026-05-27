@@ -1514,6 +1514,7 @@ function buildQuoteModalHtml(projects, context = {}) {
   )).join('');
   return `
     <div class="row g-3">
+      <input type="hidden" id="quoteConfigType" value="${escapeAttr(context.configType || '')}">
       <div class="col-md-6">
         <label class="form-label">Klant/project</label>
         <select class="form-select" id="quoteProject"><option value="">— Nog geen klantcontext —</option>${projectOptions}</select>
@@ -1913,9 +1914,7 @@ function projectBillitCustomer(project) {
   };
 }
 
-function buildBillitOfferPayload() {
-  const computed = buildQuoteComputation();
-  if (!computed) throw new Error('Kies eerst een configuratie.');
+function buildBillitOfferPayloadForComputed(computed) {
   if (!computed.project) throw new Error('Kies eerst een klant/project voor de Billit-offerte.');
   const customer = projectBillitCustomer(computed.project);
   if (!customer.Name) throw new Error('Het gekozen project heeft geen klantnaam.');
@@ -1940,11 +1939,46 @@ function buildBillitOfferPayload() {
   };
 }
 
+function billitConfigTypeForComputed(computed) {
+  const explicitType = document.getElementById('quoteConfigType')?.value || '';
+  const fallbackType = computed?.cfg?.id ? `PC_${computed.cfg.id}` : '';
+  if (explicitType && (!fallbackType || explicitType === fallbackType)) return explicitType;
+  return fallbackType;
+}
+
+function billitPdfToFile(pdf, orderId) {
+  if (!pdf || !pdf.fileContent) throw new Error('Billit gaf geen PDF-bestand terug.');
+  const byteChars = atob(pdf.fileContent);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNumbers[i] = byteChars.charCodeAt(i);
+  }
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: pdf.mimeType || 'application/pdf' });
+  const fileName = pdf.fileName || `billit-offerte-${orderId}.pdf`;
+  return new File([blob], fileName, { type: pdf.mimeType || 'application/pdf' });
+}
+
+async function attachBillitPdfToProjectConfig(computed, pdf, billitId) {
+  const configType = billitConfigTypeForComputed(computed);
+  if (!computed?.project?.id || !configType) {
+    throw new Error('Kan Billit-offerte niet aan een projectconfig koppelen.');
+  }
+  const file = billitPdfToFile(pdf, billitId);
+  return uploadProjectOfferte(computed.project.id, configType, file, {
+    source: 'billit',
+    billitOrderId: String(billitId),
+    billitFileName: pdf.fileName || file.name,
+    productConfigId: computed.cfg.id || null,
+  });
+}
+
 async function createBillitOfferFromPreview() {
   const btn = document.getElementById('btnCreateBillitOffer');
   const status = document.getElementById('billitOfferStatus');
   try {
-    const order = buildBillitOfferPayload();
+    const computed = buildQuoteComputation();
+    if (!computed) throw new Error('Kies eerst een configuratie.');
+    const order = buildBillitOfferPayloadForComputed(computed);
     const user = firebase.auth().currentUser;
     if (!user) throw new Error('Niet ingelogd.');
     btn.disabled = true;
@@ -1968,8 +2002,10 @@ async function createBillitOfferFromPreview() {
     status.textContent = `Billit-offerte aangemaakt (#${billitId}). PDF wordt voorbereid...`;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> PDF voorbereiden...';
     const pdf = await waitForBillitPdf(endpoint, token, billitId, status);
+    status.textContent = `PDF voor Billit-offerte #${billitId} wordt aan de projectconfig gekoppeld...`;
+    await attachBillitPdfToProjectConfig(computed, pdf, billitId);
     wireBillitPdfDownloadButton(btn, status, pdf, billitId);
-    showToast(`Billit-offerte #${billitId} is klaar om te downloaden.`, 'success');
+    showToast(`Billit-offerte #${billitId} is klaar en gekoppeld aan de configuratie.`, 'success');
   } catch (e) {
     if (status) status.textContent = e.message || String(e);
     showToast('Billit-offerte maken mislukt: ' + (e.message || e), 'danger');

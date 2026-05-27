@@ -1448,7 +1448,7 @@ async function setPhotoSerialTag(projectId, photoId, category) {
 
 // ─── OFFERTES (per-config PDF upload) ────────────────────────────────────────
 
-async function uploadProjectOfferte(projectId, configType, file) {
+async function uploadProjectOfferte(projectId, configType, file, extraMetadata = {}) {
   if (!file) throw new Error('Geen bestand opgegeven');
   if (file.type !== 'application/pdf') throw new Error('Enkel PDF-bestanden worden aanvaard');
   if (file.size > 10 * 1024 * 1024) throw new Error('PDF is groter dan 10 MB');
@@ -1471,6 +1471,7 @@ async function uploadProjectOfferte(projectId, configType, file) {
   await ref.put(file, { contentType: 'application/pdf' });
 
   const metadata = {
+    ...extraMetadata,
     storagePath,
     filename:    file.name,
     sizeBytes:   file.size,
