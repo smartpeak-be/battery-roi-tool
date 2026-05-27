@@ -13,6 +13,7 @@ import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
 import {
   ensureInspectionLine,
   resolveCompositionToCalculatorConfig,
+  selectableComposerProducts,
   serializeCompositionLines,
 } from '../config-composer.js';
 
@@ -60,7 +61,9 @@ function _serializeState() {
   (d.configResults || []).forEach(cr => {
     if (!cr.cfg) return;
     if (Array.isArray(cr.cfg.compositionLines)) {
-      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines);
+      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
+        inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+      });
       if (keepComposition.length > 0) compositionLines[cr.cfg.type] = keepComposition;
     }
     if (!Array.isArray(cr.cfg.meerkostLines)) return;
@@ -225,9 +228,13 @@ function _applyLoadedState(state, showBanner) {
 
   if (state.v >= 2 && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
     const meerkostLines = (state.v === 6)
-      ? { ...(state.meerkostLines || {}), ..._compositionMapToMeerkostLines(state.compositionLines || {}) }
+      ? (state.meerkostLines || {})
       : _migrateMeerkostMapToLines(state.meerkostMap || {});   // v:5 fallback
-    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), meerkostLines)).catch(() => {});
+    const compositionLines = state.v === 6 ? (state.compositionLines || {}) : {};
+    Object.entries(_compositionMapToMeerkostLines(compositionLines)).forEach(([type, lines]) => {
+      if (!meerkostLines[type]) meerkostLines[type] = lines;
+    });
+    loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), meerkostLines, compositionLines)).catch(() => {});
   }
   const r = _restoreState(state.r);
   if (showBanner) {
@@ -255,6 +262,7 @@ function showToast(msg) {
 let _sheetConfigs = null;
 let _sheetProducts = [];
 let _inspectionProduct = null;
+let _compositionLinesByType = {};
 
 // Manual configs — keyed by type ('MANUAL_<timestamp>'). Same resolved shape as sheet configs.
 let _manualConfigs = {};
@@ -309,13 +317,9 @@ function readAllSelectedConfigObjects() {
 
   function resolveCompositionLinesFor(type) {
     const keuringChoice = document.getElementById('keuringSelect').value;
-    const manualLines = serializeCompositionLines((lineMap[type] || []).map(ln => ({
-      id: ln.id || _genMeerkostId(),
-      kind: Number(ln.amount) < 0 ? 'discount' : 'manual',
-      description: ln.description || '',
-      amountExVat: Number(ln.amount) || 0,
-      vat: btwPercent,
-    })));
+    const manualLines = serializeCompositionLines(_compositionLinesByType[type] || [], {
+      inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+    });
     return ensureInspectionLine(manualLines, _inspectionProduct, keuringChoice);
   }
 
@@ -395,10 +399,13 @@ function _readMeerkostLinesFromDom() {
 // Render N+1 sheet-config pickers. `meerkostLines` is an optional
 // { [type]: MeerkostLine[] } map used to seed the disclosure on restore.
 // Live DOM lines are preserved across re-renders via _readMeerkostLinesFromDom().
-function renderConfigPickers(selectedTypes, meerkostLines) {
+function renderConfigPickers(selectedTypes, meerkostLines, compositionLines) {
   const list = document.getElementById('configPickerList');
   if (!list) return;
   const currentLines = { ..._readMeerkostLinesFromDom(), ...(meerkostLines || {}) };
+  if (compositionLines && typeof compositionLines === 'object') {
+    _compositionLinesByType = { ..._compositionLinesByType, ...compositionLines };
+  }
   const chosen = (selectedTypes || []).filter(v => v);
   list.innerHTML = '';
   for (let i = 0; i <= chosen.length; i++) {
@@ -412,12 +419,27 @@ function renderConfigPickers(selectedTypes, meerkostLines) {
       ? 'Configuratie 1 <span style="color:var(--danger);font-size:1rem;">*</span>'
       : `Configuratie ${i + 1} <span style="font-weight:400;text-transform:none;color:var(--muted)">(optioneel)</span>`;
     const linesForRow = (currentValue && currentLines[currentValue]) || [];
+    const currentConfig = currentValue ? (_sheetConfigs || []).find(c => c.type === currentValue) : null;
+    if (currentConfig && currentConfig.source === 'productConfig' && !_compositionLinesByType[currentValue] && linesForRow.length) {
+      _compositionLinesByType[currentValue] = linesForRow.map(ln => ({
+        id: ln.id || _genMeerkostId(),
+        kind: Number(ln.amount) < 0 ? 'discount' : 'manual',
+        description: ln.description || '',
+        amountExVat: Number(ln.amount) || 0,
+        vat: parseFloat(document.getElementById('btwSelect')?.value) || 21,
+      }));
+    }
+    const adjustmentHtml = !currentValue
+      ? ''
+      : (currentConfig && currentConfig.source === 'productConfig'
+        ? _composerButtonHtml(currentValue, _compositionLinesByType[currentValue] || [])
+        : _meerkostDisclosureHtml(linesForRow));
     row.innerHTML = `
       <div class="form-group" style="flex:1;">
         <label>${labelTxt}</label>
         <select class="config-select">${_buildConfigOptionsHtml(currentValue, others, isFirst)}</select>
       </div>
-      ${currentValue ? _meerkostDisclosureHtml(linesForRow) : ''}
+      ${adjustmentHtml}
     `;
     row.querySelector('.config-select').addEventListener('change', () => {
       renderConfigPickers(readSelectedConfigs(), _readMeerkostLinesFromDom());
@@ -428,8 +450,182 @@ function renderConfigPickers(selectedTypes, meerkostLines) {
 }
 
 // Legacy shim — _applyLoadedState calls this name.
-function _populateConfigSelects(selectedTypes, meerkostLines) {
-  renderConfigPickers(selectedTypes, meerkostLines);
+function _populateConfigSelects(selectedTypes, meerkostLines, compositionLines) {
+  renderConfigPickers(selectedTypes, meerkostLines, compositionLines);
+}
+
+function _composerButtonHtml(type, lines) {
+  const savedLines = serializeCompositionLines(lines || [], {
+    inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+  });
+  const productCount = savedLines.filter(ln => ln.kind === 'product').length;
+  const manualCount = savedLines.filter(ln => ln.kind === 'manual').length;
+  const discountCount = savedLines.filter(ln => ln.kind === 'discount').length;
+  const bits = [];
+  if (productCount) bits.push(`${productCount} product${productCount === 1 ? '' : 'en'}`);
+  if (manualCount) bits.push(`${manualCount} manueel`);
+  if (discountCount) bits.push(`${discountCount} korting${discountCount === 1 ? '' : 'en'}`);
+  const summary = bits.length ? bits.join(' · ') : 'geen aanpassingen';
+  return `
+    <div class="composer-summary" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button type="button" class="btn btn-secondary composer-open-btn" data-composer-type="${escapeHtml(type)}">
+        <i class="fa-solid fa-sliders" aria-hidden="true"></i> Samenstelling aanpassen
+      </button>
+      <span class="meerkost-summary-sum">${escapeHtml(summary)}</span>
+    </div>`;
+}
+
+function _productLabel(product) {
+  return [product?.brand, product?.model].filter(Boolean).join(' ').trim()
+    || product?.description
+    || product?.id
+    || '(product zonder naam)';
+}
+
+function _composerProductOptionsHtml(selectedId) {
+  return '<option value="">— Kies product —</option>' + selectableComposerProducts(_sheetProducts, _inspectionProduct && _inspectionProduct.id)
+    .map(product => `<option value="${escapeHtml(product.id)}" ${product.id === selectedId ? 'selected' : ''}>${escapeHtml(_productLabel(product))}</option>`)
+    .join('');
+}
+
+function _composerProductRowHtml(line = {}) {
+  return `
+    <div class="composer-line composer-product-row" data-line-id="${escapeHtml(line.id || _genMeerkostId())}" style="display:grid;grid-template-columns:minmax(180px,1fr) 90px 90px 44px;gap:8px;align-items:end;margin-bottom:8px;">
+      <div class="form-group" style="margin:0;"><label>Product</label><select class="composer-product-id">${_composerProductOptionsHtml(line.productId || '')}</select></div>
+      <div class="form-group" style="margin:0;"><label>Aantal</label><input type="number" class="composer-product-qty" min="1" step="1" value="${Number(line.qty) || 1}"></div>
+      <div class="form-group" style="margin:0;"><label>BTW</label><select class="composer-product-vat"><option value="6" ${Number(line.vat) === 6 ? 'selected' : ''}>6%</option><option value="21" ${Number(line.vat) !== 6 ? 'selected' : ''}>21%</option></select></div>
+      <button type="button" class="btn btn-secondary composer-remove" title="Verwijderen">✕</button>
+    </div>`;
+}
+
+function _composerManualRowHtml(line = {}) {
+  const isDiscount = line.kind === 'discount';
+  const amount = Math.abs(Number(line.amountExVat) || 0);
+  return `
+    <div class="composer-line composer-manual-row" data-line-id="${escapeHtml(line.id || _genMeerkostId())}" style="display:grid;grid-template-columns:135px minmax(180px,1fr) 120px 90px 44px;gap:8px;align-items:end;margin-bottom:8px;">
+      <div class="form-group" style="margin:0;"><label>Type</label><select class="composer-manual-kind"><option value="manual" ${!isDiscount ? 'selected' : ''}>Manuele lijn</option><option value="discount" ${isDiscount ? 'selected' : ''}>Korting</option></select></div>
+      <div class="form-group" style="margin:0;"><label>Omschrijving</label><input type="text" class="composer-manual-desc" value="${escapeHtml(line.description || '')}" placeholder="Omschrijving"></div>
+      <div class="form-group" style="margin:0;"><label>Bedrag ex BTW</label><input type="number" class="composer-manual-amount" min="0" step="0.01" value="${amount || ''}"></div>
+      <div class="form-group" style="margin:0;"><label>BTW</label><select class="composer-manual-vat"><option value="6" ${Number(line.vat) === 6 ? 'selected' : ''}>6%</option><option value="21" ${Number(line.vat) !== 6 ? 'selected' : ''}>21%</option></select></div>
+      <button type="button" class="btn btn-secondary composer-remove" title="Verwijderen">✕</button>
+    </div>`;
+}
+
+function _ensureComposerModal() {
+  let modal = document.getElementById('configComposerModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'configComposerModal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px;';
+  modal.innerHTML = `
+    <div role="dialog" aria-modal="true" aria-labelledby="configComposerTitle" style="background:var(--card-bg,#fff);color:var(--text,#111);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(980px,100%);max-height:92vh;display:flex;flex-direction:column;">
+      <div style="padding:18px 20px;border-bottom:1px solid var(--border,#ddd);display:flex;justify-content:space-between;gap:12px;align-items:center;">
+        <h3 id="configComposerTitle" style="margin:0;font-size:1.15rem;">Samenstelling aanpassen</h3>
+        <button type="button" class="btn btn-secondary" data-composer-close>Sluiten</button>
+      </div>
+      <div id="configComposerBody" style="padding:18px 20px;overflow:auto;"></div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border,#ddd);display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+        <span id="configComposerSummary" class="meerkost-summary-sum"></span>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-secondary" data-composer-close>Annuleren</button>
+          <button type="button" class="btn btn-calculate" id="configComposerSave" style="margin:0;">Toepassen</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => {
+    if (e.target === modal || e.target.closest('[data-composer-close]')) _closeComposerModal();
+    if (e.target.closest('#configComposerSave')) _saveComposerModal();
+    const removeBtn = e.target.closest('.composer-remove');
+    if (removeBtn) {
+      removeBtn.closest('.composer-line')?.remove();
+      _updateComposerPreview();
+    }
+    if (e.target.closest('#configComposerAddProduct')) {
+      document.getElementById('configComposerProducts')?.insertAdjacentHTML('beforeend', _composerProductRowHtml({ vat: parseFloat(document.getElementById('btwSelect')?.value) || 21 }));
+      _updateComposerPreview();
+    }
+    if (e.target.closest('#configComposerAddManual')) {
+      document.getElementById('configComposerManuals')?.insertAdjacentHTML('beforeend', _composerManualRowHtml({ vat: parseFloat(document.getElementById('btwSelect')?.value) || 21 }));
+      _updateComposerPreview();
+    }
+  });
+  modal.addEventListener('input', _updateComposerPreview);
+  modal.addEventListener('change', _updateComposerPreview);
+  return modal;
+}
+
+function _openComposerModal(type) {
+  const cfg = (_sheetConfigs || []).find(c => c.type === type && c.source === 'productConfig');
+  if (!cfg) return;
+  const modal = _ensureComposerModal();
+  modal.dataset.configType = type;
+  const body = modal.querySelector('#configComposerBody');
+  const saved = serializeCompositionLines(_compositionLinesByType[type] || [], { inspectionProductId: _inspectionProduct && _inspectionProduct.id });
+  const productRows = saved.filter(ln => ln.kind === 'product').map(_composerProductRowHtml).join('');
+  const manualRows = saved.filter(ln => ln.kind === 'manual' || ln.kind === 'discount').map(_composerManualRowHtml).join('');
+  body.innerHTML = `
+    <p style="margin-top:0;color:var(--muted);">Basis: <strong>${escapeHtml(cfg.omschrijving || cfg.type)}</strong>. Keuring wordt automatisch bepaald door de keuring-keuze buiten dit venster en staat hier bewust niet tussen de producten.</p>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 8px;"><h4 style="margin:0;">Extra producten</h4><button type="button" class="btn btn-secondary" id="configComposerAddProduct">+ Product toevoegen</button></div>
+    <div id="configComposerProducts">${productRows || ''}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px;"><h4 style="margin:0;">Manuele lijnen en kortingen</h4><button type="button" class="btn btn-secondary" id="configComposerAddManual">+ Lijn toevoegen</button></div>
+    <div id="configComposerManuals">${manualRows || ''}</div>
+    <div id="configComposerPreview" class="alert alert-info" style="margin-top:14px;"></div>`;
+  modal.style.display = 'flex';
+  _updateComposerPreview();
+}
+
+function _closeComposerModal() {
+  const modal = document.getElementById('configComposerModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function _readComposerModalLines() {
+  const modal = document.getElementById('configComposerModal');
+  if (!modal) return [];
+  const productLines = Array.from(modal.querySelectorAll('.composer-product-row')).map(row => {
+    const productId = row.querySelector('.composer-product-id')?.value || '';
+    const qty = parseInt(row.querySelector('.composer-product-qty')?.value, 10) || 0;
+    const vat = parseFloat(row.querySelector('.composer-product-vat')?.value) || 21;
+    if (!productId || qty <= 0) return null;
+    return { id: row.dataset.lineId || _genMeerkostId(), kind: 'product', productId, qty, vat };
+  }).filter(Boolean);
+  const manualLines = Array.from(modal.querySelectorAll('.composer-manual-row')).map(row => {
+    const kind = row.querySelector('.composer-manual-kind')?.value === 'discount' ? 'discount' : 'manual';
+    const description = row.querySelector('.composer-manual-desc')?.value || '';
+    const rawAmount = parseFloat(row.querySelector('.composer-manual-amount')?.value) || 0;
+    const vat = parseFloat(row.querySelector('.composer-manual-vat')?.value) || 21;
+    const amountExVat = kind === 'discount' ? -Math.abs(rawAmount) : rawAmount;
+    return { id: row.dataset.lineId || _genMeerkostId(), kind, description, amountExVat, vat };
+  });
+  return serializeCompositionLines([...productLines, ...manualLines], { inspectionProductId: _inspectionProduct && _inspectionProduct.id });
+}
+
+function _updateComposerPreview() {
+  const modal = document.getElementById('configComposerModal');
+  if (!modal || modal.style.display === 'none') return;
+  const type = modal.dataset.configType;
+  const cfg = (_sheetConfigs || []).find(c => c.type === type);
+  const lines = _readComposerModalLines();
+  const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
+  const withInspection = ensureInspectionLine(lines, _inspectionProduct, document.getElementById('keuringSelect')?.value || 'no');
+  const resolved = resolveCompositionToCalculatorConfig(cfg, { type, baseProductConfigId: cfg?.productConfigId, lines: withInspection }, _sheetProducts, { btwPercent });
+  const preview = modal.querySelector('#configComposerPreview');
+  const summary = modal.querySelector('#configComposerSummary');
+  const adjustableTotal = (resolved?.compositionLines || []).filter(ln => !ln.automatic).reduce((sum, ln) => sum + ln.amountInclBtw, 0);
+  const inspection = (resolved?.compositionLines || []).find(ln => ln.kind === 'inspection');
+  const html = `Aanpassingen: <strong>${fmtEur(adjustableTotal)}</strong> incl. BTW${inspection ? ` · automatische keuring: <strong>${fmtEur(inspection.amountInclBtw)}</strong>` : ''} · totaal: <strong>${fmtEur(resolved?.price || 0)}</strong>`;
+  if (preview) preview.innerHTML = html;
+  if (summary) summary.innerHTML = html;
+}
+
+function _saveComposerModal() {
+  const modal = document.getElementById('configComposerModal');
+  const type = modal?.dataset.configType;
+  if (!type) return;
+  _compositionLinesByType[type] = _readComposerModalLines();
+  _closeComposerModal();
+  renderConfigPickers(readSelectedConfigs(), _readMeerkostLinesFromDom());
 }
 
 // Build the <details> block for one config row. `lines` is the seeded
@@ -1089,7 +1285,9 @@ async function saveProjectCalcRun(d) {
   (d.configResults || []).forEach(cr => {
     if (!cr.cfg) return;
     if (Array.isArray(cr.cfg.compositionLines)) {
-      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines);
+      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
+        inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+      });
       if (keepComposition.length > 0) compositionLines[cr.cfg.type] = keepComposition;
     }
     if (Array.isArray(cr.cfg.meerkostLines) && cr.cfg.meerkostLines.length > 0) {
@@ -1271,6 +1469,11 @@ function wireIndexActions() {
   document.getElementById('shareUrlInput')?.addEventListener('click', e => e.currentTarget.select());
   document.getElementById('copyShareUrlBtn')?.addEventListener('click', () => {
     copyShareUrlInput().catch(() => {});
+  });
+  document.getElementById('configPickerList')?.addEventListener('click', e => {
+    const btn = e.target.closest('.composer-open-btn');
+    if (!btn) return;
+    _openComposerModal(btn.dataset.composerType);
   });
   document.getElementById('manualConfigArea')?.addEventListener('click', e => {
     const submitBtn = e.target.closest('[data-manual-submit]');

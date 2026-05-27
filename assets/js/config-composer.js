@@ -38,6 +38,18 @@ function lineDescription(line, productsById) {
   return line.description || '';
 }
 
+export function isInspectionProduct(product, inspectionProductId = '') {
+  return !!product && (
+    (inspectionProductId && product.id === inspectionProductId)
+    || product.serviceKey === 'inspection'
+    || product?.specs?.serviceKey === 'inspection'
+  );
+}
+
+export function selectableComposerProducts(products = [], inspectionProductId = '') {
+  return (products || []).filter(product => !isInspectionProduct(product, inspectionProductId));
+}
+
 export function ensureInspectionLine(lines, inspectionProduct, keuringChoice) {
   const withoutInspection = (lines || []).filter(line => !(line && line.kind === 'inspection'));
   if (keuringChoice !== 'yes' || !inspectionProduct) return withoutInspection;
@@ -56,9 +68,10 @@ export function ensureInspectionLine(lines, inspectionProduct, keuringChoice) {
   ];
 }
 
-export function serializeCompositionLines(lines) {
+export function serializeCompositionLines(lines, opts = {}) {
   return (lines || [])
-    .filter(line => line && !line.automatic)
+    .filter(line => line && !line.automatic && line.kind !== 'inspection')
+    .filter(line => !(line.kind === 'product' && opts.inspectionProductId && line.productId === opts.inspectionProductId))
     .map(line => ({
       id: line.id || `comp_${Math.random().toString(36).slice(2, 10)}`,
       kind: line.kind || 'manual',

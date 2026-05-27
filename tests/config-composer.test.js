@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ensureInspectionLine,
   resolveCompositionToCalculatorConfig,
+  selectableComposerProducts,
   serializeCompositionLines,
 } from '../assets/js/config-composer.js';
 
@@ -59,15 +60,20 @@ describe('config composer', () => {
     expect(resolved.composition.lines).toHaveLength(4);
   });
 
-  it('serializes only meaningful adjustable composition lines', () => {
+  it('serializes only meaningful adjustable composition lines and blocks inspection products', () => {
     const lines = serializeCompositionLines([
       { id: 'auto-inspection', kind: 'inspection', productId: 'inspection', amountExVat: 150, vat: 21, automatic: true },
+      { id: 'manual-inspection', kind: 'product', productId: 'inspection', qty: 1, vat: 21 },
       { id: 'empty', kind: 'manual', description: '', amountExVat: 0, vat: 6 },
       { id: 'discount', kind: 'discount', description: 'Korting', amountExVat: -10, vat: 6 },
-    ]);
+    ], { inspectionProductId: 'inspection' });
 
     expect(lines).toEqual([
       { id: 'discount', kind: 'discount', description: 'Korting', amountExVat: -10, vat: 6 },
     ]);
+  });
+
+  it('hides inspection products from composer product choices', () => {
+    expect(selectableComposerProducts(products).map(p => p.id)).toEqual(['shelf']);
   });
 });
