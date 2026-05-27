@@ -42,6 +42,7 @@ let _allProducts = [];
 let _allConfigs = [];
 let _quoteProjects = [];
 let _onBillitPdfAttached = null;
+let _currentContext = {};
 
 function escapeAttr(value) {
   return escapeHtml(value);
@@ -121,6 +122,7 @@ async function loadQuoteData(context = {}) {
 
 async function openQuoteModal(context = {}, options = {}) {
   ensureQuoteModal();
+  _currentContext = context || {};
   _onBillitPdfAttached = options.onBillitPdfAttached || null;
   const body = document.getElementById('quoteModalBody');
   body.innerHTML = '<p class="text-muted">Laden...</p>';
@@ -133,13 +135,16 @@ async function openQuoteModal(context = {}, options = {}) {
 
 function buildQuoteModalHtml(context = {}) {
   const selectedVat = Number(context.vat) === 6 ? 6 : 21;
-  const discount = context.discount || {};
+  const useCalculatedLine = Boolean(context.calculatedLine?.amountInclVat);
+  const discount = useCalculatedLine ? {} : (context.discount || {});
   const discountType = discount.type === 'percent' ? 'percent' : 'fixed';
   const discountValue = Number(discount.value) > 0 ? Number(discount.value) : '';
-  const extraProductRows = (Array.isArray(context.extraProducts) ? context.extraProducts : [])
+  const sourceExtraProducts = useCalculatedLine ? [] : (Array.isArray(context.extraProducts) ? context.extraProducts : []);
+  const sourceManualLines = useCalculatedLine ? [] : (Array.isArray(context.manualLines) ? context.manualLines : []);
+  const extraProductRows = sourceExtraProducts
     .map(row => quoteExtraProductRowHtml({ ...row, vat: row.vat || selectedVat }))
     .join('');
-  const manualRows = (Array.isArray(context.manualLines) ? context.manualLines : [])
+  const manualRows = sourceManualLines
     .map(row => quoteManualLineRowHtml({ ...row, vat: row.vat || selectedVat }))
     .join('');
   const configOptions = _allConfigs.filter(c => c.isActive !== false).map(c => (
@@ -166,13 +171,14 @@ function buildQuoteModalHtml(context = {}) {
       <div class="col-md-4">
         <label class="form-label">Korting op samenstelling</label>
         <div class="input-group">
-          <select class="form-select" id="quoteDiscountType" style="max-width:110px">
+          <select class="form-select" id="quoteDiscountType" style="max-width:110px" ${useCalculatedLine ? 'disabled' : ''}>
             <option value="percent" ${discountType === 'percent' ? 'selected' : ''}>%</option>
             <option value="fixed" ${discountType === 'fixed' ? 'selected' : ''}>€</option>
           </select>
-          <input type="number" class="form-control" id="quoteDiscountValue" min="0" step="0.01" value="${escapeAttr(discountValue)}" placeholder="Geen">
+          <input type="number" class="form-control" id="quoteDiscountValue" min="0" step="0.01" value="${escapeAttr(discountValue)}" placeholder="Geen" ${useCalculatedLine ? 'disabled' : ''}>
         </div>
       </div>
+      ${useCalculatedLine ? '<div class="col-12"><div class="alert alert-info py-2 mb-0">Prijs en omschrijving komen exact uit de laatst bewaarde calculatorberekening. Extra lijnen uit de composer zijn daarin al verwerkt.</div></div>' : ''}
       <div class="col-12">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <h6 class="mb-0">Extra producten</h6>
@@ -416,11 +422,45 @@ function currentBebatPricePerKg() {
   return 2.89;
 }
 
+function calculatedLineFromContext(vat) {
+  if (!_currentContext?.calculatedLine) return null;
+  const amountInclVat = Number(_currentContext.calculatedLine.amountInclVat);
+  if (!Number.isFinite(amountInclVat) || amountInclVat <= 0) return null;
+  const description = String(_currentContext.calculatedLine.description || '').trim() || 'SmartPeak configuratie';
+  return {
+    description,
+    exVat: amountInclVat / (1 + vat / 100),
+    vat,
+    color: categoryColor('thuisbatterij-systemen'),
+  };
+}
+
 function buildQuoteComputation() {
   const cfg = _allConfigs.find(c => c.id === document.getElementById('quoteConfig')?.value);
   if (!cfg) return null;
   const { productsById, categoriesById } = _maps();
   const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
+  const calculatedLine = calculatedLineFromContext(vat);
+  const project = _quoteProjects.find(p => p.id === document.getElementById('quoteProject')?.value) || null;
+  if (calculatedLine && cfg.id === _currentContext.configId) {
+    const totalIncl = calculatedLine.exVat * (1 + calculatedLine.vat / 100);
+    return {
+      cfg,
+      project,
+      lines: [calculatedLine],
+      mainRows: quoteLineHtml(calculatedLine),
+      materialRows: '',
+      miscRows: '',
+      extraRows: '',
+      kg: 0,
+      bebatPrice: 0,
+      bebatIncl: 0,
+      totalProfit: 0,
+      totalIncl,
+      discountExVat: 0,
+      fromCalculatedLine: true,
+    };
+  }
   const extraProductItems = readQuoteExtraProductItems();
   const manualLines = readQuoteManualLines();
   const installationExtras = manualLines.filter(line => line.kind === 'installation_extra');
@@ -466,7 +506,6 @@ function buildQuoteComputation() {
   const totalProfit = groupedProfit + manualProfit;
   const totalIncl = groupedIncl + bebatIncl + extraIncl;
   const discountExVat = mainGroups.reduce((sum, group) => sum + (Number(group.discountExVat) || 0), 0);
-  const project = _quoteProjects.find(p => p.id === document.getElementById('quoteProject')?.value) || null;
   return { cfg, project, lines, mainRows, materialRows, miscRows, extraRows, kg, bebatPrice, bebatIncl, totalProfit, totalIncl, discountExVat };
 }
 
@@ -478,7 +517,7 @@ function updateQuotePreview() {
     el.innerHTML = '<p class="text-muted mb-0">Kies een configuratie om de offerte-lijnen te bekijken.</p>';
     return;
   }
-  const { mainRows, materialRows, miscRows, extraRows, kg, bebatPrice, bebatIncl, totalProfit, totalIncl, discountExVat } = computed;
+  const { mainRows, materialRows, miscRows, extraRows, kg, bebatPrice, bebatIncl, totalProfit, totalIncl, discountExVat, fromCalculatedLine } = computed;
   el.innerHTML = `
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-2">
@@ -488,20 +527,20 @@ function updateQuotePreview() {
           ${materialRows}
           ${miscRows}
           ${extraRows}
-          <tr>
+          ${fromCalculatedLine ? '' : `<tr>
             <td>Bebat bijdrage (${kg.toFixed(2)} kg × €${bebatPrice.toFixed(2)}/kg)</td>
             <td class="text-end">€${(bebatIncl / 1.21).toFixed(2)}</td>
             <td class="text-end">21%</td>
             <td class="text-end">€${bebatIncl.toFixed(2)}</td>
-          </tr>
+          </tr>`}
         </tbody>
         <tfoot><tr><th colspan="3" class="text-end">Totaal incl. BTW</th><th class="text-end">€${totalIncl.toFixed(2)}</th></tr></tfoot>
       </table>
     </div>
-    <div class="alert alert-success py-2 mb-2">
+    ${fromCalculatedLine ? '<div class="alert alert-info py-2 mb-2">Deze offerte gebruikt exact de prijs en omschrijving uit de calculatorberekening.</div>' : `<div class="alert alert-success py-2 mb-2">
       <strong>Totale winst ex BTW:</strong> €${totalProfit.toFixed(2)}
       ${discountExVat > 0 ? `<br><span class="text-muted small">Korting op samenstelling: €${discountExVat.toFixed(2)} ex BTW</span>` : ''}
-    </div>
+    </div>`}
     <div class="d-flex flex-wrap align-items-center gap-2">
       <button type="button" class="btn btn-primary" id="btnCreateBillitOffer">
         <i class="fa-solid fa-paper-plane me-1"></i> Maak Billit-offerte

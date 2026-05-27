@@ -14,6 +14,8 @@ describe('offertes-ui quote preview action', () => {
     expect(quotePreviewSource).toContain('id="quoteModal"');
     expect(quotePreviewSource).toContain('id="btnCreateBillitOffer"');
     expect(quotePreviewSource).toContain('function createBillitOfferFromPreview');
+    expect(quotePreviewSource).toContain('context.calculatedLine');
+    expect(quotePreviewSource).toContain('amountInclVat / (1 + vat / 100)');
     expect(quotePreviewSource).not.toContain('<iframe');
   });
 });

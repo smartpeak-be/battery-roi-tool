@@ -21,6 +21,8 @@ describe('quote context handoff', () => {
             cfg: {
               type: 'PC_cfg-1',
               productConfigId: 'cfg-1',
+              omschrijving: 'Zendure Solarflow 2400 AC+ & Installatiekost & Zendure Slimme Meter P1',
+              price: 1797.125396,
               compositionLines: [
                 { id: 'p1', kind: 'product', productId: 'extra-meter', qty: 2, vat: 21, amountExVat: 100 },
                 { id: 'm1', kind: 'manual', description: 'Extra kabel', amountExVat: 75, vat: 6 },
@@ -36,6 +38,11 @@ describe('quote context handoff', () => {
     const context = buildQuoteContextFromProjectConfig(project, 'PC_cfg-1', { vat: 6 });
 
     expect(context).toMatchObject({ projectId: 'project-1', configId: 'cfg-1', configType: 'PC_cfg-1', vat: 6 });
+    expect(context.calculatedLine).toEqual({
+      description: 'Zendure Solarflow 2400 AC+ & Installatiekost & Zendure Slimme Meter P1',
+      amountInclVat: 1797.13,
+      vat: 6,
+    });
     expect(context.extraProducts).toEqual([{ productId: 'extra-meter', qty: 2, vat: 21 }]);
     expect(context.manualLines).toEqual([{ kind: 'line', description: 'Extra kabel', priceExVat: 75, vat: 6 }]);
     expect(context.discount).toEqual({ type: 'fixed', value: 50 });

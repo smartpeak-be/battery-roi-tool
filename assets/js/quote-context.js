@@ -46,6 +46,17 @@ function normalizeProductQuoteLine(line) {
   };
 }
 
+function calculatedQuoteLine(cfg, vat) {
+  const amountInclVat = Number(cfg?.price);
+  if (!Number.isFinite(amountInclVat) || amountInclVat <= 0) return null;
+  const description = String(cfg?.omschrijving || cfg?.description || cfg?.name || '').trim();
+  return {
+    description: description || 'SmartPeak configuratie',
+    amountInclVat: Number(amountInclVat.toFixed(2)),
+    vat,
+  };
+}
+
 export function buildQuoteContextFromProjectConfig(project, configType, opts = {}) {
   const type = String(configType || '');
   const cfg = findCalculatedConfig(project, type) || {};
@@ -65,12 +76,14 @@ export function buildQuoteContextFromProjectConfig(project, configType, opts = {
     .filter(line => line.kind === 'discount')
     .reduce((sum, line) => sum + Math.abs(Number(line.amountExVat) || 0), 0);
   const configId = cfg.productConfigId || productConfigIdFromType(type) || cfg.composition?.baseProductConfigId || '';
+  const vat = normalizeVat(opts.vat);
 
   return {
     projectId: project?.id || '',
     configType: type,
     configId,
-    vat: normalizeVat(opts.vat),
+    vat,
+    calculatedLine: calculatedQuoteLine(cfg, vat),
     extraProducts,
     manualLines,
     discount: { type: 'fixed', value: Number(discountValue.toFixed(2)) },
