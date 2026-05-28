@@ -149,7 +149,7 @@ service cloud.firestore {
       return hasValidMailEnvelope('lead_result')
         && data.to is string
         && data.to == get(leadPath(data.leadId)).data.email
-        && data.message.subject == 'Je batterij-analyse is klaar — SmartPeak';
+        && data.message.subject == 'Je batterij-analyse is klaar SmartPeak';
     }
 
     function isValidLeadContactMail() {

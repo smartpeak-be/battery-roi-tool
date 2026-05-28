@@ -217,7 +217,7 @@ function wireCTA(leadId, lead, btnId = 'btnContact') {
   </td></tr>
   <!-- Footer -->
   <tr><td style="background:#f0f2f5;padding:16px 32px;border-top:1px solid #e2e8f0">
-    <p style="margin:0;font-size:11px;color:#adb5bd;line-height:1.4">SmartPeak &middot; Blox-it BV &middot; BE0730.696.050</p>
+    <p style="margin:0;font-size:11px;color:#adb5bd;line-height:1.4">SmartPeak opereert onder Blox-it BV (BE0730.696.050) en LED’s Repair (BE0644.867.975).</p>
   </td></tr>
 </table>
 </td></tr>
