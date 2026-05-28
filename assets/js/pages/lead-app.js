@@ -177,7 +177,7 @@ document.getElementById('btnSubmit').addEventListener('click', async () => {
         leadId,
         to: leadDoc.email,
         message: {
-          subject: 'Je batterij-analyse is klaar — SmartPeak',
+          subject: 'Je batterij-analyse is klaar SmartPeak',
           html: `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:24px 0">
@@ -209,12 +209,11 @@ document.getElementById('btnSubmit').addEventListener('click', async () => {
   <tr><td style="background:#f0f2f5;padding:20px 32px;border-top:1px solid #e2e8f0">
     <p style="margin:0 0 4px;font-size:13px;color:#6b7a8d;line-height:1.5">
       <strong style="color:#4a5a70">SmartPeak</strong> &middot; Slim omgaan met jouw energie<br>
-      <a href="tel:+32485606840" style="color:#6b7a8d;text-decoration:none">+32 485 60 68 40</a> &middot;
       <a href="mailto:info@smartpeak.be" style="color:#6b7a8d;text-decoration:none">info@smartpeak.be</a> &middot;
       <a href="https://smartpeak.be" style="color:#6b7a8d;text-decoration:none">smartpeak.be</a>
     </p>
     <hr style="border:none;border-top:1px solid #dde1e6;margin:12px 0">
-    <p style="margin:0;font-size:11px;color:#adb5bd;line-height:1.4">Blox-it BV &middot; BE0730.696.050</p>
+    <p style="margin:0;font-size:11px;color:#adb5bd;line-height:1.4">SmartPeak opereert onder Blox-it BV (BE0730.696.050) en LED’s Repair (BE0644.867.975).</p>
   </td></tr>
 </table>
 </td></tr>
