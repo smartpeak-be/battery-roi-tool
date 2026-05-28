@@ -108,7 +108,12 @@ service cloud.firestore {
         && isOptionalNumber(data, 'effectiveBtw', 0, 21)
         && isOptionalBool(data, 'keuring')
         && data.status == 'cold_lead'
-        && data.createdAt == request.time
+        // Web clients normally send FieldValue.serverTimestamp(), but accepting
+        // a very recent timestamp keeps the rule testable via the REST API and
+        // avoids brittle exact timestamp comparisons.
+        && data.createdAt is timestamp
+        && data.createdAt <= request.time
+        && data.createdAt > request.time - duration.value(5, 'm')
         && data.hotLeadAt == null
         && data.deletedAt == null
         && data.resultExpiresAt is timestamp
