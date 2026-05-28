@@ -71,7 +71,11 @@ service cloud.firestore {
           && (!('configs' in data.result) || (data.result.configs is list && data.result.configs.size() <= 5))
           && isOptionalNumberOrRange(data.result, 'batteryCapKwh', 0, 200)
           && isOptionalNumberOrRange(data.result, 'batteryInverterKw', 0, 100)
-          && isOptionalNumberOrRange(data.result, 'roiYears', 0, 100)
+          // Some real Fluvius datasets produce a valid but commercially poor
+          // payback above 100 years. That should still be storable so the
+          // result page can show a "niet interessant" outcome instead of a
+          // generic permission-denied error.
+          && isOptionalNumberOrRange(data.result, 'roiYears', 0, 1000)
           && isOptionalNumberOrRange(data.result, 'recoveryPctFull', 0, 100)
           && isOptionalNumberOrRange(data.result, 'recoveryPctPartial', 0, 100)
           && isOptionalNumberOrRange(data.result, 'qualifyingDays', 0, 3660)
@@ -109,7 +113,9 @@ service cloud.firestore {
         && data.deletedAt == null
         && data.resultExpiresAt is timestamp
         && data.resultExpiresAt > request.time
-        && data.resultExpiresAt <= request.time + duration.value(30, 'd');
+        // Client creates this timestamp before the Firestore request reaches
+        // the server. Allow a small clock/network skew around the 30-day TTL.
+        && data.resultExpiresAt <= request.time + duration.value(31, 'd');
     }
 
     function isPublicLeadGet() {
