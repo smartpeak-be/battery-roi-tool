@@ -894,7 +894,7 @@ async function getShare(id) {
 
 // ─── COMMENTS (per-project thread Kevin ↔ Ruben) ─────────────────────────────
 async function listComments(projectId) {
-  const snap = await projectDoc(projectId).collection('comments').orderBy('createdAt', 'asc').get();
+  const snap = await projectDoc(projectId).collection('comments').orderBy('createdAt', 'desc').get();
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
