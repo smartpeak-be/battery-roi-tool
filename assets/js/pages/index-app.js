@@ -325,10 +325,11 @@ function readAllSelectedConfigObjects() {
 
   function resolveCompositionLinesFor(type) {
     const keuringChoice = document.getElementById('keuringSelect').value;
+    const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
     const manualLines = serializeCompositionLines(_compositionLinesByType[type] || [], {
       inspectionProductId: _inspectionProduct && _inspectionProduct.id,
     });
-    return ensureInspectionLine(manualLines, _inspectionProduct, keuringChoice);
+    return ensureInspectionLine(manualLines, _inspectionProduct, keuringChoice, btwPercent);
   }
 
   // Sheet configs from dropdowns
@@ -620,7 +621,7 @@ function _updateComposerPreview() {
   const cfg = (_sheetConfigs || []).find(c => c.type === type);
   const lines = _readComposerModalLines();
   const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
-  const withInspection = ensureInspectionLine(lines, _inspectionProduct, document.getElementById('keuringSelect')?.value || 'no');
+  const withInspection = ensureInspectionLine(lines, _inspectionProduct, document.getElementById('keuringSelect')?.value || 'no', btwPercent);
   const resolved = resolveCompositionToCalculatorConfig(cfg, { type, baseProductConfigId: cfg?.productConfigId, lines: withInspection }, _sheetProducts, {
     btwPercent,
     categories: _sheetCategories,

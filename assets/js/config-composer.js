@@ -82,7 +82,7 @@ export function selectableComposerProducts(products = [], inspectionProductId = 
   return (products || []).filter(product => !isInspectionProduct(product, inspectionProductId));
 }
 
-export function ensureInspectionLine(lines, inspectionProduct, keuringChoice) {
+export function ensureInspectionLine(lines, inspectionProduct, keuringChoice, btwPercent) {
   const withoutInspection = (lines || []).filter(line => !(line && line.kind === 'inspection'));
   if (keuringChoice !== 'yes' || !inspectionProduct) return withoutInspection;
   return [
@@ -94,7 +94,7 @@ export function ensureInspectionLine(lines, inspectionProduct, keuringChoice) {
       qty: 1,
       description: inspectionProduct.model || inspectionProduct.description || 'Keuring',
       amountExVat: totalProductPrice(inspectionProduct, 1),
-      vat: 21,
+      vat: normalizeVat(btwPercent, 21),
       automatic: true,
     },
   ];
@@ -128,7 +128,7 @@ export function resolveCompositionToCalculatorConfig(baseConfig, composition, pr
   const normalizedBasePrice = Number.isFinite(basePrice) ? basePrice : Number(baseConfig.basePrice || baseConfig.price || 0);
   const resolvedLines = (composition && composition.lines ? composition.lines : []).map(line => {
     const amountExVat = lineAmountExVat(line, productsById);
-    const vat = normalizeVat(line.vat, line.kind === 'inspection' ? 21 : btwPercent);
+    const vat = normalizeVat(line.vat, btwPercent);
     return {
       id: line.id || `comp_${Math.random().toString(36).slice(2, 10)}`,
       kind: line.kind || 'manual',
