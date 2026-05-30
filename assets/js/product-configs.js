@@ -4,6 +4,7 @@ export const SERVICE_CATEGORY_SLUG = 'service';
 export const MATERIAL_CATEGORY_SLUG = 'materiaal';
 export const MISC_CATEGORY_SLUG = 'diversen';
 export const BATTERY_CATEGORY_SLUGS = new Set(['batterijen', 'thuisbatterij-systemen']);
+export const INVERTER_CATEGORY_SLUG = 'omvormers';
 
 export function productLabel(product, categoriesById = {}) {
   if (!product) return '';
