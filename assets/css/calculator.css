@@ -516,6 +516,9 @@ table.cap-table tr.cap-max td .badge-max {
 body.readonly-mode .meerkost-row .meerkost-del,
 body.readonly-mode .meerkost-add-btn { display: none; }
 body.readonly-mode .meerkost-row input { pointer-events: none; background: #f0f4fa; }
+body.readonly-mode .installprice-details > summary { pointer-events: none; cursor: default; }
+body.readonly-mode .installprice-details > summary::before { display: none; }
+body.readonly-mode .installprice-details .breakdown-row { display: none; }
 .installprice-details { margin: 4px 0 8px 0; }
 .installprice-details > summary {
   cursor: pointer;
