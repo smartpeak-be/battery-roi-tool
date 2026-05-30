@@ -17,9 +17,9 @@ export const SPEC_FIELDS = [
   { key: 'selfHeating',        label: 'Vorstbescherming',    unit: '',      type: 'boolean', categories: ['batterijen', 'thuisbatterij-systemen'] },
 
   // Inverter-specific (also on thuisbatterij-systemen since those have a built-in inverter)
-  { key: 'inverterPowerKw',    label: 'Nominaal AC-vermogen', unit: 'kW',  type: 'number', categories: ['omvormers', 'thuisbatterij-systemen'] },
-  { key: 'peakPowerKw',        label: 'Piekvermogen',         unit: 'kW',  type: 'number', categories: ['omvormers', 'thuisbatterij-systemen'] },
-  { key: 'maxAcInputKw',       label: 'Max AC input',         unit: 'kW',  type: 'number', categories: ['omvormers', 'thuisbatterij-systemen'] },
+  { key: 'inverterPowerKw',    label: 'Nominaal AC-vermogen', unit: 'kW',  type: 'number', categories: ['batterijen', 'omvormers', 'thuisbatterij-systemen'] },
+  { key: 'peakPowerKw',        label: 'Piekvermogen',         unit: 'kW',  type: 'number', categories: ['batterijen', 'omvormers', 'thuisbatterij-systemen'] },
+  { key: 'maxAcInputKw',       label: 'Max AC input',         unit: 'kW',  type: 'number', categories: ['batterijen', 'omvormers', 'thuisbatterij-systemen'] },
   { key: 'maxPvInputKw',       label: 'Max PV input',         unit: 'kW',  type: 'number', categories: ['omvormers'] },
   { key: 'mpptCount',          label: 'MPPT-trackers',        unit: '',    type: 'number', categories: ['omvormers'] },
   { key: 'phases',             label: 'Fasen',                unit: '',    type: 'select', options: ['1', '3'], categories: ['omvormers'] },
