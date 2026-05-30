@@ -35,13 +35,20 @@ const categories = [
 
 describe('config composer', () => {
   it('adds or removes an automatic inspection line based on keuring choice', () => {
-    const withInspection = ensureInspectionLine([], products[0], 'yes');
+    const withInspection = ensureInspectionLine([], products[0], 'yes', 6);
     expect(withInspection).toEqual([
-      expect.objectContaining({ kind: 'inspection', productId: 'inspection', automatic: true, vat: 21, amountExVat: 150 }),
+      expect.objectContaining({ kind: 'inspection', productId: 'inspection', automatic: true, vat: 6, amountExVat: 150 }),
     ]);
 
     const withoutInspection = ensureInspectionLine(withInspection, products[0], 'no');
     expect(withoutInspection).toEqual([]);
+  });
+
+  it('defaults inspection vat to 21 when no btwPercent is given', () => {
+    const withInspection = ensureInspectionLine([], products[0], 'yes');
+    expect(withInspection).toEqual([
+      expect.objectContaining({ kind: 'inspection', vat: 21 }),
+    ]);
   });
 
   it('resolves product, manual, discount and inspection lines into the calculator price', () => {
@@ -52,13 +59,13 @@ describe('config composer', () => {
         { id: 'line-product', kind: 'product', productId: 'shelf', qty: 2, vat: 6 },
         { id: 'line-manual', kind: 'manual', description: 'Extra kabel', amountExVat: 40, vat: 6 },
         { id: 'line-discount', kind: 'discount', description: 'Afrondingskorting', amountExVat: -25, vat: 6 },
-      ], products[0], 'yes'),
+      ], products[0], 'yes', 6),
     };
 
     const resolved = resolveCompositionToCalculatorConfig(baseConfig, composition, products, { btwPercent: 6 });
 
-    // Base 2000 incl. 6%, product line 2*(100+50)*1.06, manual 40*1.06, discount -25*1.06, inspection 150*1.21.
-    expect(resolved.price).toBeCloseTo(2000 + 300 * 1.06 + 40 * 1.06 - 25 * 1.06 + 150 * 1.21);
+    // Base 2000 incl. 6%, product line 2*(100+50)*1.06, manual 40*1.06, discount -25*1.06, inspection 150*1.06.
+    expect(resolved.price).toBeCloseTo(2000 + 300 * 1.06 + 40 * 1.06 - 25 * 1.06 + 150 * 1.06);
     expect(resolved.basePrice).toBeCloseTo(2000);
     expect(resolved.source).toBe('productConfig');
     expect(resolved.productConfigId).toBe('cfg-1');
