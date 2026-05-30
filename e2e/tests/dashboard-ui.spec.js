@@ -1,6 +1,6 @@
 // e2e/tests/dashboard-ui.spec.js
 import { test, expect } from '../helpers/auth-fixture.js';
-import { createTestProject, cleanupProject } from '../helpers/project-helpers.js';
+import { createTestProject, cleanupProject, getAdminFirestore } from '../helpers/project-helpers.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -150,7 +150,21 @@ test.describe('Dashboard UI', () => {
     }
   });
 
-  test('comments in drawer', async ({ page }) => {
+  test('comments in drawer stay top-positioned and newest first', async ({ page }) => {
+    const db = getAdminFirestore();
+    const olderComment = `E2E older comment ${Date.now()}`;
+    const newerComment = `E2E newer comment ${Date.now()}`;
+    await db.collection(`projects/${projectId}/comments`).add({
+      text: olderComment,
+      author: 'e2e@example.com',
+      createdAt: new Date(Date.now() - 60_000),
+    });
+    await db.collection(`projects/${projectId}/comments`).add({
+      text: newerComment,
+      author: 'e2e@example.com',
+      createdAt: new Date(),
+    });
+
     await page.goto('/dashboard.html');
     await page.waitForSelector('.projectNameBtn', { state: 'visible', timeout: 15_000 });
 
@@ -159,6 +173,16 @@ test.describe('Dashboard UI', () => {
     await page.waitForTimeout(500);
     await page.click(`.projectNameBtn[data-id="${projectId}"]`);
     await page.waitForSelector('#drawer.show', { timeout: 10_000 });
+
+    // Existing comments must not force the drawer to jump to the bottom on open.
+    await expect(page.locator('#drawerCommentsList')).toContainText(newerComment, { timeout: 10_000 });
+    const initialDrawerScrollTop = await page.locator('#drawerBody').evaluate(el => el.scrollTop);
+    expect(initialDrawerScrollTop).toBeLessThanOrEqual(20);
+
+    // Newest comments are rendered at the top.
+    const commentCards = page.locator('#drawerCommentsList > div');
+    await expect(commentCards.first()).toContainText(newerComment);
+    await expect(commentCards.nth(1)).toContainText(olderComment);
 
     // Scroll to comments section
     const commentInput = page.locator('#drawerCommentInput');
@@ -170,10 +194,8 @@ test.describe('Dashboard UI', () => {
 
     // Submit
     await page.click('#drawerCommentSubmit');
-    await page.waitForTimeout(2000);
 
-    // Verify comment appears in list
-    const commentsList = page.locator('#drawerCommentsList');
-    await expect(commentsList).toContainText(commentText);
+    // Verify the newly added comment appears first in the list
+    await expect(commentCards.first()).toContainText(commentText, { timeout: 10_000 });
   });
 });

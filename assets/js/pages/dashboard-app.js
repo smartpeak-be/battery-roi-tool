@@ -1113,12 +1113,9 @@ function renderComments(project, comments) {
         <span class="fw-semibold text-primary-emphasis small">${escapeHtml(shortEmail(c.author))}</span>
         <span class="text-muted small">${fmtRelTime(c.createdAt)}</span>
       </div>
-              <div class="sp-pre-wrap sp-text-body-sm">${escapeHtml(c.text || '')}</div>
+      <div class="sp-pre-wrap sp-text-body-sm">${escapeHtml(c.text || '')}</div>
     </div>
   `).join('');
-  // Scroll last comment into view if the newest is below the fold.
-  const lastComment = list.lastElementChild;
-  if (lastComment) lastComment.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // Offerte modal + click delegation — wired once against the drawer element.
