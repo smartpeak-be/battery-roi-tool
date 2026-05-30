@@ -1,5 +1,6 @@
 import {
   BATTERY_CATEGORY_SLUGS,
+  INVERTER_CATEGORY_SLUG,
   categoryMap,
   configSubtotalExVat,
   generatedConfigDescription,
@@ -16,6 +17,11 @@ function normalizeQty(qty) {
 function isBatteryOrSystem(product, categoriesById) {
   const cat = product && categoriesById && categoriesById[product.categoryId];
   return !!(cat && BATTERY_CATEGORY_SLUGS.has(cat.slug));
+}
+
+function isInverter(product, categoriesById) {
+  const cat = product && categoriesById && categoriesById[product.categoryId];
+  return !!(cat && cat.slug === INVERTER_CATEGORY_SLUG);
 }
 
 function normalizeEfficiency(value) {
@@ -48,18 +54,33 @@ function inferTechnicalSpecs(items, productsById, categoriesById) {
 
   (items || []).forEach(item => {
     const product = productsById[item.productId];
-    if (!product || !isBatteryOrSystem(product, categoriesById)) return;
+    if (!product) return;
+
+    const isBat = isBatteryOrSystem(product, categoriesById);
+    const isInv = isInverter(product, categoriesById);
+    if (!isBat && !isInv) return;
+
     const qty = normalizeQty(item.qty);
-    const cap = productCapacityKwh(product) * qty;
     const inv = productInverterPowerKw(product) * qty;
     const eff = productEfficiency(product);
 
-    batCap += cap;
-    batInv += inv;
-    if (eff) {
-      const weight = cap > 0 ? cap : qty;
-      weightedEffTotal += eff * weight;
-      effWeightTotal += weight;
+    if (isBat) {
+      const cap = productCapacityKwh(product) * qty;
+      batCap += cap;
+      batInv += inv;
+      if (eff) {
+        const weight = cap > 0 ? cap : qty;
+        weightedEffTotal += eff * weight;
+        effWeightTotal += weight;
+      }
+    }
+
+    if (isInv) {
+      batInv += inv;
+      if (eff) {
+        weightedEffTotal += eff * qty;
+        effWeightTotal += qty;
+      }
     }
   });
 
