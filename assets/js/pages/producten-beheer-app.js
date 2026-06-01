@@ -20,6 +20,7 @@ import {
 import { escapeHtml, showConfirm } from '../shared-helpers.js';
 import { normalizeBillitEmail, normalizeBillitPhone } from '../billit-helpers.js';
 import { quoteContextFromSearchParams } from '../quote-context.js';
+import { productPricingDefaults } from '../producten-beheer/defaults.js';
 import { escapeAttr, productDatasheetsHtml, productPhotosHtml } from '../producten-beheer/renderers.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
@@ -86,26 +87,10 @@ async function loadSettings() {
     if (s.defaultDiscountType) setToggle('discountTypeToggle', s.defaultDiscountType);
     if (s.defaultDiscountValue != null) document.getElementById('settingsDiscountValue').value = s.defaultDiscountValue;
     if (s.defaultDiscountFromUnit != null) document.getElementById('settingsDiscountFromUnit').value = s.defaultDiscountFromUnit;
-    if (s.defaultInstallCost != null) document.getElementById('settingsInstallCost').value = s.defaultInstallCost;
-    if (s.defaultInspectCost != null) document.getElementById('settingsInspectCost').value = s.defaultInspectCost;
     if (s.bebatPricePerKg != null) document.getElementById('settingsBebatPerKg').value = s.bebatPricePerKg;
-    markLegacyServiceSettings();
   } catch (e) {
     console.warn('loadSettings failed:', e);
   }
-}
-
-function markLegacyServiceSettings() {
-  ['settingsInstallCost', 'settingsInspectCost'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.disabled = true;
-    el.title = 'Beheer deze kost voortaan als product in de categorie Service.';
-    const group = el.closest('.col-md-6');
-    if (group && !group.querySelector('.service-setting-note')) {
-      group.insertAdjacentHTML('beforeend', '<div class="form-text service-setting-note">Legacy: beheer voortaan via Service-producten.</div>');
-    }
-  });
 }
 
 function wireSaveSettings() {
@@ -543,11 +528,13 @@ function buildDetailFormHtml(product, mode) {
   const isCreate = mode === 'create';
 
   // Get pricing defaults from settings for new products
-  const marginType = p.marginType || 'percent';
-  const marginValue = p.marginValue ?? 30;
-  const discountType = p.discountType || 'percent';
-  const discountValue = p.discountValue ?? 10;
-  const discountFromUnit = p.discountFromUnit ?? 2;
+  const {
+    marginType,
+    marginValue,
+    discountType,
+    discountValue,
+    discountFromUnit,
+  } = productPricingDefaults(product, _settings);
 
   const isCustomBrand = p.brand && !ALL_BRANDS.includes(p.brand);
   const isBrandless = isBrandlessCategorySlug(getCategorySlug(p.categoryId));
@@ -630,7 +617,7 @@ function buildDetailFormHtml(product, mode) {
               <button type="button" class="btn btn-outline-secondary btn-sm ${discountType === 'percent' ? 'active' : ''}" data-val="percent">%</button>
               <button type="button" class="btn btn-outline-secondary btn-sm ${discountType === 'fixed' ? 'active' : ''}" data-val="fixed">&euro;</button>
             </div>
-            <input type="number" class="form-control detail-discount-value" min="0" step="1" value="${escapeAttr(discountValue)}">
+            <input type="number" class="form-control detail-discount-value" min="0" step="0.01" value="${escapeAttr(discountValue)}">
           </div>
         </div>
         <div class="col-4">
