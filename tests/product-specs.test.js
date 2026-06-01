@@ -132,8 +132,8 @@ describe('specsForCategory', () => {
   test('battery fields count is correct', () => {
     const fields = specsForCategory('batterijen');
 
-    // 8 battery-only + 1 efficiency + 4 dimensions + 7 battery/inverter shared = 20 total
-    const expectedCount = 20;
+    // 8 battery-only + 3 battery/inverter power fields + 1 efficiency + 4 dimensions + 7 battery/inverter shared = 23 total
+    const expectedCount = 23;
     assert.strictEqual(fields.length, expectedCount, `Batterijen should have ${expectedCount} fields`);
   });
 
