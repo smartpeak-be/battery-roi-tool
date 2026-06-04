@@ -1,5 +1,6 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
+import { mountProjectDocuments } from '../project-documents.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
@@ -571,6 +572,7 @@ function wireBoard(el) {
 let _drawerProjectId    = null;
 let _currentDrawerProject = null;
 let _drawerPhotoUploader = null;
+let _drawerDocumentsExplorer = null;
 // Firestore onSnapshot unsubscribe for the open drawer's project doc. Used to
 // live-update the serial-list (Task 10). Scoped to the drawer-open lifecycle:
 // subscribe in openDrawer, unsubscribe in closeDrawer + on hidden.bs.offcanvas.
@@ -606,6 +608,7 @@ async function _refreshCurrentDrawer() {
     if (_drawerProjectId !== refreshId) return;
     renderComments(fresh, comments);
     if (_drawerPhotoUploader) await _drawerPhotoUploader.refresh();
+    if (_drawerDocumentsExplorer) await _drawerDocumentsExplorer.refresh();
   } catch (err) {
     console.warn('drawer refresh async sections failed', err);
   }
@@ -654,6 +657,10 @@ async function openDrawer(projectId) {
         projectId: project.id,
         onChange: refreshDrawerAfterChange,
       });
+      _drawerDocumentsExplorer = mountProjectDocuments(document.getElementById('drawerDocumentsMount'), {
+        projectId: project.id,
+        onChange: refreshDrawerAfterChange,
+      });
       // Populate the count header once the initial refresh lands.
       refreshDrawerAfterChange();
 
@@ -691,6 +698,10 @@ function closeDrawer() {
     try { _drawerPhotoUploader.destroy(); } catch {}
     _drawerPhotoUploader = null;
   }
+  if (_drawerDocumentsExplorer) {
+    try { _drawerDocumentsExplorer.destroy(); } catch {}
+    _drawerDocumentsExplorer = null;
+  }
   if (_drawerSerialUnsub) {
     try { _drawerSerialUnsub(); } catch {}
     _drawerSerialUnsub = null;
@@ -701,6 +712,15 @@ function closeDrawer() {
 
 async function refreshDrawerAfterChange() {
   const countEl = document.getElementById('drawerPhotosCount');
+  if (_drawerProjectId) {
+    const docCountEl = document.getElementById('drawerDocumentsCount');
+    if (docCountEl) {
+      try {
+        const docs = await listProjectDocuments(_drawerProjectId);
+        docCountEl.textContent = docs.length > 0 ? `(${docs.length})` : '';
+      } catch {}
+    }
+  }
   if (!countEl || !_drawerPhotoUploader || !_drawerProjectId) return;
   try {
     const photos = await listProjectPhotos(_drawerProjectId);
@@ -716,6 +736,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (_drawerPhotoUploader) {
         try { _drawerPhotoUploader.destroy(); } catch {}
         _drawerPhotoUploader = null;
+      }
+      if (_drawerDocumentsExplorer) {
+        try { _drawerDocumentsExplorer.destroy(); } catch {}
+        _drawerDocumentsExplorer = null;
       }
       if (_drawerSerialUnsub) {
         try { _drawerSerialUnsub(); } catch {}
@@ -931,9 +955,27 @@ function renderDrawer(project) {
   }
 
   sections.push(`
-    <section class="border-bottom pb-3 mb-3" id="drawerPhotosSection">
-      <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-images" aria-hidden="true"></i> Foto's <span id="drawerPhotosCount" class="text-muted fw-normal"></span></h6>
-      <div id="drawerPhotoUploader"></div>
+    <section class="border-bottom pb-3 mb-3" id="drawerMediaSection">
+      <ul class="nav nav-tabs mb-3" id="drawerMediaTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="drawerPhotosTab" data-bs-toggle="tab" data-bs-target="#drawerPhotosPane" type="button" role="tab" aria-controls="drawerPhotosPane" aria-selected="true">
+            <i class="fa-solid fa-images" aria-hidden="true"></i> Foto's <span id="drawerPhotosCount" class="text-muted fw-normal"></span>
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="drawerDocumentsTab" data-bs-toggle="tab" data-bs-target="#drawerDocumentsPane" type="button" role="tab" aria-controls="drawerDocumentsPane" aria-selected="false">
+            <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Documenten <span id="drawerDocumentsCount" class="text-muted fw-normal"></span>
+          </button>
+        </li>
+      </ul>
+      <div class="tab-content">
+        <div class="tab-pane fade show active" id="drawerPhotosPane" role="tabpanel" aria-labelledby="drawerPhotosTab" tabindex="0">
+          <div id="drawerPhotoUploader"></div>
+        </div>
+        <div class="tab-pane fade" id="drawerDocumentsPane" role="tabpanel" aria-labelledby="drawerDocumentsTab" tabindex="0">
+          <div id="drawerDocumentsMount"></div>
+        </div>
+      </div>
     </section>
   `);
 

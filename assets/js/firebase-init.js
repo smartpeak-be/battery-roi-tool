@@ -765,6 +765,19 @@ async function hardDeleteProject(id) {
     }
   } catch (e) { console.warn('comments cascade failed', e); }
 
+  // Documents: delete bytes + Firestore doc per document/folder.
+  try {
+    const documentsSnap = await projectDoc(id).collection('documents').get();
+    for (const doc of documentsSnap.docs) {
+      const data = doc.data();
+      if (data.type === 'file' && data.storagePath) {
+        try { await getStorage().ref(data.storagePath).delete(); }
+        catch (e) { console.warn('Document storage delete failed for', data.storagePath, e); }
+      }
+      await doc.ref.delete();
+    }
+  } catch (e) { console.warn('documents cascade failed', e); }
+
   // Project doc itself.
   await projectDoc(id).delete();
 }
@@ -1460,6 +1473,149 @@ async function setPhotoSerialTag(projectId, photoId, category) {
       serialCategory: category,
       ocrStatus: 'pending',
     });
+}
+
+// ─── PROJECT DOCUMENTS (Explorer-style folders + files) ─────────────────────
+
+function projectDocumentsCol(projectId) {
+  return projectDoc(projectId).collection('documents');
+}
+
+function cleanDocumentTitle(value, fallback) {
+  const text = String(value || '').trim();
+  return text || fallback;
+}
+
+function sanitizeStorageName(name) {
+  return String(name || 'document').replace(/[^\w.-]+/g, '_').slice(0, 120) || 'document';
+}
+
+async function createProjectDocumentFolder(projectId, meta = {}) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const ref = await projectDocumentsCol(projectId).add({
+    type: 'folder',
+    parentId: meta.parentId || null,
+    title: cleanDocumentTitle(meta.title, 'Nieuwe map'),
+    description: String(meta.description || '').trim(),
+    createdAt: now,
+    updatedAt: now,
+    createdBy: email,
+    updatedBy: email,
+  });
+  await projectDoc(projectId).update({ updatedAt: now });
+  return { id: ref.id };
+}
+
+async function uploadProjectDocument(projectId, file, meta = {}) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  if (!file) throw new Error('Geen bestand opgegeven');
+  const MAX_BYTES = 25 * 1024 * 1024;
+  if (file.size > MAX_BYTES) throw new Error('Bestand is groter dan 25 MB');
+
+  const safeName = sanitizeStorageName(file.name);
+  const ts = Date.now();
+  const storagePath = `projects/${projectId}/documents/${ts}_${safeName}`;
+  const contentType = file.type || 'application/octet-stream';
+
+  try {
+    await getStorage().ref(storagePath).put(file, { contentType });
+  } catch (e) {
+    throw new Error('Storage upload mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+  }
+
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  let ref;
+  try {
+    ref = await projectDocumentsCol(projectId).add({
+      type: 'file',
+      parentId: meta.parentId || null,
+      title: cleanDocumentTitle(meta.title, file.name || 'Document'),
+      description: String(meta.description || '').trim(),
+      storagePath,
+      name: file.name || safeName,
+      contentType,
+      sizeBytes: file.size || 0,
+      uploadedAt: now,
+      createdAt: now,
+      updatedAt: now,
+      uploadedBy: email,
+      createdBy: email,
+      updatedBy: email,
+    });
+  } catch (e) {
+    try { await getStorage().ref(storagePath).delete(); } catch (_) { /* best-effort */ }
+    throw new Error('Firestore metadata schrijven mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+  }
+
+  await projectDoc(projectId).update({ updatedAt: now });
+  return { id: ref.id, storagePath };
+}
+
+async function listProjectDocuments(projectId) {
+  const snap = await projectDocumentsCol(projectId).orderBy('createdAt', 'asc').get();
+  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  await Promise.all(docs.map(async d => {
+    if (d.type === 'file' && d.storagePath) {
+      try { d.downloadUrl = await getStorage().ref(d.storagePath).getDownloadURL(); }
+      catch (e) { d.downloadUrl = null; d.fetchError = e && e.message ? e.message : String(e); }
+    }
+  }));
+  return docs;
+}
+
+async function updateProjectDocument(projectId, documentId, patch = {}) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  const data = {
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: email,
+  };
+  if ('title' in patch) data.title = cleanDocumentTitle(patch.title, 'Document');
+  if ('description' in patch) data.description = String(patch.description || '').trim();
+  await projectDocumentsCol(projectId).doc(documentId).update(data);
+}
+
+async function moveProjectDocument(projectId, documentId, parentId) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  await projectDocumentsCol(projectId).doc(documentId).update({
+    parentId: parentId || null,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: email,
+  });
+}
+
+async function deleteProjectDocument(projectId, documentId) {
+  const docs = await listProjectDocuments(projectId);
+  const byParent = new Map();
+  docs.forEach(doc => {
+    const key = doc.parentId || null;
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key).push(doc);
+  });
+  const toDelete = [];
+  const collect = (id) => {
+    const doc = docs.find(entry => entry.id === id);
+    if (!doc) return;
+    toDelete.push(doc);
+    (byParent.get(id) || []).forEach(child => collect(child.id));
+  };
+  collect(documentId);
+
+  for (const doc of toDelete) {
+    if (doc.type === 'file' && doc.storagePath) {
+      try { await getStorage().ref(doc.storagePath).delete(); }
+      catch (e) { console.warn('Document blob verwijderen mislukt', e); }
+    }
+  }
+
+  const batch = getDb().batch();
+  toDelete.forEach(doc => batch.delete(projectDocumentsCol(projectId).doc(doc.id)));
+  await batch.commit();
+  await projectDoc(projectId).update({ updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
 }
 
 // ─── OFFERTES (per-config PDF upload) ────────────────────────────────────────
@@ -2386,6 +2542,12 @@ window.toggleProductConfigActive = toggleProductConfigActive;
 window.uploadProductPhoto = uploadProductPhoto;
 window.listProductPhotos = listProductPhotos;
 window.deleteProductPhoto = deleteProductPhoto;
+window.createProjectDocumentFolder = createProjectDocumentFolder;
+window.uploadProjectDocument = uploadProjectDocument;
+window.listProjectDocuments = listProjectDocuments;
+window.updateProjectDocument = updateProjectDocument;
+window.moveProjectDocument = moveProjectDocument;
+window.deleteProjectDocument = deleteProjectDocument;
 window.uploadProductDatasheet = uploadProductDatasheet;
 window.listProductDatasheets = listProductDatasheets;
 window.deleteProductDatasheet = deleteProductDatasheet;

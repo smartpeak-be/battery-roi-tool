@@ -1095,3 +1095,42 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   font-weight: 600;
   font-size: 1.05rem;
 }
+
+/* Project documents explorer */
+.sp-doc-tree {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+.sp-doc-row {
+  --doc-indent: calc(var(--doc-level, 0) * 1.15rem);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .55rem .6rem .55rem calc(.6rem + var(--doc-indent));
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius-sm);
+  background: #fff;
+}
+.sp-doc-main {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  flex: 1 1 auto;
+}
+.sp-doc-actions {
+  display: flex;
+  gap: .25rem;
+  flex: 0 0 auto;
+}
+.sp-doc-children {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+@media (max-width: 575.98px) {
+  .sp-doc-row { flex-direction: column; }
+  .sp-doc-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+}

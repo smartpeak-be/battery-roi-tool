@@ -185,6 +185,10 @@ service cloud.firestore {
       match /photos/{photoId} {
         allow read, write: if isWhitelisted();
       }
+
+      match /documents/{documentId} {
+        allow read, write: if isWhitelisted();
+      }
     }
 
     // ─── Shares (public read, whitelisted create/delete) ─────────
