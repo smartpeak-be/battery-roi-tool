@@ -1095,3 +1095,85 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   font-weight: 600;
   font-size: 1.05rem;
 }
+
+/* Project documents explorer */
+.sp-doc-tree {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+.sp-doc-row {
+  --doc-indent: calc(var(--doc-level, 0) * 1.15rem);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: .55rem .6rem .55rem calc(.6rem + var(--doc-indent));
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius-sm);
+  background: #fff;
+}
+.sp-doc-main {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  flex: 1 1 auto;
+}
+.sp-doc-toggle,
+.sp-doc-toggle-spacer {
+  flex: 0 0 1.6rem;
+  width: 1.6rem;
+  min-height: 1.6rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.sp-doc-toggle:hover {
+  background: var(--bs-light);
+}
+.sp-doc-toggle-spacer {
+  pointer-events: none;
+}
+.sp-doc-content {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.sp-doc-title,
+.sp-doc-meta,
+.sp-doc-row .sp-pre-wrap {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.sp-doc-meta {
+  line-height: 1.35;
+}
+.sp-doc-actions {
+  display: flex;
+  gap: .25rem;
+  flex: 0 0 auto;
+}
+.sp-doc-children {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+@media (max-width: 575.98px) {
+  .sp-doc-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sp-doc-main {
+    width: 100%;
+  }
+  .sp-doc-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+}
