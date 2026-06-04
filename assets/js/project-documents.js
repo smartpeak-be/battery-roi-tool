@@ -137,9 +137,9 @@ function renderNode(node, level = 0, collapsedIds = new Set()) {
       <div class="sp-doc-main">
         ${toggle}
         <i class="fa-solid ${escapeAttr(icon)} ${isFolder ? 'text-warning' : 'text-secondary'}" aria-hidden="true"></i>
-        <div class="min-w-0 flex-grow-1">
-          <div class="fw-semibold text-truncate">${escapeHtml(node.title)}</div>
-          <div class="small text-muted text-truncate">${escapeHtml(meta)}</div>
+        <div class="sp-doc-content">
+          <div class="fw-semibold sp-doc-title">${escapeHtml(node.title)}</div>
+          <div class="small text-muted sp-doc-meta">${escapeHtml(meta)}</div>
           ${desc}
         </div>
       </div>

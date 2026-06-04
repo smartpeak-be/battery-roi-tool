@@ -82,4 +82,18 @@ describe('project documents explorer helpers', () => {
     expect(html).toContain('sp-doc-children d-none');
     expect(html).toContain('fa-chevron-right');
   });
+
+  it('rendert lange documentnamen met wrap-klassen voor mobiele layout', () => {
+    const longName = '1780594218136916574385092287590.jpg';
+    const tree = buildDocumentTree([
+      { id: 'd1', type: 'file', title: longName, name: longName, contentType: 'image/jpeg', parentId: null },
+    ]);
+
+    const html = renderDocumentExplorerHtml(tree);
+
+    expect(html).toContain('sp-doc-content');
+    expect(html).toContain('sp-doc-title');
+    expect(html).toContain('sp-doc-meta');
+    expect(html).not.toContain('text-truncate');
+  });
 });
