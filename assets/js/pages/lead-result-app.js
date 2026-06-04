@@ -182,7 +182,7 @@ function wireCTA(leadId, lead, btnId = 'btnContact') {
       await createMailDoc({
         kind: 'lead_contact',
         leadId,
-        to: ['kevin@bloxit.be', 'ledsrepair@gmail.com'],
+        to: ['kevin@smartpeak.be', 'ruben@smartpeak.be'],
         message: {
           subject: `Nieuwe contactaanvraag: ${lead.customerName || 'Onbekend'}`,
           html: `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>

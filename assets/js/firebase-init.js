@@ -199,7 +199,9 @@ const SMARTPEAK_TASK_ASSIGNEES = ['kevin', 'ruben'];
 const SMARTPEAK_ASSIGNEE_LABELS = { kevin: 'Kevin', ruben: 'Ruben' };
 const SMARTPEAK_ASSIGNEE_EMAILS = {
   'kevin@bloxit.be': 'kevin',
+  'kevin@smartpeak.be': 'kevin',
   'ledsrepair@gmail.com': 'ruben',
+  'ruben@smartpeak.be': 'ruben',
 };
 const SMARTPEAK_TASK_STATUSES = ['open', 'in_progress', 'done', 'cancelled'];
 const SMARTPEAK_ACTIVITY_TYPES = [
@@ -244,7 +246,10 @@ function normalizeProjectTask(task = {}) {
     linkedMailId: task.linkedMailId || null,
     createdAt: task.createdAt || null,
     updatedAt: task.updatedAt || null,
+    completedAt: task.completedAt || null,
+    cancelledAt: task.cancelledAt || null,
     notes: task.notes || null,
+    reminderLog: Array.isArray(task.reminderLog) ? task.reminderLog : [],
   };
 }
 
@@ -400,7 +405,7 @@ function projectTaskRowsForProjects(projects = [], options = {}) {
 
     for (const task of (p.tasks || []).map(normalizeProjectTask)) {
       if (!task.title || ['done', 'cancelled'].includes(task.status)) continue;
-      if (assigneeFilter !== 'all' && task.assignee !== assigneeFilter) continue;
+      if (assigneeFilter !== 'all' && task.assignee && task.assignee !== assigneeFilter) continue;
       rows.push({
         rowType: 'task',
         projectId,
@@ -415,6 +420,9 @@ function projectTaskRowsForProjects(projects = [], options = {}) {
         assignee: task.assignee,
         assigneeLabel: assigneeLabel(task.assignee),
         dueDate: task.dueDate || null,
+        notes: task.notes || null,
+        createdAt: task.createdAt || null,
+        updatedAt: task.updatedAt || null,
         source: task.source || 'manual',
         priority: task.priority || 'normal',
       });

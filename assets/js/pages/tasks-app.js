@@ -12,7 +12,9 @@ function fmtDateString(value) {
 
 function currentAssigneeFilter() {
   const selected = document.getElementById('assigneeFilter').value || 'mine';
-  return selected === 'mine' ? assigneeForEmail(currentUserEmail()) : selected;
+  if (selected === 'mine') return assigneeForEmail(currentUserEmail());
+  if (selected === 'unassigned') return 'unassigned';
+  return selected;
 }
 
 function statusBadge(row) {
@@ -24,16 +26,32 @@ function statusBadge(row) {
 function rowMatches(row, query, typeFilter) {
   if (typeFilter !== 'all' && row.rowType !== typeFilter) return false;
   if (!query) return true;
-  const hay = [row.title, row.projectLabel, row.customerName, row.projectStatusLabel, row.assigneeLabel]
+  const hay = [row.title, row.notes, row.projectLabel, row.customerName, row.projectStatusLabel, row.assigneeLabel]
     .join(' ')
     .toLowerCase();
   return hay.includes(query);
 }
 
+function groupTitle(groupKey) {
+  if (groupKey === 'kevin') return 'Open voor Kevin';
+  if (groupKey === 'ruben') return 'Open voor Ruben';
+  return 'Algemene openstaande taken';
+}
+
+function groupRows(rows) {
+  return {
+    kevin: rows.filter(row => row.assignee === 'kevin'),
+    ruben: rows.filter(row => row.assignee === 'ruben'),
+    general: rows.filter(row => !row.assignee),
+  };
+}
+
 function rowHTML(row) {
   const due = row.dueDate ? ` · deadline ${escapeHtml(fmtDateString(row.dueDate))}` : '';
   const source = row.source === 'assistant' ? 'AmaAi' : row.source === 'suggested' ? 'suggestie' : 'manueel';
-  const updated = row.updatedAt ? ` · ${escapeHtml(fmtDate(row.updatedAt))}` : '';
+  const updated = row.updatedAt ? ` · gewijzigd ${escapeHtml(fmtDate(row.updatedAt))}` : '';
+  const created = row.createdAt ? ` · aangemaakt ${escapeHtml(fmtDate(row.createdAt))}` : '';
+  const notes = row.notes ? `<div class="small mt-1">${escapeHtml(row.notes)}</div>` : '';
   const startLabel = row.rowType === 'suggested' ? 'Maak taak' : row.status === 'in_progress' ? 'Bezig' : 'Start';
   return `
     <div class="border rounded p-3 d-flex flex-column flex-lg-row gap-2 align-items-lg-center" data-task-row-type="${escapeHtml(row.rowType)}" data-project-id="${escapeHtml(row.projectId || '')}" data-task-id="${escapeHtml(row.taskId || '')}" data-task-type="${escapeHtml(row.type || '')}" data-task-title="${escapeHtml(row.title || '')}" data-task-assignee="${escapeHtml(row.assignee || '')}">
@@ -46,9 +64,10 @@ function rowHTML(row) {
           <a href="project-edit.html?project=${encodeURIComponent(row.projectId)}" class="text-decoration-none">${escapeHtml(row.projectLabel || '(zonder naam)')}</a>
           ${row.customerName ? ` · ${escapeHtml(row.customerName)}` : ''}
           · ${escapeHtml(row.projectStatusLabel || row.projectStatus || '')}
-          · ${escapeHtml(row.assigneeLabel || assigneeLabel(row.assignee))}${due}${updated}
+          · ${escapeHtml(row.assigneeLabel || assigneeLabel(row.assignee))}${due}${created}${updated}
           · bron: ${escapeHtml(source)}
         </div>
+        ${notes}
       </div>
       <div class="d-flex gap-1 justify-content-lg-end">
         <button type="button" class="btn btn-sm btn-outline-primary taskStartBtn" ${row.status === 'in_progress' ? 'disabled' : ''}>${startLabel}</button>
@@ -64,10 +83,18 @@ function renderRows() {
   const count = document.getElementById('taskCount');
   const query = (document.getElementById('searchInput').value || '').trim().toLowerCase();
   const typeFilter = document.getElementById('typeFilter').value || 'all';
+  const selectedAssignee = document.getElementById('assigneeFilter').value || 'mine';
   const rows = _rows.filter(row => rowMatches(row, query, typeFilter));
   count.textContent = rows.length;
   if (!rows.length) {
     list.innerHTML = '<p class="sp-empty-state">Geen open taken of voorgestelde acties voor deze filter.</p>';
+    return;
+  }
+  if (selectedAssignee === 'all') {
+    const grouped = groupRows(rows);
+    list.innerHTML = ['kevin', 'ruben', 'general']
+      .map(key => `<section class="mb-3"><h2 class="h6 mb-2">${groupTitle(key)} <span class="badge text-bg-light">${grouped[key].length}</span></h2>${grouped[key].length ? `<div class="d-flex flex-column gap-2">${grouped[key].map(rowHTML).join('')}</div>` : '<p class="text-muted small mb-0">Geen open taken.</p>'}</section>`)
+      .join('');
     return;
   }
   list.innerHTML = `<div class="d-flex flex-column gap-2">${rows.map(rowHTML).join('')}</div>`;

@@ -6,7 +6,7 @@ service cloud.firestore {
     // Helper: check if the authenticated user is whitelisted
     function isWhitelisted() {
       return request.auth != null &&
-             request.auth.token.email in ['kevin@bloxit.be', 'ledsrepair@gmail.com'];
+             request.auth.token.email in ['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be'];
     }
 
     function leadPath(leadId) {
@@ -157,8 +157,8 @@ service cloud.firestore {
       return hasValidMailEnvelope('lead_contact')
         && data.to is list
         && data.to.size() == 2
-        && 'kevin@bloxit.be' in data.to
-        && 'ledsrepair@gmail.com' in data.to
+        && 'kevin@smartpeak.be' in data.to
+        && 'ruben@smartpeak.be' in data.to
         && data.message.subject.matches('^Nieuwe contactaanvraag:.*$');
     }
 
