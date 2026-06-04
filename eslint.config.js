@@ -149,7 +149,6 @@ export default [
       'assets/js/shared-helpers.js',
       'assets/js/lead-calc.js',
       'assets/js/product-configs.js',
-      'assets/js/speech-to-text.js',
       'assets/js/serial-extract.js',
       'assets/js/index/scenario-card.js',
       'assets/js/index/energy-chart.js',
