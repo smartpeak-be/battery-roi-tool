@@ -1,6 +1,5 @@
 import { escapeHtml, showToast, showState, showSpinner, hideSpinner, showConfirm } from '../shared-helpers.js';
 import { extractCsvForStorage } from '../csv.js';
-import { attachSpeechToText } from '../speech-to-text.js';
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 const URL_PARAMS = new URLSearchParams(window.location.search);
@@ -839,21 +838,6 @@ function wireBlokB() {
   document.getElementById('fNotes').addEventListener('input', e => {
     _project.notes = e.target.value;
   });
-  ['fSituation', 'fNotes', 'fInspectionNotes'].forEach(id => {
-    const textarea = document.getElementById(id);
-    attachSpeechToText(textarea, {
-      title: id === 'fSituation' ? 'Situatie dicteren in het Nederlands'
-        : id === 'fInspectionNotes' ? 'Keuring opmerkingen dicteren in het Nederlands'
-          : 'Notities dicteren in het Nederlands',
-      ariaLabel: id === 'fSituation' ? 'Situatie dicteren'
-        : id === 'fInspectionNotes' ? 'Keuring opmerkingen dicteren'
-          : 'Notities dicteren',
-    });
-    textarea.addEventListener('speech-to-text-error', (e) => {
-      showToast(e.detail && e.detail.message ? e.detail.message : 'Dicteren mislukt.', 'warning');
-    });
-  });
-
   // Collapse-toggle: restore persisted state + wire persistence on click.
   const header = document.querySelector('#blokB-slot .card-header');
   const body   = document.getElementById('blokB-body');
@@ -1108,14 +1092,6 @@ function wireBlokC() {
     _project.technical = _project.technical || {};
     _project.technical.technicalNotes = e.target.value;
   });
-  attachSpeechToText(document.getElementById('fTechnicalNotes'), {
-    title: 'Technische opmerkingen dicteren in het Nederlands',
-    ariaLabel: 'Technische opmerkingen dicteren',
-  });
-  document.getElementById('fTechnicalNotes').addEventListener('speech-to-text-error', (e) => {
-    showToast(e.detail && e.detail.message ? e.detail.message : 'Dicteren mislukt.', 'warning');
-  });
-
   // Omvormer-lijst — per-entry input handlers
   document.querySelectorAll('[data-inv-field]').forEach(inp => {
     inp.addEventListener('input', e => {
