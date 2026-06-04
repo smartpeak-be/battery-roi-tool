@@ -1120,6 +1120,23 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   gap: .55rem;
   flex: 1 1 auto;
 }
+.sp-doc-toggle,
+.sp-doc-toggle-spacer {
+  flex: 0 0 1.6rem;
+  width: 1.6rem;
+  min-height: 1.6rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.sp-doc-toggle:hover {
+  background: var(--bs-light);
+}
+.sp-doc-toggle-spacer {
+  pointer-events: none;
+}
 .sp-doc-actions {
   display: flex;
   gap: .25rem;

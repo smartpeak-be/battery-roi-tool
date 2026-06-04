@@ -118,8 +118,9 @@ function formatBytes(bytes) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function renderNode(node, level = 0) {
+function renderNode(node, level = 0, collapsedIds = new Set()) {
   const isFolder = node.type === 'folder';
+  const isCollapsed = isFolder && collapsedIds.has(node.id);
   const icon = iconForDocument(node);
   const meta = isFolder
     ? `${node.children.length} item${node.children.length === 1 ? '' : 's'}`
@@ -128,9 +129,13 @@ function renderNode(node, level = 0) {
   const download = (!isFolder && node.downloadUrl)
     ? `<a class="btn btn-sm btn-outline-primary" href="${escapeAttr(node.downloadUrl)}" target="_blank" rel="noopener" title="Openen"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>`
     : '';
+  const toggle = isFolder
+    ? `<button type="button" class="btn btn-sm btn-link text-secondary sp-doc-toggle" data-doc-action="toggle-folder" aria-expanded="${isCollapsed ? 'false' : 'true'}" title="Map ${isCollapsed ? 'openklappen' : 'toeklappen'}"><i class="fa-solid ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'}"></i></button>`
+    : '<span class="sp-doc-toggle-spacer" aria-hidden="true"></span>';
   return `
     <div class="sp-doc-row" data-doc-id="${escapeAttr(node.id)}" data-doc-type="${escapeAttr(node.type)}" style="--doc-level:${level}">
       <div class="sp-doc-main">
+        ${toggle}
         <i class="fa-solid ${escapeAttr(icon)} ${isFolder ? 'text-warning' : 'text-secondary'}" aria-hidden="true"></i>
         <div class="min-w-0 flex-grow-1">
           <div class="fw-semibold text-truncate">${escapeHtml(node.title)}</div>
@@ -146,15 +151,15 @@ function renderNode(node, level = 0) {
         <button type="button" class="btn btn-sm btn-outline-danger" data-doc-action="delete" title="Verwijderen"><i class="fa-solid fa-trash"></i></button>
       </div>
     </div>
-    ${isFolder && node.children.length ? `<div class="sp-doc-children">${node.children.map(child => renderNode(child, level + 1)).join('')}</div>` : ''}
+    ${isFolder && node.children.length ? `<div class="sp-doc-children${isCollapsed ? ' d-none' : ''}">${node.children.map(child => renderNode(child, level + 1, collapsedIds)).join('')}</div>` : ''}
   `;
 }
 
-export function renderDocumentExplorerHtml(tree) {
+export function renderDocumentExplorerHtml(tree, collapsedIds = new Set()) {
   if (!tree || !tree.roots || tree.roots.length === 0) {
     return '<p class="sp-empty-state mb-0">Nog geen documenten.</p>';
   }
-  return `<div class="sp-doc-tree">${tree.roots.map(node => renderNode(node)).join('')}</div>`;
+  return `<div class="sp-doc-tree">${tree.roots.map(node => renderNode(node, 0, collapsedIds)).join('')}</div>`;
 }
 
 function toast(msg, variant = 'danger') {
@@ -162,21 +167,134 @@ function toast(msg, variant = 'danger') {
   else console.warn('[project-documents]', msg);
 }
 
+function ensureDocumentMetaModal() {
+  let el = document.getElementById('spDocumentMetaModal');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'spDocumentMetaModal';
+  el.className = 'modal fade';
+  el.tabIndex = -1;
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form data-doc-meta-form>
+          <div class="modal-header">
+            <h5 class="modal-title" data-doc-meta-title><i class="fa-solid fa-file-circle-plus me-2" aria-hidden="true"></i>Document</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+          </div>
+          <div class="modal-body">
+            <p class="small text-muted mb-3" data-doc-meta-help></p>
+            <div class="mb-3">
+              <label class="form-label" for="spDocumentMetaTitle">Titel</label>
+              <input id="spDocumentMetaTitle" type="text" class="form-control" data-doc-meta-input-title required>
+              <div class="invalid-feedback">Geef een titel of mapnaam op.</div>
+            </div>
+            <div class="mb-0">
+              <label class="form-label" for="spDocumentMetaDescription">Beschrijving/notitie</label>
+              <textarea id="spDocumentMetaDescription" class="form-control" data-doc-meta-input-description rows="3" placeholder="Optioneel"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+            <button type="submit" class="btn btn-primary" data-doc-meta-save>Opslaan</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  return el;
+}
+
+function openDocumentMetaModal(options = {}) {
+  const {
+    modalTitle = 'Documentgegevens',
+    helpText = '',
+    title = '',
+    description = '',
+    saveText = 'Opslaan',
+  } = options;
+  if (typeof document === 'undefined' || typeof bootstrap === 'undefined') return Promise.resolve(null);
+  const el = ensureDocumentMetaModal();
+  const form = el.querySelector('[data-doc-meta-form]');
+  const titleEl = el.querySelector('[data-doc-meta-title]');
+  const helpEl = el.querySelector('[data-doc-meta-help]');
+  const titleInput = el.querySelector('[data-doc-meta-input-title]');
+  const descriptionInput = el.querySelector('[data-doc-meta-input-description]');
+  const saveBtn = el.querySelector('[data-doc-meta-save]');
+
+  titleEl.innerHTML = `<i class="fa-solid fa-file-circle-plus me-2" aria-hidden="true"></i>${escapeHtml(modalTitle)}`;
+  helpEl.textContent = helpText || '';
+  helpEl.classList.toggle('d-none', !helpText);
+  titleInput.value = title;
+  descriptionInput.value = description;
+  saveBtn.textContent = saveText;
+  form.classList.remove('was-validated');
+
+  return new Promise(resolve => {
+    const modal = bootstrap.Modal.getOrCreateInstance(el);
+    let settled = false;
+    const cleanup = () => {
+      form.removeEventListener('submit', onSubmit);
+      el.removeEventListener('hidden.bs.modal', onHidden);
+    };
+    const close = (value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+    const onHidden = () => close(null);
+    const onSubmit = (event) => {
+      event.preventDefault();
+      const nextTitle = titleInput.value.trim();
+      if (!nextTitle) {
+        form.classList.add('was-validated');
+        titleInput.focus();
+        return;
+      }
+      close({ title: nextTitle, description: descriptionInput.value.trim() });
+      modal.hide();
+    };
+    form.addEventListener('submit', onSubmit);
+    el.addEventListener('hidden.bs.modal', onHidden);
+    modal.show();
+    setTimeout(() => titleInput.focus(), 150);
+  });
+}
+
 function promptMeta(files, parentTitle = '') {
   const many = files.length > 1;
-  const titleLabel = many ? 'Mapnaam voor deze upload' : 'Titel voor dit document';
   const fallback = many ? `Upload ${new Date().toLocaleDateString('nl-BE')}` : fileBaseName(files[0]);
-  const title = window.prompt(`${titleLabel}${parentTitle ? ` in ${parentTitle}` : ''}:`, fallback);
-  if (title === null) return null;
-  const description = window.prompt('Beschrijving/notitie (optioneel):', '') || '';
-  return { title, description };
+  return openDocumentMetaModal({
+    modalTitle: many ? 'Documenten uploaden' : 'Document uploaden',
+    helpText: many
+      ? `Meerdere bestanden worden als map opgeslagen${parentTitle ? ` in ${parentTitle}` : ''}.`
+      : `Dit document wordt opgeslagen${parentTitle ? ` in ${parentTitle}` : ''}.`,
+    title: fallback,
+    description: '',
+    saveText: 'Uploaden',
+  });
 }
 
 function promptFolderTitle() {
-  const title = window.prompt('Nieuwe mapnaam:', 'Nieuwe map');
-  if (title === null) return null;
-  const description = window.prompt('Beschrijving/notitie (optioneel):', '') || '';
-  return { title, description };
+  return openDocumentMetaModal({
+    modalTitle: 'Nieuwe map',
+    helpText: 'Maak een map om documenten te groeperen.',
+    title: 'Nieuwe map',
+    description: '',
+    saveText: 'Map maken',
+  });
+}
+
+function editDocumentMeta(doc) {
+  return openDocumentMetaModal({
+    modalTitle: doc.type === 'folder' ? 'Map wijzigen' : 'Document wijzigen',
+    helpText: 'Pas titel en beschrijving aan.',
+    title: doc.title || doc.name || '',
+    description: doc.description || '',
+    saveText: 'Opslaan',
+  });
 }
 
 function descendantIds(tree, id) {
@@ -210,7 +328,7 @@ function promptMoveTarget(tree, doc) {
 
 export function mountProjectDocuments(containerEl, opts = {}) {
   const options = { projectId: null, onChange: null, ...opts };
-  const state = { entries: [], tree: buildDocumentTree([]), busy: false };
+  const state = { entries: [], tree: buildDocumentTree([]), busy: false, collapsedIds: new Set() };
 
   containerEl.innerHTML = `
     <div class="sp-documents" data-doc-root>
@@ -243,7 +361,9 @@ export function mountProjectDocuments(containerEl, opts = {}) {
 
   function render() {
     state.tree = buildDocumentTree(state.entries);
-    listEl.innerHTML = renderDocumentExplorerHtml(state.tree);
+    const folderIds = new Set(Array.from(state.tree.byId.values()).filter(node => node.type === 'folder').map(node => node.id));
+    state.collapsedIds = new Set(Array.from(state.collapsedIds).filter(id => folderIds.has(id)));
+    listEl.innerHTML = renderDocumentExplorerHtml(state.tree, state.collapsedIds);
   }
 
   async function refresh() {
@@ -262,7 +382,7 @@ export function mountProjectDocuments(containerEl, opts = {}) {
   async function handleFiles(filesLike) {
     const files = Array.from(filesLike || []);
     if (!files.length) return;
-    const meta = promptMeta(files, uploadParentTitle);
+    const meta = await promptMeta(files, uploadParentTitle);
     if (!meta) return;
     const plan = documentUploadPlan(files, { ...meta, parentId: uploadParentId });
     setBusy(true);
@@ -307,7 +427,7 @@ export function mountProjectDocuments(containerEl, opts = {}) {
     }
 
     if (action === 'new-folder') {
-      const meta = promptFolderTitle();
+      const meta = await promptFolderTitle();
       if (!meta) return;
       setBusy(true);
       try {
@@ -322,15 +442,21 @@ export function mountProjectDocuments(containerEl, opts = {}) {
       return;
     }
 
+    if (action === 'toggle-folder' && doc && doc.type === 'folder') {
+      if (state.collapsedIds.has(doc.id)) state.collapsedIds.delete(doc.id);
+      else state.collapsedIds.add(doc.id);
+      render();
+      return;
+    }
+
     if (!doc) return;
 
     if (action === 'edit') {
-      const title = window.prompt('Titel:', doc.title || doc.name || '');
-      if (title === null) return;
-      const description = window.prompt('Beschrijving/notitie:', doc.description || '') || '';
+      const meta = await editDocumentMeta(doc);
+      if (!meta) return;
       setBusy(true);
       try {
-        await window.updateProjectDocument(options.projectId, doc.id, { title, description });
+        await window.updateProjectDocument(options.projectId, doc.id, meta);
         await refresh();
       } catch (err) {
         setError('Wijzigen mislukt: ' + (err && err.message ? err.message : err));

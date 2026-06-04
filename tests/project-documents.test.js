@@ -51,7 +51,7 @@ describe('project documents explorer helpers', () => {
     expect(tree.byId.get('f1').children.map(n => n.id)).toEqual(['d1']);
   });
 
-  it('rendert mappen, pdf/csv iconen en verplaats-acties', () => {
+  it('rendert mappen, pdf/csv iconen, verplaats-acties en inklapknop', () => {
     const tree = buildDocumentTree([
       { id: 'f1', type: 'folder', title: 'CSV pakket', description: 'MyFluvius', parentId: null },
       { id: 'd1', type: 'file', title: 'fluvius.csv', name: 'fluvius.csv', contentType: 'text/csv', parentId: 'f1' },
@@ -65,6 +65,21 @@ describe('project documents explorer helpers', () => {
     expect(html).toContain('CSV pakket');
     expect(html).toContain('fluvius.csv');
     expect(html).toContain('data-doc-action="move"');
+    expect(html).toContain('data-doc-action="toggle-folder"');
+    expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('fa-folder');
+  });
+
+  it('rendert ingeklapte mappen zonder kinderen zichtbaar te tonen', () => {
+    const tree = buildDocumentTree([
+      { id: 'f1', type: 'folder', title: 'CSV pakket', parentId: null },
+      { id: 'd1', type: 'file', title: 'fluvius.csv', name: 'fluvius.csv', parentId: 'f1' },
+    ]);
+
+    const html = renderDocumentExplorerHtml(tree, new Set(['f1']));
+
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('sp-doc-children d-none');
+    expect(html).toContain('fa-chevron-right');
   });
 });
