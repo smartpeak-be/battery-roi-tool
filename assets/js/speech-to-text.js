@@ -68,7 +68,14 @@ function startListening(state) {
   if (state.isListening) return;
   clearRestartTimer(state);
   const modal = ensureModal();
-  const recognition = state.recognition;
+  const previousRecognition = state.recognition;
+  if (previousRecognition) {
+    try {
+      previousRecognition.abort();
+    } catch (_) {
+      // Old recognition instance may already be closed.
+    }
+  }
   state.recognition = new SpeechRecognitionCtor();
   state.isListening = true;
   state.isClosing = false;
@@ -95,15 +102,19 @@ function startListening(state) {
       },
     }));
   }
-
-  if (recognition) {
-    try {
-      recognition.abort();
-    } catch (_) {
-      // Old recognition instance may already be closed.
-    }
-  }
 }
+
+function shouldHandleRecognitionEvent(active, state, recognition) {
+  return active === state && state.recognition === recognition;
+}
+
+function isCurrentRecognition(state, recognition) {
+  return shouldHandleRecognitionEvent(activeSession, state, recognition);
+}
+
+export const __speechToTextTest = {
+  shouldHandleRecognitionEvent,
+};
 
 function configureRecognition(state) {
   const recognition = state.recognition;
@@ -114,19 +125,20 @@ function configureRecognition(state) {
   recognition.maxAlternatives = 1;
 
   recognition.addEventListener('start', () => {
-    if (activeSession !== state) return;
+    if (!isCurrentRecognition(state, recognition)) return;
     modal.querySelector('[data-speech-status]').textContent = state.heardSpeech
       ? 'Verder aan het luisteren...'
       : 'Browser luistert. Begin te spreken...';
   });
 
   recognition.addEventListener('speechstart', () => {
-    if (activeSession !== state) return;
+    if (!isCurrentRecognition(state, recognition)) return;
     modal.querySelector('[data-speech-status]').textContent = 'Spraak gedetecteerd...';
     state.keepAliveUntil = Date.now() + 10000;
   });
 
   recognition.addEventListener('result', (event) => {
+    if (!isCurrentRecognition(state, recognition)) return;
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
@@ -145,7 +157,7 @@ function configureRecognition(state) {
   });
 
   recognition.addEventListener('end', () => {
-    if (activeSession !== state) return;
+    if (!isCurrentRecognition(state, recognition)) return;
     state.isListening = false;
     state.setRecording(false);
     modal.classList.remove('recording');
@@ -165,7 +177,7 @@ function configureRecognition(state) {
   });
 
   recognition.addEventListener('error', (event) => {
-    if (activeSession !== state) return;
+    if (!isCurrentRecognition(state, recognition)) return;
     if (event.error === 'no-speech' && state.heardSpeech && Date.now() < state.keepAliveUntil) return;
     const message = speechErrorMessage(event.error);
     modal.querySelector('[data-speech-status]').textContent = message;
