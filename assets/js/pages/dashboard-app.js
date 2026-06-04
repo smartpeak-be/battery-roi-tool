@@ -2,105 +2,6 @@ import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, with
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 import { attachSpeechToText } from '../speech-to-text.js';
 
-// Demo branch: public Netlify preview with synthetic/obfuscated data only.
-// Keep this branch isolated from production; no real Firestore reads/writes.
-const DEMO_OBFUSCATED = true;
-
-function demoTimestamp(iso) {
-  return { toDate: () => new Date(iso) };
-}
-
-function demoProject(overrides) {
-  return {
-    id: overrides.id,
-    projectName: overrides.projectName,
-    customerName: overrides.customerName,
-    status: overrides.status,
-    updatedAt: demoTimestamp(overrides.updatedAt),
-    lastCalcRun: overrides.lastCalcRun || null,
-    customer: {
-      addressStructured: {
-        street: overrides.street,
-        number: overrides.number,
-        postalCode: overrides.postalCode,
-        city: overrides.city,
-      },
-      phone: overrides.phone,
-      email: overrides.email,
-    },
-    situation: overrides.situation,
-    notes: overrides.notes,
-    planning: overrides.planning || {},
-    site: { houseAgeOver10Years: overrides.houseAgeOver10Years },
-    electrical: overrides.electrical || {},
-    cabinet: { lineGroundChecked: true, ...(overrides.cabinet || {}) },
-    solar: { inverters: overrides.inverters || [] },
-    supplier: overrides.supplier || {},
-    technical: overrides.technical || {},
-    serialNumbers: overrides.serialNumbers || [],
-    batteryRegistry: overrides.batteryRegistry || { bebatStatus: 'not_needed', entries: [] },
-    activities: overrides.activities || [],
-    tasks: overrides.tasks || [],
-    offertes: overrides.offertes || {},
-  };
-}
-
-const DEMO_PROJECTS = [
-  demoProject({
-    id: 'demo-ax7k2',
-    projectName: 'Project Koraal-27',
-    customerName: 'Mila Verdonck',
-    status: 'offerte_verstuurd',
-    updatedAt: '2026-06-03T09:35:00+02:00',
-    street: 'Kastanjelaan', number: '18', postalCode: '9080', city: 'Zevendorp',
-    phone: '0470 83 19 42', email: 'mila.verdonck@example-demo.be',
-    situation: 'Demo: zuidwest dakvlak, bestaande PV-installatie, batterij naast technische berging.',
-    notes: 'Obfuscated demo-case. Waarden en namen zijn fictief.',
-    houseAgeOver10Years: true,
-    planning: { visitDoneDate: '2026-05-28', installationPlannedDate: '2026-06-18' },
-    electrical: { connectionType: '3x400V+N', fuseRatingA: 32 },
-    inverters: [{ powerKw: 8.2, brand: 'Solis', model: 'RND-8200' }],
-    supplier: { name: 'DemoEnergy', priceDay: 0.31, priceNight: 0.27 },
-    serialNumbers: [{ id: 's1', value: 'ZX9-DEMO-4821', category: 'batterij', source: 'manual', bebatStatus: 'pending' }],
-    batteryRegistry: { bebatStatus: 'pending', entries: [] },
-    lastCalcRun: { calculatedAt: demoTimestamp('2026-06-01T13:10:00+02:00'), inputs: { selectedConfigTypes: ['PC_DEMO_10KWH'] } },
-    tasks: [{ id: 't1', title: 'Demo-offerte opvolgen', status: 'open', assignee: 'kevin', dueDate: '2026-06-07' }],
-  }),
-  demoProject({
-    id: 'demo-mq4n8',
-    projectName: 'Project Linde-84',
-    customerName: 'Noah Peeters',
-    status: 'bezoek_gepland',
-    updatedAt: '2026-06-02T16:12:00+02:00',
-    street: 'Veldstraat', number: '204', postalCode: '9200', city: 'Rivieren',
-    phone: '0468 24 77 03', email: 'noah.peeters@example-demo.be',
-    situation: 'Demo: digitale meter aanwezig, CSV ontvangen, plaats voor batterij in garage.',
-    notes: 'Alle projectdata is willekeurig gemaakt voor preview.',
-    houseAgeOver10Years: false,
-    planning: { visitPlannedDate: '2026-06-06' },
-    electrical: { connectionType: '1x230V', fuseRatingA: 40 },
-    inverters: [{ powerKw: 5.0, brand: 'Huawei', model: 'RND-5000' }],
-    supplier: { name: 'VoltDemo', priceDay: 0.34, priceNight: 0.28 },
-  }),
-  demoProject({
-    id: 'demo-pz1r5',
-    projectName: 'Project Merel-13',
-    customerName: 'Lena Maes',
-    status: 'akkoord',
-    updatedAt: '2026-05-30T11:48:00+02:00',
-    street: 'Dennenweg', number: '7B', postalCode: '9140', city: 'Noorddam',
-    phone: '0491 62 05 88', email: 'lena.maes@example-demo.be',
-    situation: 'Demo: batterijconfig gekozen; installatievoorbereiding loopt.',
-    notes: 'Geen echte klant- of prijsdata in deze branch.',
-    houseAgeOver10Years: true,
-    planning: { visitDoneDate: '2026-05-22', installationPlannedDate: '2026-06-12' },
-    electrical: { connectionType: '3x230V', fuseRatingA: 25 },
-    inverters: [{ powerKw: 6.6, brand: 'GoodWe', model: 'RND-6600' }],
-    supplier: { name: 'GridDemo', priceDay: 0.29, priceNight: 0.25 },
-    lastCalcRun: { calculatedAt: demoTimestamp('2026-05-26T10:22:00+02:00'), inputs: { selectedConfigTypes: ['PC_DEMO_15KWH'] } },
-  }),
-];
-
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -124,33 +25,22 @@ document.addEventListener('DOMContentLoaded', () => {
     window.location.href = 'project-edit.html?new=1';
   });
 
-  // Listen for auth state changes. Demo branch is intentionally public and uses
-  // only local synthetic data, so it bypasses Firebase auth completely.
-  if (DEMO_OBFUSCATED) {
-    document.getElementById('userDisplayName').textContent = 'Demo preview';
-    document.getElementById('btnSignOut').classList.add('hide');
-    document.getElementById('btnNewProject').disabled = true;
-    document.getElementById('btnNewProject').title = 'Uitgeschakeld in demo-preview';
+  // Listen for auth state changes
+  onAuthStateChanged(user => {
+    if (!user) {
+      showState('stateLoggedOut');
+      return;
+    }
+    if (!isWhitelisted(user)) {
+      document.getElementById('notWhitelistedEmail').textContent = user.email || '(onbekend)';
+      showState('stateNotWhitelisted');
+      return;
+    }
+    document.getElementById('userDisplayName').textContent = user.displayName || user.email;
     showState('stateAuthorized');
     refreshProjectList(true);
     refreshLeads();
-  } else {
-    onAuthStateChanged(user => {
-      if (!user) {
-        showState('stateLoggedOut');
-        return;
-      }
-      if (!isWhitelisted(user)) {
-        document.getElementById('notWhitelistedEmail').textContent = user.email || '(onbekend)';
-        showState('stateNotWhitelisted');
-        return;
-      }
-      document.getElementById('userDisplayName').textContent = user.displayName || user.email;
-      showState('stateAuthorized');
-      refreshProjectList(true);
-      refreshLeads();
-    });
-  }
+  });
 
   document.getElementById('toggleShowDeleted').addEventListener('change', refreshProjectList);
   document.getElementById('toggleShowFinished').addEventListener('change', refreshProjectList);
@@ -214,6 +104,41 @@ const VOLTAGE_MEASUREMENT_LABELS = {
   nPe: 'N - PE',
 };
 
+// Demo-preview obfuscation: only display names are masked in the FE. The real
+// Firestore documents and all actions keep using the original project/lead IDs.
+// The salt is per page load; after refresh the demo names may change.
+const DEMO_NAME_SALT = Math.floor(Math.random() * 1000000);
+const DEMO_FIRST_NAMES = ['Mila', 'Noah', 'Lena', 'Finn', 'Ella', 'Lou', 'Nora', 'Tuur', 'Mona', 'Seppe', 'Lio', 'Fien'];
+const DEMO_LAST_NAMES = ['Peeters', 'Maes', 'Janssens', 'Willems', 'Dubois', 'Vermeulen', 'Claes', 'Jacobs', 'Mertens', 'Aerts'];
+const _demoNameCache = new Map();
+
+function _demoHash(value) {
+  const str = `${DEMO_NAME_SALT}:${value || ''}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+}
+
+function demoPersonName(key) {
+  const cacheKey = String(key || 'unknown');
+  if (_demoNameCache.has(cacheKey)) return _demoNameCache.get(cacheKey);
+  const hash = _demoHash(cacheKey);
+  const name = `${DEMO_FIRST_NAMES[hash % DEMO_FIRST_NAMES.length]} ${DEMO_LAST_NAMES[Math.floor(hash / DEMO_FIRST_NAMES.length) % DEMO_LAST_NAMES.length]}`;
+  _demoNameCache.set(cacheKey, name);
+  return name;
+}
+
+function demoCustomerName(record) {
+  return demoPersonName((record && (record.id || record.email || record.customerName || record.projectName)) || 'klant');
+}
+
+function demoProjectLabel(project) {
+  const realLabel = getProjectLabel(project);
+  if (!project || !project.projectName || project.projectName === project.customerName) return demoCustomerName(project);
+  const hash = _demoHash(project.id || project.projectName || realLabel);
+  return `Project ${['Koraal', 'Linde', 'Merel', 'Vesta', 'Nova', 'Orion'][hash % 6]}-${(hash % 90) + 10}`;
+}
+
 function fmtDateString(value) {
   if (!value) return '';
   const [year, month, day] = String(value).split('-');
@@ -239,17 +164,15 @@ function detailRowsHtml(rows) {
 
 function rowHTML(p, isDeleted) {
   const updated = fmtDate(p.updatedAt);
-  const editBtn = (isDeleted || DEMO_OBFUSCATED)
+  const editBtn = isDeleted
     ? ''
     : `<a class="btn btn-sm btn-outline-secondary editBtn" data-id="${p.id}" href="project-edit.html?project=${p.id}" title="Bewerk" aria-label="Bewerk project"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></a>`;
-  const calcBtn = (!DEMO_OBFUSCATED && !isDeleted && p.lastCalcRun && p.lastCalcRun.calculatedAt)
+  const calcBtn = (!isDeleted && p.lastCalcRun && p.lastCalcRun.calculatedAt)
     ? `<a class="btn btn-sm btn-outline-secondary calcBtn" data-id="${p.id}" href="index.html?project=${p.id}#results" title="Open berekening" aria-label="Open berekening"><i class="fa-solid fa-calculator" aria-hidden="true"></i></a>`
     : '';
-  const action  = DEMO_OBFUSCATED
-    ? `<span class="badge text-bg-light">demo</span>`
-    : isDeleted
+  const action  = isDeleted
     ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreBtn" data-id="${p.id}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
-       <button type="button" class="btn btn-sm btn-outline-danger permdelBtn"   data-id="${p.id}" data-name="${escapeHtml(getProjectLabel(p))}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
+       <button type="button" class="btn btn-sm btn-outline-danger permdelBtn"   data-id="${p.id}" data-name="${escapeHtml(demoProjectLabel(p))}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
     : `<button type="button" class="btn btn-sm btn-outline-danger deleteBtn"    data-id="${p.id}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
   const email  = currentUserEmail();
   const chat   = hasUnreadComments(p, email)
@@ -274,8 +197,8 @@ function rowHTML(p, isDeleted) {
     : '';
   return `
     <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${p.id}">
-      <td>${chat}${warn}${warnOfferte}${bebatWarn}<button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold projectNameBtn" data-id="${p.id}">${escapeHtml(getProjectLabel(p))}</button>${opsBadge}</td>
-      <td class="d-none d-sm-table-cell">${escapeHtml(p.customerName || '')}</td>
+      <td>${chat}${warn}${warnOfferte}${bebatWarn}<button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold projectNameBtn" data-id="${p.id}">${escapeHtml(demoProjectLabel(p))}</button>${opsBadge}</td>
+      <td class="d-none d-sm-table-cell">${escapeHtml(demoCustomerName(p))}</td>
       <td>${statusChipHTML(p.status, p.id)}</td>
       <td class="d-none d-sm-table-cell text-muted small">${updated}</td>
       <td class="d-none d-md-table-cell text-muted small">${p.lastCalcRun ? fmtDate(p.lastCalcRun.calculatedAt) : '—'}</td>
@@ -305,13 +228,8 @@ async function refreshProjectList(showSpinnerOverlay = false) {
 
   const doRefresh = async () => {
     try {
-      if (DEMO_OBFUSCATED) {
-        _projectsCache.active = DEMO_PROJECTS;
-        _projectsCache.deleted = [];
-      } else {
-        _projectsCache.active  = await listActiveProjects();
-        _projectsCache.deleted = showDeleted ? await listDeletedProjects() : [];
-      }
+      _projectsCache.active  = await listActiveProjects();
+      _projectsCache.deleted = showDeleted ? await listDeletedProjects() : [];
       renderCurrent();
       renderTaskInbox();
     } catch (e) {
@@ -355,8 +273,8 @@ function taskRowHTML(row) {
           <span class="fw-semibold">${escapeHtml(row.title || '')}</span>
         </div>
         <div class="small text-muted">
-          <a href="project-edit.html?project=${encodeURIComponent(row.projectId)}" class="text-decoration-none">${escapeHtml(row.projectLabel || '(zonder naam)')}</a>
-          ${row.customerName ? ` · ${escapeHtml(row.customerName)}` : ''}
+          <a href="project-edit.html?project=${encodeURIComponent(row.projectId)}" class="text-decoration-none">${escapeHtml(demoProjectLabel({ id: row.projectId, projectName: row.projectLabel, customerName: row.customerName }))}</a>
+          ${row.customerName ? ` · ${escapeHtml(demoPersonName(`${row.projectId || ''}:task-customer`))}` : ''}
           · ${escapeHtml(row.projectStatusLabel || row.projectStatus || '')}
           · ${escapeHtml(assignee)}${due}
           · bron: ${escapeHtml(source)}
@@ -448,7 +366,7 @@ function renderCurrent(resetPage = false) {
   const matchesFilters = p => {
     if (!p.deletedAt && !showFinished && FINISHED_STATUSES.includes(p.status)) return false;
     if (searchQ) {
-      const hay = ((p.projectName || '') + ' ' + (p.customerName || '')).toLowerCase();
+      const hay = `${p.projectName || ''} ${p.customerName || ''} ${demoProjectLabel(p)} ${demoCustomerName(p)}`.toLowerCase();
       if (!hay.includes(searchQ)) return false;
     }
     return true;
@@ -579,9 +497,9 @@ function kanbanCardHTML(p) {
   const bebat = bebatSummaryForProject(p);
   const bebatWarn = bebat.pending > 0 ? `<span class="row-warning" title="Bebat nog te registreren"><i class="fa-solid fa-recycle icon-warn" aria-hidden="true"></i></span>` : '';
   return `
-    <div class="kanban-card" draggable="${DEMO_OBFUSCATED ? 'false' : 'true'}" data-id="${p.id}">
-      <div class="kanban-card-title" data-id="${p.id}">${chat}${warn}${warnOfferte}${bebatWarn}${escapeHtml(getProjectLabel(p))}${opsBadge}</div>
-      <div class="kanban-card-customer">${escapeHtml(p.customerName || '')}</div>
+    <div class="kanban-card" draggable="true" data-id="${p.id}">
+      <div class="kanban-card-title" data-id="${p.id}">${chat}${warn}${warnOfferte}${bebatWarn}${escapeHtml(demoProjectLabel(p))}${opsBadge}</div>
+      <div class="kanban-card-customer">${escapeHtml(demoCustomerName(p))}</div>
       <div class="kanban-card-footer">
         ${statusChipHTML(p.status, p.id)}
       </div>
@@ -647,7 +565,6 @@ function wireBoard(el) {
   el.querySelectorAll('.kanban-card-title').forEach(t => {
     t.addEventListener('click', () => openDrawer(t.dataset.id));
   });
-  if (DEMO_OBFUSCATED) return;
   // Drag & drop: cards draggable, columns are drop targets.
   el.querySelectorAll('.kanban-card').forEach(card => {
     card.addEventListener('dragstart', e => {
@@ -753,9 +670,7 @@ async function openDrawer(projectId) {
 
   await withSpinner(async () => {
     try {
-      const project = DEMO_OBFUSCATED
-        ? DEMO_PROJECTS.find(p => p.id === projectId)
-        : await getProject(projectId);
+      const project = await getProject(projectId);
       // Stale guard: drawer was re-opened for a different project while we awaited
       if (_drawerProjectId !== openId) return;
       if (!project || project.deletedAt) {
@@ -764,12 +679,6 @@ async function openDrawer(projectId) {
       }
       _currentDrawerProject = project;
       renderDrawer(project);
-      if (DEMO_OBFUSCATED) {
-        renderComments(project, []);
-        const photoEl = document.getElementById('drawerPhotoUploader');
-        if (photoEl) photoEl.innerHTML = '<p class="text-muted small mb-0">Foto\'s uitgeschakeld in demo-preview.</p>';
-        return;
-      }
       // Load comments in parallel; mount the photo uploader component.
       const [comments] = await Promise.all([
         listComments(projectId).catch(e => { console.warn('listComments failed', e); return []; }),
@@ -862,8 +771,8 @@ function renderDrawer(project) {
 
   header.innerHTML = `
     <div class="flex-grow-1">
-      <h5 class="offcanvas-title mb-0" id="drawerHeaderTitle">${escapeHtml(getProjectLabel(project))}</h5>
-      <div class="text-muted small mt-1">${escapeHtml(project.customerName || '')} · ${statusChipHTML(project.status, project.id)}</div>
+      <h5 class="offcanvas-title mb-0" id="drawerHeaderTitle">${escapeHtml(demoProjectLabel(project))}</h5>
+      <div class="text-muted small mt-1">${escapeHtml(demoCustomerName(project))} · ${statusChipHTML(project.status, project.id)}</div>
     </div>
     <button type="button" class="btn-close ms-2" data-bs-dismiss="offcanvas" aria-label="Sluit"></button>
   `;
@@ -1022,41 +931,21 @@ function renderDrawer(project) {
   }
 
   // Actions
-  if (DEMO_OBFUSCATED) {
-    sections.push(`
-      <section class="border-bottom pb-3 mb-3">
-        <div class="alert alert-info mb-0">Demo-preview: acties, uploads en echte Firestore-writes zijn uitgeschakeld. Alle data is fictief.</div>
-      </section>
-    `);
-  } else {
-    const calcHref = project.lastCalcRun && project.lastCalcRun.calculatedAt
-      ? `index.html?project=${project.id}#results`
-      : `index.html?project=${project.id}`;
-    sections.push(`
-      <section class="border-bottom pb-3 mb-3">
-        <div class="d-grid d-md-flex gap-2">
-          <a class="btn btn-primary flex-md-grow-1" href="${calcHref}"><i class="fa-solid fa-calculator me-1" aria-hidden="true"></i> Open berekening</a>
-          <a class="btn btn-outline-primary flex-md-grow-1" href="project-edit.html?project=${project.id}"><i class="fa-solid fa-pen-to-square me-1" aria-hidden="true"></i> Bewerk project</a>
-          <button type="button" class="btn btn-outline-danger flex-md-grow-1" id="drawerDeleteBtn"><i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Verwijderen</button>
-        </div>
-      </section>
-    `);
-  }
+  const calcHref = project.lastCalcRun && project.lastCalcRun.calculatedAt
+    ? `index.html?project=${project.id}#results`
+    : `index.html?project=${project.id}`;
+  sections.push(`
+    <section class="border-bottom pb-3 mb-3">
+      <div class="d-grid d-md-flex gap-2">
+        <a class="btn btn-primary flex-md-grow-1" href="${calcHref}"><i class="fa-solid fa-calculator me-1" aria-hidden="true"></i> Open berekening</a>
+        <a class="btn btn-outline-primary flex-md-grow-1" href="project-edit.html?project=${project.id}"><i class="fa-solid fa-pen-to-square me-1" aria-hidden="true"></i> Bewerk project</a>
+        <button type="button" class="btn btn-outline-danger flex-md-grow-1" id="drawerDeleteBtn"><i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Verwijderen</button>
+      </div>
+    </section>
+  `);
 
   // Configs / offertes per type
-  if (DEMO_OBFUSCATED) {
-    const selected = (project.lastCalcRun && project.lastCalcRun.inputs && project.lastCalcRun.inputs.selectedConfigTypes) || [];
-    if (selected.length) {
-      sections.push(`
-        <section class="border-bottom pb-3 mb-3">
-          <h6 class="mb-2 text-uppercase text-muted">Configs</h6>
-          <div class="d-flex flex-wrap gap-2">${selected.map(t => `<span class="badge text-bg-light">${escapeHtml(t)}</span>`).join('')}</div>
-        </section>
-      `);
-    }
-  } else {
-    sections.push(renderOffertesSection(project));
-  }
+  sections.push(renderOffertesSection(project));
 
   // Situation
   if (m.situation) {
@@ -1093,32 +982,21 @@ function renderDrawer(project) {
   `);
 
   // Comments placeholder (filled by renderComments)
-  if (DEMO_OBFUSCATED) {
-    sections.push(`
-      <section id="drawerCommentsSection">
-        <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-comments" aria-hidden="true"></i> Opmerkingen</h6>
-        <p class="sp-empty-state">Opmerkingen uitgeschakeld in demo-preview.</p>
-      </section>
-    `);
-  } else {
-    sections.push(`
-      <section id="drawerCommentsSection">
-        <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-comments" aria-hidden="true"></i> Opmerkingen <span id="drawerCommentsCount" class="text-muted fw-normal"></span></h6>
-        <div class="d-flex flex-column gap-2 mb-3" id="drawerCommentsList"><p class="sp-empty-state">⏳ Laden…</p></div>
-        <div class="input-group mt-2">
-          <textarea id="drawerCommentInput" class="form-control" rows="2" placeholder="Opmerking toevoegen…" maxlength="4000"></textarea>
-          <button type="button" class="btn btn-primary" id="drawerCommentSubmit">Versturen</button>
-        </div>
-        <div class="text-danger small mt-1" id="drawerCommentErr"></div>
-      </section>
-    `);
-  }
+  sections.push(`
+    <section id="drawerCommentsSection">
+      <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-comments" aria-hidden="true"></i> Opmerkingen <span id="drawerCommentsCount" class="text-muted fw-normal"></span></h6>
+      <div class="d-flex flex-column gap-2 mb-3" id="drawerCommentsList"><p class="sp-empty-state">⏳ Laden…</p></div>
+      <div class="input-group mt-2">
+        <textarea id="drawerCommentInput" class="form-control" rows="2" placeholder="Opmerking toevoegen…" maxlength="4000"></textarea>
+        <button type="button" class="btn btn-primary" id="drawerCommentSubmit">Versturen</button>
+      </div>
+      <div class="text-danger small mt-1" id="drawerCommentErr"></div>
+    </section>
+  `);
 
   body.innerHTML = sections.join('');
 
   renderDrawerSerials(project);
-
-  if (DEMO_OBFUSCATED) return;
 
   const commentInput = document.getElementById('drawerCommentInput');
   attachSpeechToText(commentInput, {
@@ -1277,14 +1155,13 @@ function renderComments(project, comments) {
 
 // Offerte modal + click delegation — wired once against the drawer element.
 (function bindOffertesShared() {
-  if (DEMO_OBFUSCATED) return;
   ensureOfferteModal();
   const drawer = document.getElementById('drawer');
   if (drawer) wireOffertesClicks(drawer, () => _currentDrawerProject, _refreshCurrentDrawer);
 })();
 
 // Status-dropdown delegation via shared component (assets/js/status-chip.js)
-if (!DEMO_OBFUSCATED) wireStatusChipClicks(document, () => refreshProjectList());
+wireStatusChipClicks(document, () => refreshProjectList());
 
 // ─── LEADS SECTION ──────────────────────────────────────────────────────
 
@@ -1292,13 +1169,6 @@ let _leadsCache = { active: [], deleted: [] };
 
 async function refreshLeads() {
   const card = document.getElementById('leadsCard');
-  if (DEMO_OBFUSCATED) {
-    _leadsCache.active = [];
-    _leadsCache.deleted = [];
-    card.style.display = '';
-    renderLeads();
-    return;
-  }
   try {
     const all = await listLeads();
     _leadsCache.active  = all.filter(l => !l.deletedAt);
@@ -1357,12 +1227,12 @@ function leadRowHTML(l, isDeleted) {
     : '';
   const action = isDeleted
     ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreLeadBtn" data-id="${l.id}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
-       <button type="button" class="btn btn-sm btn-outline-danger permdelLeadBtn" data-id="${l.id}" data-name="${escapeHtml(l.customerName || '')}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
+       <button type="button" class="btn btn-sm btn-outline-danger permdelLeadBtn" data-id="${l.id}" data-name="${escapeHtml(demoCustomerName(l))}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
     : `<button type="button" class="btn btn-sm btn-outline-primary convertLeadBtn" data-id="${l.id}" title="Maak project aan" aria-label="Maak project aan"><i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i></button>
        <button type="button" class="btn btn-sm btn-outline-danger deleteLeadBtn" data-id="${l.id}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
   return `
     <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${l.id}">
-      <td>${escapeHtml(l.customerName || '')}</td>
+      <td>${escapeHtml(demoCustomerName(l))}</td>
       <td class="d-none d-sm-table-cell text-break"><a href="mailto:${escapeHtml(l.email || '')}">${escapeHtml(l.email || '')}</a></td>
       <td><span class="badge" style="background:${statusColor};">${statusLabel}</span></td>
       <td class="d-none d-sm-table-cell text-muted small">${date}</td>
