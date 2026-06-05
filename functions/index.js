@@ -1,4 +1,15 @@
 import * as functions from 'firebase-functions/v2';
+import {
+  SMARTPEAK_TASK_USERS,
+  REMINDER_TYPES,
+  buildDueDateReminderEmail,
+  buildTaskOverviewEmail,
+  dueDateReminderTypesForDate,
+  hasReminderBeenSent,
+  isOpenTask,
+  markReminderSent,
+  reminderRecipientsForTask,
+} from './task-reminders.js';
 import { defineSecret } from 'firebase-functions/params';
 import admin from 'firebase-admin';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
@@ -8,7 +19,8 @@ if (!admin.apps.length) admin.initializeApp();
 const billitApiKey = defineSecret('BILLIT_API_KEY');
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
 const BILLIT_BASE_URL = 'https://api.sandbox.billit.be';
-const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'ledsrepair@gmail.com']);
+const TASKS_URL = 'https://smartpeak-battery-roi.netlify.app/tasks.html';
+const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be']);
 
 // Vision client — lazy singleton. Firebase CLI loads this module during deploy
 // analysis; constructing the client eagerly can trigger local ADC/metadata
@@ -338,6 +350,121 @@ async function cleanupSerialEntry(projectId, photoId, serialEntryId) {
     });
   } catch { /* photo deleted */ }
 }
+
+function projectLabel(project) {
+  return cleanString(project.projectName || project.customerName || project.name || project.id || 'Project', 160);
+}
+
+function normalizeTaskForMail(project, task) {
+  return {
+    ...task,
+    status: task.status || 'open',
+    projectId: project.id,
+    projectLabel: projectLabel(project),
+  };
+}
+
+function mailDocId(parts) {
+  return parts.map(part => cleanString(part, 80).replace(/[^a-z0-9_-]+/gi, '_')).join('_').slice(0, 240);
+}
+
+async function createMail(db, id, envelope, kind, createdAt) {
+  await db.collection('mail').doc(id).set({
+    kind,
+    to: envelope.to,
+    message: envelope.message,
+    createdAt,
+  }, { merge: false });
+}
+
+async function sendDueDateRemindersForProject(db, projectRef, project, today, now) {
+  const tasks = Array.isArray(project.tasks) ? project.tasks : [];
+  let changed = false;
+  const updatedTasks = [];
+  for (const rawTask of tasks) {
+    let task = rawTask && typeof rawTask === 'object' ? { ...rawTask } : rawTask;
+    if (!task || typeof task !== 'object' || !isOpenTask(task) || !task.dueDate) {
+      updatedTasks.push(task);
+      continue;
+    }
+    const reminderTypes = dueDateReminderTypesForDate(today, task.dueDate);
+    for (const reminderType of reminderTypes) {
+      for (const user of reminderRecipientsForTask(task)) {
+        if (hasReminderBeenSent(task, reminderType, user.email, today)) continue;
+        const id = mailDocId(['task', projectRef.id, task.id || task.title, reminderType, user.key, today]);
+        const envelope = buildDueDateReminderEmail({
+          user,
+          task: normalizeTaskForMail({ ...project, id: projectRef.id }, task),
+          reminderType,
+          tasksUrl: TASKS_URL,
+        });
+        await createMail(db, id, envelope, 'task_due_reminder', now);
+        task = markReminderSent(task, reminderType, user.email, today, id);
+        changed = true;
+      }
+    }
+    updatedTasks.push(task);
+  }
+  if (changed) {
+    await projectRef.update({ tasks: updatedTasks, updatedAt: now });
+  }
+}
+
+async function sendWeeklyTaskOverview(db, projects, user, today, now) {
+  const assignedTasks = [];
+  const generalTasks = [];
+  const touched = [];
+  for (const item of projects) {
+    const tasks = Array.isArray(item.project.tasks) ? item.project.tasks : [];
+    const nextTasks = [];
+    let changed = false;
+    for (const rawTask of tasks) {
+      let task = rawTask && typeof rawTask === 'object' ? { ...rawTask } : rawTask;
+      if (!task || typeof task !== 'object' || !isOpenTask(task)) {
+        nextTasks.push(task);
+        continue;
+      }
+      const normalized = normalizeTaskForMail({ ...item.project, id: item.ref.id }, task);
+      if (task.assignee === user.key) assignedTasks.push(normalized);
+      if (!task.assignee) generalTasks.push(normalized);
+      if ((task.assignee === user.key || !task.assignee) && !hasReminderBeenSent(task, REMINDER_TYPES.WEEKLY_OVERVIEW, user.email, today)) {
+        const mailId = mailDocId(['weekly', user.key, today]);
+        task = markReminderSent(task, REMINDER_TYPES.WEEKLY_OVERVIEW, user.email, today, mailId);
+        changed = true;
+      }
+      nextTasks.push(task);
+    }
+    if (changed) touched.push({ ref: item.ref, tasks: nextTasks });
+  }
+  if (!assignedTasks.length && !generalTasks.length) return;
+  const id = mailDocId(['weekly', user.key, today]);
+  const envelope = buildTaskOverviewEmail({ user, assignedTasks, generalTasks, tasksUrl: TASKS_URL });
+  await createMail(db, id, envelope, 'task_weekly_overview', now);
+  await Promise.all(touched.map(item => item.ref.update({ tasks: item.tasks, updatedAt: now })));
+}
+
+export async function runTaskReminderJob(today = new Date().toISOString().slice(0, 10)) {
+  const db = admin.firestore();
+  const now = admin.firestore.Timestamp.now();
+  const snap = await db.collection('projects').get();
+  const projects = snap.docs
+    .map(refSnap => ({ ref: refSnap.ref, project: refSnap.data() || {} }))
+    .filter(item => !item.project.deletedAt);
+
+  await Promise.all(projects.map(item => sendDueDateRemindersForProject(db, item.ref, item.project, today, now)));
+
+  const day = new Date(`${today}T00:00:00Z`).getUTCDay();
+  if (day === 0) {
+    for (const user of SMARTPEAK_TASK_USERS) {
+      await sendWeeklyTaskOverview(db, projects, user, today, now);
+    }
+  }
+}
+
+export const taskRemindersDaily = functions.scheduler.onSchedule(
+  { schedule: '0 8 * * *', timeZone: 'Europe/Brussels', region: 'europe-west1' },
+  async () => runTaskReminderJob(),
+);
 
 export const ocrSerial = functions.firestore.onDocumentWritten(
   { document: 'projects/{projectId}/photos/{photoId}', region: 'europe-west1' },

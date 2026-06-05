@@ -271,7 +271,7 @@ describe('operations workflow defaults', () => {
     ]);
   });
 
-  it('builds a cross-project task inbox with own tasks by default and suggested actions', () => {
+  it('builds a cross-project task inbox with own tasks, general tasks and suggested actions', () => {
     const { projectTaskRowsForProjects } = loadHelpers();
     const projects = [
       {
@@ -281,6 +281,7 @@ describe('operations workflow defaults', () => {
         tasks: [
           { id: 'task-kevin', title: 'Klant bellen', assignee: 'kevin', status: 'open', dueDate: '2026-05-25' },
           { id: 'task-ruben', title: 'Bebat nakijken', assignee: 'ruben', status: 'open' },
+          { id: 'task-general', title: 'Algemene opvolging', assignee: null, status: 'open' },
           { id: 'task-done', title: 'Afgewerkt', assignee: 'kevin', status: 'done' },
         ],
       },
@@ -306,9 +307,13 @@ describe('operations workflow defaults', () => {
       expect.objectContaining({ rowType: 'suggested', projectId: 'project-data', type: 'request_energy_data', title: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin' }),
     ]));
     expect(kevinRows.some(row => row.projectId === 'project-kevin' && row.type === 'request_energy_data')).toBe(false);
+    expect(kevinRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rowType: 'task', projectId: 'project-kevin', taskId: 'task-general', title: 'Algemene opvolging', assignee: null }),
+    ]));
     expect(kevinRows.some(row => row.taskId === 'task-ruben' || row.taskId === 'task-done')).toBe(false);
     expect(projectTaskRowsForProjects(projects, { assignee: 'ruben' })).toEqual([
       expect.objectContaining({ rowType: 'task', projectId: 'project-kevin', taskId: 'task-ruben', title: 'Bebat nakijken', assignee: 'ruben' }),
+      expect.objectContaining({ rowType: 'task', projectId: 'project-kevin', taskId: 'task-general', title: 'Algemene opvolging', assignee: null }),
       expect.objectContaining({ rowType: 'suggested', projectId: 'project-ruben', type: 'register_bebat', title: '1 batterijserienummer(s) nog Bebat registreren', assignee: 'ruben' }),
     ]);
   });
@@ -316,7 +321,9 @@ describe('operations workflow defaults', () => {
   it('maps whitelisted emails to the default dashboard task owner', () => {
     const { assigneeForEmail } = loadHelpers();
     expect(assigneeForEmail('kevin@bloxit.be')).toBe('kevin');
+    expect(assigneeForEmail('kevin@smartpeak.be')).toBe('kevin');
     expect(assigneeForEmail('ledsrepair@gmail.com')).toBe('ruben');
+    expect(assigneeForEmail('ruben@smartpeak.be')).toBe('ruben');
     expect(assigneeForEmail('someone@example.com')).toBe('all');
   });
 });

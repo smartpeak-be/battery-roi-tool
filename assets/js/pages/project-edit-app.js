@@ -27,6 +27,12 @@ function showError(msg) {
   el.classList.remove('hide');
 }
 function clearError() { document.getElementById('globalError').classList.add('hide'); }
+function fmtDateString(value) {
+  if (!value) return '';
+  const [year, month, day] = String(value).split('-');
+  if (!year || !month || !day) return String(value);
+  return `${day}/${month}/${year}`;
+}
 
 function showFieldError(fieldId, msg) {
   const el = document.getElementById(fieldId);
@@ -1157,20 +1163,28 @@ function sectionOps() {
   const tasks = (_project.tasks || []).map(normalizeProjectTask);
   const activities = (_project.activities || []).map(normalizeProjectActivity);
   const nextActions = nextActionsForProject(_project);
-  const taskRows = tasks.length ? tasks.map(t => `
-    <div class="border rounded p-2 d-flex flex-column flex-md-row gap-2 align-items-md-center" data-task-id="${escapeHtml(t.id)}">
-      <select class="form-select form-select-sm w-auto" data-task-field="status">
-        ${['open','in_progress','done','cancelled'].map(s => `<option value="${s}" ${t.status === s ? 'selected' : ''}>${s === 'open' ? 'Open' : s === 'in_progress' ? 'Bezig' : s === 'done' ? 'Gedaan' : 'Geannuleerd'}</option>`).join('')}
-      </select>
-      <input class="form-control form-control-sm flex-grow-1" data-task-field="title" value="${escapeHtml(t.title || '')}" placeholder="Taak" />
-      <select class="form-select form-select-sm w-auto" data-task-field="assignee">
-        <option value="" ${!t.assignee ? 'selected' : ''}>Nog toe te wijzen</option>
-        <option value="kevin" ${t.assignee === 'kevin' ? 'selected' : ''}>Kevin</option>
-        <option value="ruben" ${t.assignee === 'ruben' ? 'selected' : ''}>Ruben</option>
-      </select>
-      <input type="date" class="form-control form-control-sm w-auto" data-task-field="dueDate" value="${escapeHtml(t.dueDate || '')}" />
-      <button type="button" class="btn btn-sm btn-outline-danger" data-task-delete="${escapeHtml(t.id)}" title="Taak verwijderen"><i class="fa-solid fa-trash"></i></button>
-    </div>`).join('') : '<p class="text-muted mb-0">Nog geen taken.</p>';
+  const taskRows = tasks.length ? tasks.map(t => {
+    const created = t.createdAt ? `<span class="small text-muted">Aangemaakt: ${escapeHtml(fmtDateString(String(t.createdAt).slice(0, 10)))}</span>` : '';
+    const updated = t.updatedAt ? `<span class="small text-muted">Gewijzigd: ${escapeHtml(fmtDateString(String(t.updatedAt).slice(0, 10)))}</span>` : '';
+    return `
+    <div class="border rounded p-2 d-flex flex-column gap-2" data-task-id="${escapeHtml(t.id)}">
+      <div class="d-flex flex-column flex-md-row gap-2 align-items-md-center">
+        <select class="form-select form-select-sm w-auto" data-task-field="status">
+          ${['open','in_progress','done','cancelled'].map(s => `<option value="${s}" ${t.status === s ? 'selected' : ''}>${s === 'open' ? 'Open' : s === 'in_progress' ? 'Bezig' : s === 'done' ? 'Gedaan' : 'Geannuleerd'}</option>`).join('')}
+        </select>
+        <input class="form-control form-control-sm flex-grow-1" data-task-field="title" value="${escapeHtml(t.title || '')}" placeholder="Taak" />
+        <select class="form-select form-select-sm w-auto" data-task-field="assignee">
+          <option value="" ${!t.assignee ? 'selected' : ''}>Nog toe te wijzen</option>
+          <option value="kevin" ${t.assignee === 'kevin' ? 'selected' : ''}>Kevin</option>
+          <option value="ruben" ${t.assignee === 'ruben' ? 'selected' : ''}>Ruben</option>
+        </select>
+        <input type="date" class="form-control form-control-sm w-auto" data-task-field="dueDate" value="${escapeHtml(t.dueDate || '')}" title="Due date" />
+        <button type="button" class="btn btn-sm btn-outline-danger" data-task-delete="${escapeHtml(t.id)}" title="Taak verwijderen"><i class="fa-solid fa-trash"></i></button>
+      </div>
+      <textarea class="form-control form-control-sm" data-task-field="notes" rows="2" placeholder="Beschrijving/notitie">${escapeHtml(t.notes || '')}</textarea>
+      ${(created || updated) ? `<div class="d-flex flex-wrap gap-2">${created}${updated}</div>` : ''}
+    </div>`;
+  }).join('') : '<p class="text-muted mb-0">Nog geen taken.</p>';
   const activityRows = activities.length ? activities.slice().reverse().map(a => `
     <div class="border-start border-3 ps-2 py-1">
       <div class="small text-muted">${escapeHtml(a.type)} · ${escapeHtml(a.occurredAt || 'geen datum')} · bron: ${escapeHtml(a.source || 'manual')} · ${escapeHtml(a.confidence || 'zeker')}</div>
@@ -1233,24 +1247,29 @@ function rerenderOps() {
 
 function wireOps() {
   document.getElementById('opsAddTask')?.addEventListener('click', () => {
+    const now = new Date().toISOString();
     _project.tasks = _project.tasks || [];
-    _project.tasks.push(normalizeProjectTask({ title: '', assignee: 'kevin' }));
+    _project.tasks.push(normalizeProjectTask({ title: '', assignee: null, createdAt: now, updatedAt: now }));
     rerenderOps();
   });
   document.querySelectorAll('[data-add-suggested-task]').forEach(btn => {
     btn.addEventListener('click', () => {
+      const now = new Date().toISOString();
       _project.tasks = _project.tasks || [];
       _project.tasks.push(normalizeProjectTask({
         type: btn.getAttribute('data-add-suggested-task'),
         title: btn.getAttribute('data-title'),
         assignee: btn.getAttribute('data-assignee'),
         source: 'suggested',
+        createdAt: now,
+        updatedAt: now,
       }));
       rerenderOps();
     });
   });
   document.querySelectorAll('[data-ignore-suggested-task]').forEach(btn => {
     btn.addEventListener('click', () => {
+      const now = new Date().toISOString();
       _project.tasks = _project.tasks || [];
       _project.tasks.push(normalizeProjectTask({
         type: btn.getAttribute('data-ignore-suggested-task'),
@@ -1259,6 +1278,9 @@ function wireOps() {
         status: 'cancelled',
         source: 'manual',
         notes: 'Genegeerd vanuit projectopvolging.',
+        createdAt: now,
+        updatedAt: now,
+        cancelledAt: now,
       }));
       rerenderOps();
     });
@@ -1294,6 +1316,9 @@ function _updateTaskFromRow(e) {
   const task = (_project.tasks || []).find(t => t.id === id);
   if (!task) return;
   task[e.target.getAttribute('data-task-field')] = e.target.value || null;
+  task.updatedAt = new Date().toISOString();
+  if (task.status === 'done' && !task.completedAt) task.completedAt = task.updatedAt;
+  if (task.status === 'cancelled' && !task.cancelledAt) task.cancelledAt = task.updatedAt;
 }
 
 function sectionBlokD() {
