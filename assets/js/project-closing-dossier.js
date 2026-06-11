@@ -241,11 +241,12 @@ export function renderClosingDossierHtml(model) {
 export function openClosingDossierPrintWindow(model, targetWindow = null) {
   const html = renderClosingDossierHtml(model);
   const browserWindow = typeof globalThis.window !== 'undefined' ? globalThis.window : null;
-  const win = targetWindow || (browserWindow ? browserWindow.open('', '_blank', 'noopener,noreferrer') : null);
+  const win = targetWindow || (browserWindow ? browserWindow.open('', 'smartpeakClosingDossier') : null);
   if (!win) return { ok: false, html };
   win.document.open();
   win.document.write(html);
   win.document.close();
+  if (typeof win.focus === 'function') win.focus();
   return { ok: true, html };
 }
 

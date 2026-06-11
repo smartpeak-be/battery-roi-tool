@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildClosingDossierModel,
-  renderClosingDossierHtml,
+  openClosingDossierPrintWindow,
 } from '../assets/js/project-closing-dossier.js';
 
 const baseProject = {
@@ -82,25 +82,40 @@ describe('project closing dossier', () => {
     expect(JSON.stringify(model).toLowerCase()).not.toContain('terugverdientijd');
   });
 
-  it('rendert moderne SmartPeak HTML met print/PDF-knop en duidelijke placeholders', () => {
-    const model = buildClosingDossierModel(baseProject, {
-      comments: [],
-      photos: [],
-      documents: [],
-      generatedAt: '2026-06-11T18:00:00.000Z',
-    });
+  it('opent het printvenster schrijfbaar zonder noopener zodat about:blank niet leeg blijft', () => {
+    const model = buildClosingDossierModel(baseProject, { generatedAt: '2026-06-11T18:00:00.000Z' });
+    const calls = [];
+    const written = [];
+    const fakeWindow = {
+      open: (...args) => {
+        calls.push(args);
+        return {
+          document: {
+            open: () => written.push('open'),
+            write: html => written.push(html),
+            close: () => written.push('close'),
+          },
+          focus: () => written.push('focus'),
+        };
+      },
+    };
+    const previousWindow = globalThis.window;
+    globalThis.window = fakeWindow;
 
-    const html = renderClosingDossierHtml(model);
+    try {
+      const result = openClosingDossierPrintWindow(model);
 
-    expect(html).toContain('Afsluitdossier installatie');
-    expect(html).toContain('SmartPeak');
-    expect(html).toContain('David Verberkmoes');
-    expect(html).toContain('Spelonckvaart 64A, 9180 Lokeren');
-    expect(html).toContain('data-closing-dossier-print');
-    expect(html).toContain('Facturen');
-    expect(html).toContain('Technische fiches');
-    expect(html).toContain('Handleidingen');
-    expect(html).toContain('De berekening zelf wordt niet opgenomen');
-    expect(html).not.toContain('14.1');
+      expect(result.ok).toBe(true);
+      expect(calls[0][0]).toBe('');
+      expect(calls[0][1]).toBe('smartpeakClosingDossier');
+      const features = calls[0][2] || '';
+      expect(features).not.toContain('noopener');
+      expect(features).not.toContain('noreferrer');
+      expect(written.some(v => typeof v === 'string' && v.includes('Afsluitdossier installatie'))).toBe(true);
+      expect(written).toContain('focus');
+    } finally {
+      if (previousWindow === undefined) delete globalThis.window;
+      else globalThis.window = previousWindow;
+    }
   });
 });
