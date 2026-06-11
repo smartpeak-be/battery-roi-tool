@@ -1,7 +1,7 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 import { mountProjectDocuments } from '../project-documents.js';
-import { buildClosingDossierModel, openClosingDossierPrintWindow } from '../project-closing-dossier.js';
+import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
@@ -1034,19 +1034,29 @@ function renderDrawer(project) {
     closingBtn.addEventListener('click', async () => {
       closingBtn.disabled = true;
       const oldHtml = closingBtn.innerHTML;
-      closingBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Dossier maken…';
+      closingBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Dossier voorbereiden…';
       await withSpinner(async () => {
         try {
-          const [comments, photos, documents] = await Promise.all([
-            listComments(project.id).catch(err => { console.warn('closing dossier comments failed', err); return []; }),
+          const [photos, documents] = await Promise.all([
             listProjectPhotos(project.id).catch(err => { console.warn('closing dossier photos failed', err); return []; }),
             listProjectDocuments(project.id).catch(err => { console.warn('closing dossier documents failed', err); return []; }),
           ]);
-          const model = buildClosingDossierModel(_currentDrawerProject || project, { comments, photos, documents });
-          const result = openClosingDossierPrintWindow(model);
-          if (!result.ok) {
-            showToast('Popup geblokkeerd. Sta popups toe om het afsluitdossier te openen.', 'warning');
-          }
+          const model = buildClosingDossierModel(_currentDrawerProject || project, { photos, documents });
+          const drafts = buildClosingDossierDraftTexts(model);
+          document.getElementById('spClosingDossierModal')?.remove();
+          document.body.insertAdjacentHTML('beforeend', renderClosingDossierEditorModalHtml(drafts));
+          const modalEl = document.getElementById('spClosingDossierModal');
+          const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+          modalEl.querySelector('[data-closing-generate]').addEventListener('click', () => {
+            const texts = {};
+            modalEl.querySelectorAll('[data-closing-text]').forEach(input => {
+              texts[input.getAttribute('data-closing-text')] = input.value;
+            });
+            const result = openClosingDossierPrintWindow(model, null, { texts });
+            if (!result.ok) showToast('Popup geblokkeerd. Sta popups toe om het afsluitdossier te openen.', 'warning');
+            else modal.hide();
+          }, { once: true });
+          modal.show();
         } catch (err) {
           showToast('Afsluitdossier maken mislukt: ' + (err && err.message ? err.message : err), 'danger');
         } finally {

@@ -11,6 +11,12 @@ const BRAND = {
   muted: '#6b7a99',
 };
 
+const VOLTAGE_LABELS = {
+  l1N: 'L1 - N', l2N: 'L2 - N', l3N: 'L3 - N',
+  l1L2: 'L1 - L2', l1L3: 'L1 - L3', l2L3: 'L2 - L3',
+  l1Pe: 'L1 - PE', l2Pe: 'L2 - PE', l3Pe: 'L3 - PE', nPe: 'N - PE',
+};
+
 function text(value, fallback = '') {
   const s = String(value ?? '').trim();
   return s || fallback;
@@ -67,6 +73,13 @@ function fileTitle(doc) {
   return text(doc?.title, text(doc?.name, 'Document'));
 }
 
+function productLabel(product) {
+  return [product?.brand, product?.model].filter(Boolean).join(' ').trim()
+    || product?.description
+    || product?.name
+    || 'Product';
+}
+
 function classifyDocument(doc) {
   const hay = `${doc?.title || ''} ${doc?.name || ''} ${doc?.description || ''}`.toLowerCase();
   if (/factuur|invoice|voorschot|saldo/.test(hay)) return 'facturen';
@@ -76,12 +89,14 @@ function classifyDocument(doc) {
 }
 
 function normalizePhoto(photo) {
+  const full = photo.downloadUrl || photo.url || photo.annotatedUrl || photo.fullUrl || '';
   return {
     id: photo.id || '',
     tag: photo.tag === 'serial' ? 'serial' : 'situatie',
     title: text(photo.title, text(photo.name, 'Foto')),
-    url: photo.annotatedThumbUrl || photo.thumbUrl || photo.downloadUrl || photo.url || '',
-    fullUrl: photo.downloadUrl || photo.annotatedThumbUrl || photo.thumbUrl || photo.url || '',
+    // Gebruik originele URL eerst; thumbnails maken het dossier zichtbaar korrelig.
+    url: full || photo.annotatedThumbUrl || photo.thumbUrl || '',
+    fullUrl: full || photo.annotatedThumbUrl || photo.thumbUrl || '',
   };
 }
 
@@ -97,12 +112,60 @@ function normalizeDocument(doc) {
   };
 }
 
+function productSpecsText(product) {
+  const specs = product?.specs || {};
+  const parts = [];
+  if (Number.isFinite(Number(specs.capacityKwh))) parts.push(`${Number(specs.capacityKwh).toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kWh`);
+  if (Number.isFinite(Number(specs.powerKw))) parts.push(`${Number(specs.powerKw).toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kW`);
+  if (Number.isFinite(Number(specs.weightKg))) parts.push(`${Number(specs.weightKg).toLocaleString('nl-BE', { maximumFractionDigits: 1 })} kg`);
+  return parts.join(' · ');
+}
+
+function buildPlacedItems(cfg, productsById = {}) {
+  const items = Array.isArray(cfg?.items) ? cfg.items : [];
+  const mapped = items.map(item => {
+    const qty = Math.max(1, Number(item.qty) || 1);
+    const product = productsById[item.productId] || item.product || null;
+    const label = product ? productLabel(product) : text(item.description || item.productId, 'Product');
+    return {
+      qty,
+      label,
+      specs: productSpecsText(product),
+      datasheetUrl: product?.datasheetUrl || product?.specs?.datasheetUrl || item.datasheetUrl || '',
+      manualUrl: product?.manualUrl || product?.specs?.manualUrl || item.manualUrl || '',
+    };
+  }).filter(item => item.label);
+  if (mapped.length) return mapped;
+  if (cfg?.omschrijving) {
+    return [{ qty: 1, label: cfg.omschrijving, specs: '', datasheetUrl: '', manualUrl: '' }];
+  }
+  return [];
+}
+
+function buildTechnicalRows(project) {
+  const t = project?.technical || {};
+  const rows = [];
+  if (t.earthResistanceMeasured === true) rows.push(['Aardweerstand gemeten', 'Ja']);
+  else if (t.earthResistanceMeasured === false) rows.push(['Aardweerstand gemeten', 'Nee']);
+  if (t.earthResistanceOhm != null && t.earthResistanceOhm !== '') rows.push(['Aardweerstand', `${t.earthResistanceOhm} Ω`]);
+  if (t.earthResistanceMeasuredDate) rows.push(['Meetdatum aardweerstand', formatDate(t.earthResistanceMeasuredDate)]);
+  Object.entries(t.voltageMeasurements || {}).forEach(([key, value]) => {
+    if (value != null && value !== '') rows.push([`Spanning ${VOLTAGE_LABELS[key] || key}`, `${value} V`]);
+  });
+  const electrical = project?.electrical || {};
+  if (electrical.connectionType) rows.push(['Aansluiting', electrical.connectionType]);
+  if (electrical.fuseRatingA) rows.push(['Hoofdzekering', `${electrical.fuseRatingA} A`]);
+  (project?.solar?.inverters || []).forEach((inv, idx) => {
+    const label = [inv.brand, inv.model].filter(Boolean).join(' ').trim() || `Omvormer ${idx + 1}`;
+    const power = inv.powerKw != null ? ` · ${formatKw(inv.powerKw)}` : '';
+    rows.push([`PV-omvormer ${idx + 1}`, `${label}${power}`]);
+  });
+  if (t.technicalNotes) rows.push(['Technische opmerkingen', t.technicalNotes]);
+  return rows;
+}
+
 export function buildClosingDossierModel(project, options = {}) {
   const cfg = firstConfig(project);
-  const comments = (options.comments || []).map(c => ({
-    date: formatDate(c.createdAt || c.occurredAt || c.date, ''),
-    text: text(c.text || c.title || c.notes),
-  })).filter(c => c.text);
   const photos = (options.photos || []).map(normalizePhoto);
   const documents = (options.documents || []).map(normalizeDocument);
   const docsByCategory = {
@@ -123,6 +186,7 @@ export function buildClosingDossierModel(project, options = {}) {
       phone: text(project?.customer?.phone),
     },
     status: text(project?.status, 'Onbekend'),
+    originalRequestSource: text(project?.situation || project?.description || project?.customerRequest || ''),
     planning: {
       visitDoneDate: formatDate(project?.planning?.visitDoneDate),
       installationDoneDate: formatDate(project?.planning?.installationDoneDate),
@@ -141,6 +205,8 @@ export function buildClosingDossierModel(project, options = {}) {
       pvInverter: formatKw(project?.lastCalcRun?.inputs?.pvInv),
       offerte: text(firstOfferte(project)?.filename, 'Nog niet gekoppeld'),
     },
+    placedItems: buildPlacedItems(cfg, options.productsById || {}),
+    technicalRows: buildTechnicalRows(project),
     energyContext: {
       period: [project?.lastCalcRun?.results?.windowStart, project?.lastCalcRun?.results?.lastDate].filter(Boolean).join(' → ') || 'Nog niet ingevuld',
       totalAfname: formatKwh(project?.lastCalcRun?.results?.totalAfname),
@@ -157,8 +223,26 @@ export function buildClosingDossierModel(project, options = {}) {
       serial: photos.filter(p => p.tag === 'serial'),
     },
     documents: docsByCategory,
-    timeline: comments,
+    // Projectopmerkingen blijven interne keuken en gaan bewust niet mee.
+    timeline: [],
   };
+}
+
+export function buildClosingDossierDraftTexts(model) {
+  const original = model.originalRequestSource
+    || 'Beschrijf hier kort de oorspronkelijke aanvraag en wat SmartPeak ter plaatse of op basis van de projectgegevens heeft bekeken.';
+  return {
+    projectSummary: `Voor ${model.customer.name} werd een thuisbatterij-oplossing uitgewerkt en opgevolgd door SmartPeak. Dit dossier bundelt de belangrijkste gegevens, documenten, foto’s en technische informatie rond het project.`,
+    originalRequest: original,
+    solutionSummary: `De gekozen configuratie is ${model.solution.description}. De voorziene batterijcapaciteit bedraagt ${model.solution.batteryCapacity}.`,
+    technicalSummary: model.technicalRows.length
+      ? 'Onderstaande technische gegevens en metingen werden geregistreerd tijdens de voorbereiding, plaatsing of opvolging van het project.'
+      : 'Technische gegevens en metingen kunnen hier aangevuld worden wanneer ze beschikbaar zijn.',
+  };
+}
+
+function paragraph(value) {
+  return `<p class="spcd-copy">${escapeHtml(value || '')}</p>`;
 }
 
 function fact(label, value) {
@@ -169,9 +253,25 @@ function section(title, body, extraClass = '') {
   return `<section class="spcd-card ${extraClass}"><h2>${escapeHtml(title)}</h2>${body}</section>`;
 }
 
+function tableRows(rows, empty = 'Nog niet ingevuld.') {
+  if (!rows.length) return `<tr><td colspan="2">${escapeHtml(empty)}</td></tr>`;
+  return rows.map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`).join('');
+}
+
 function documentList(items, placeholder) {
   if (!items.length) return `<p class="spcd-muted mb-0">${escapeHtml(placeholder)}</p>`;
   return `<ul class="spcd-doc-list">${items.map(d => `<li>${d.downloadUrl ? `<a href="${escapeHtml(d.downloadUrl)}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a>` : escapeHtml(d.title)}${d.description ? `<span>${escapeHtml(d.description)}</span>` : ''}</li>`).join('')}</ul>`;
+}
+
+function placedItemsTable(items) {
+  if (!items.length) return '<p class="spcd-muted">Nog geen gestructureerde onderdelen beschikbaar.</p>';
+  return `<table class="spcd-table"><thead><tr><th>Aantal</th><th>Onderdeel</th><th>Specificaties</th><th>Documenten</th></tr></thead><tbody>${items.map(item => {
+    const docs = [
+      item.datasheetUrl ? `<a href="${escapeHtml(item.datasheetUrl)}" target="_blank" rel="noopener">Datasheet</a>` : '',
+      item.manualUrl ? `<a href="${escapeHtml(item.manualUrl)}" target="_blank" rel="noopener">Handleiding</a>` : '',
+    ].filter(Boolean).join(' · ') || 'Nog te koppelen';
+    return `<tr><td>${escapeHtml(`${item.qty}x`)}</td><td>${escapeHtml(item.label)}</td><td>${escapeHtml(item.specs || '—')}</td><td>${docs}</td></tr>`;
+  }).join('')}</tbody></table>`;
 }
 
 function photoGrid(items, label) {
@@ -189,22 +289,49 @@ function serialRows(serials) {
   return serials.map(s => `<tr><td>${escapeHtml(s.category)}</td><td><code>${escapeHtml(s.value)}</code></td><td>${escapeHtml(s.source)}</td></tr>`).join('');
 }
 
-function timeline(items) {
-  if (!items.length) return '<p class="spcd-muted">Nog geen projectopmerkingen beschikbaar.</p>';
-  return `<ul class="spcd-timeline">${items.map(i => `<li><strong>${escapeHtml(i.date || '')}</strong><span>${escapeHtml(i.text)}</span></li>`).join('')}</ul>`;
+export function renderClosingDossierEditorModalHtml(drafts = {}) {
+  const field = (key, label, rows = 4) => `
+    <div class="mb-3">
+      <label class="form-label" for="spClosing_${key}">${escapeHtml(label)}</label>
+      <textarea id="spClosing_${key}" class="form-control" rows="${rows}" data-closing-text="${escapeHtml(key)}">${escapeHtml(drafts[key] || '')}</textarea>
+    </div>`;
+  return `
+    <div class="modal fade" id="spClosingDossierModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Afsluitdossier voorbereiden</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluit"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small">Pas deze klantgerichte teksten aan vóór de PDF/print-preview wordt gemaakt. Interne projectopmerkingen worden niet opgenomen.</p>
+            ${field('projectSummary', 'Projectoverzicht', 4)}
+            ${field('originalRequest', 'Originele aanvraag', 5)}
+            ${field('solutionSummary', 'Geplaatste / voorziene oplossing', 4)}
+            ${field('technicalSummary', 'Technische toelichting', 4)}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+            <button type="button" class="btn btn-primary" data-closing-generate>Afsluitdossier openen</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
 
 export function closingDossierStyles() {
   return `
     <style>
       :root{--spcd-primary:${BRAND.primary};--spcd-primary-dark:${BRAND.primaryDark};--spcd-success:${BRAND.success};--spcd-warning:${BRAND.warning};--spcd-bg:${BRAND.bg};--spcd-border:${BRAND.border};--spcd-text:${BRAND.text};--spcd-muted:${BRAND.muted};}
-      *{box-sizing:border-box} body.spcd-body{margin:0;font-family:"Segoe UI",Inter,Arial,sans-serif;color:var(--spcd-text);background:#fff;font-size:14px;line-height:1.45}.spcd-printbar{position:sticky;top:0;z-index:10;display:flex;gap:.5rem;justify-content:flex-end;padding:.75rem 1rem;background:rgba(255,255,255,.94);border-bottom:1px solid var(--spcd-border);backdrop-filter:blur(8px)}.spcd-printbar button{border:0;border-radius:999px;background:linear-gradient(135deg,var(--spcd-primary),var(--spcd-success));color:white;font-weight:700;padding:.65rem 1rem;cursor:pointer}.spcd-cover{min-height:100vh;padding:72px 56px;background:radial-gradient(circle at 84% 84%,rgba(44,123,229,.12),transparent 34%),radial-gradient(circle at 88% 8%,rgba(0,180,120,.16),transparent 30%),linear-gradient(135deg,#f8fbff,#edf4ff 55%,#eafff7);position:relative;overflow:hidden}.spcd-brand{display:flex;align-items:center;gap:13px;font-weight:850;color:var(--spcd-primary-dark);font-size:32px;letter-spacing:-.05em}.spcd-brand-mark{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,var(--spcd-primary),var(--spcd-success));display:flex;align-items:center;justify-content:center;color:white;box-shadow:0 12px 26px rgba(44,123,229,.24)}.spcd-subtitle{font-size:13px;color:var(--spcd-muted);font-weight:700;letter-spacing:0}.spcd-cover h1{margin:112px 0 18px;max-width:760px;font-size:52px;line-height:1.05;letter-spacing:-.07em;color:#10233f}.spcd-lead{max-width:660px;font-size:18px;color:#51627d}.spcd-cover-card{margin-top:70px;max-width:640px;background:rgba(255,255,255,.88);border:1px solid rgba(220,227,240,.95);border-radius:22px;padding:38px;box-shadow:0 24px 58px rgba(30,42,58,.10)}.spcd-meta-grid,.spcd-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 24px}.spcd-label{text-transform:uppercase;color:#7b8baa;font-size:11px;letter-spacing:.08em;font-weight:800}.spcd-value{margin-top:5px;font-weight:750;color:#17243a}.spcd-pill{display:inline-flex;padding:5px 10px;border-radius:999px;background:#eaf3ff;color:var(--spcd-primary-dark);font-size:12px;font-weight:800}.spcd-page{padding:0 0 32px}.spcd-card{break-inside:avoid;margin:0 0 28px;padding:30px 32px;border:1px solid var(--spcd-border);border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(30,42,58,.045)}.spcd-card h2{margin:0 0 20px;font-size:26px;letter-spacing:-.045em;color:#17365f;display:flex;align-items:center;gap:10px}.spcd-card h2:before{content:"";width:7px;height:25px;border-radius:999px;background:linear-gradient(var(--spcd-primary),var(--spcd-success))}.spcd-fact{background:#f7f9fd;border:1px solid var(--spcd-border);border-radius:13px;padding:16px;min-height:74px}.spcd-callout{border-left:4px solid var(--spcd-success);background:#effbf6;padding:15px 18px;border-radius:12px;margin-top:16px}.spcd-callout-warning{border-left-color:var(--spcd-warning);background:#fff8eb}.spcd-muted{color:var(--spcd-muted)}.spcd-timeline{list-style:none;margin:0;padding:0}.spcd-timeline li{display:grid;grid-template-columns:120px 1fr;gap:18px;padding:12px 0;border-bottom:1px solid var(--spcd-border)}.spcd-timeline strong{color:var(--spcd-primary-dark)}table.spcd-table{width:100%;border-collapse:collapse}table.spcd-table th,table.spcd-table td{padding:12px;border-bottom:1px solid var(--spcd-border);text-align:left;vertical-align:top}table.spcd-table th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--spcd-muted)}code{background:#edf4ff;color:#10233f;border-radius:6px;padding:3px 7px}.spcd-doc-list{margin:0;padding-left:18px}.spcd-doc-list li{margin-bottom:8px}.spcd-doc-list span{display:block;color:var(--spcd-muted);font-size:12px}.spcd-photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.spcd-photo-grid figure{margin:0;border:1px solid var(--spcd-border);border-radius:16px;overflow:hidden;background:#fff;break-inside:avoid}.spcd-photo-grid img,.spcd-photo-placeholder{width:100%;height:280px;object-fit:cover;display:flex;align-items:center;justify-content:center;background:#eef3fb;color:var(--spcd-muted)}.spcd-photo-grid figcaption{padding:12px 14px}.spcd-photo-grid figcaption span{display:block;color:var(--spcd-muted);font-size:12px;margin-top:2px;word-break:break-word}.spcd-break{break-before:page}@media print{.spcd-printbar{display:none}.spcd-cover{min-height:100vh}.spcd-card{box-shadow:none;margin-bottom:18px}.spcd-photo-grid img,.spcd-photo-placeholder{height:220px}a{color:inherit;text-decoration:none}}@media(max-width:760px){.spcd-cover{padding:42px 24px}.spcd-cover h1{font-size:40px;margin-top:72px}.spcd-meta-grid,.spcd-grid,.spcd-photo-grid{grid-template-columns:1fr}.spcd-timeline li{grid-template-columns:1fr}.spcd-card{padding:24px 20px}}
+      *{box-sizing:border-box} body.spcd-body{margin:0;font-family:"Segoe UI",Inter,Arial,sans-serif;color:var(--spcd-text);background:#fff;font-size:14px;line-height:1.45}.spcd-printbar{position:sticky;top:0;z-index:10;display:flex;gap:.5rem;justify-content:flex-end;padding:.75rem 1rem;background:rgba(255,255,255,.94);border-bottom:1px solid var(--spcd-border);backdrop-filter:blur(8px)}.spcd-printbar button{border:0;border-radius:999px;background:linear-gradient(135deg,var(--spcd-primary),var(--spcd-success));color:white;font-weight:700;padding:.65rem 1rem;cursor:pointer}.spcd-cover{min-height:100vh;padding:72px 56px;background:radial-gradient(circle at 84% 84%,rgba(44,123,229,.12),transparent 34%),radial-gradient(circle at 88% 8%,rgba(0,180,120,.16),transparent 30%),linear-gradient(135deg,#f8fbff,#edf4ff 55%,#eafff7);position:relative;overflow:hidden}.spcd-brand{font-weight:850;color:var(--spcd-primary-dark);font-size:34px;letter-spacing:-.05em}.spcd-subtitle{font-size:13px;color:var(--spcd-muted);font-weight:700;letter-spacing:0}.spcd-cover h1{margin:112px 0 18px;max-width:760px;font-size:52px;line-height:1.05;letter-spacing:-.07em;color:#10233f}.spcd-lead{max-width:660px;font-size:18px;color:#51627d}.spcd-cover-card{margin-top:70px;max-width:640px;background:rgba(255,255,255,.88);border:1px solid rgba(220,227,240,.95);border-radius:22px;padding:38px;box-shadow:0 24px 58px rgba(30,42,58,.10)}.spcd-meta-grid,.spcd-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 24px}.spcd-label{text-transform:uppercase;color:#7b8baa;font-size:11px;letter-spacing:.08em;font-weight:800}.spcd-value{margin-top:5px;font-weight:750;color:#17243a}.spcd-page{padding:0 0 32px}.spcd-card{break-inside:avoid;margin:0 0 28px;padding:30px 32px;border:1px solid var(--spcd-border);border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(30,42,58,.045)}.spcd-card h2{margin:0 0 20px;font-size:26px;letter-spacing:-.045em;color:#17365f;display:flex;align-items:center;gap:10px}.spcd-card h2:before{content:"";width:7px;height:25px;border-radius:999px;background:linear-gradient(var(--spcd-primary),var(--spcd-success))}.spcd-card h3{font-size:18px;margin:24px 0 12px}.spcd-copy{font-size:15px;color:#33435c;white-space:pre-wrap}.spcd-fact{background:#f7f9fd;border:1px solid var(--spcd-border);border-radius:13px;padding:16px;min-height:74px}.spcd-callout{border-left:4px solid var(--spcd-success);background:#effbf6;padding:15px 18px;border-radius:12px;margin-top:16px}.spcd-callout-warning{border-left-color:var(--spcd-warning);background:#fff8eb}.spcd-muted{color:var(--spcd-muted)}table.spcd-table{width:100%;border-collapse:collapse}table.spcd-table th,table.spcd-table td{padding:12px;border-bottom:1px solid var(--spcd-border);text-align:left;vertical-align:top}table.spcd-table th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--spcd-muted)}code{background:#edf4ff;color:#10233f;border-radius:6px;padding:3px 7px}.spcd-doc-list{margin:0;padding-left:18px}.spcd-doc-list li{margin-bottom:8px}.spcd-doc-list span{display:block;color:var(--spcd-muted);font-size:12px}.spcd-photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.spcd-photo-grid figure{margin:0;border:1px solid var(--spcd-border);border-radius:16px;overflow:hidden;background:#fff;break-inside:avoid}.spcd-photo-grid img,.spcd-photo-placeholder{width:100%;height:320px;object-fit:contain;display:flex;align-items:center;justify-content:center;background:#eef3fb;color:var(--spcd-muted)}.spcd-photo-grid figcaption{padding:12px 14px}.spcd-photo-grid figcaption span{display:block;color:var(--spcd-muted);font-size:12px;margin-top:2px;word-break:break-word}.spcd-break{break-before:page}@media print{.spcd-printbar{display:none}.spcd-cover{min-height:100vh}.spcd-card{box-shadow:none;margin-bottom:18px}.spcd-photo-grid img,.spcd-photo-placeholder{height:260px}a{color:inherit;text-decoration:none}}@media(max-width:760px){.spcd-cover{padding:42px 24px}.spcd-cover h1{font-size:40px;margin-top:72px}.spcd-meta-grid,.spcd-grid,.spcd-photo-grid{grid-template-columns:1fr}.spcd-card{padding:24px 20px}}
     </style>
   `;
 }
 
-export function renderClosingDossierHtml(model) {
+export function renderClosingDossierHtml(model, options = {}) {
   const generatedDate = formatDate(model.generatedAt);
+  const defaults = buildClosingDossierDraftTexts(model);
+  const texts = { ...defaults, ...(options.texts || {}) };
   const docCards = `
     <div class="spcd-grid">
       ${fact('Offerte', model.solution.offerte)}
@@ -216,20 +343,20 @@ export function renderClosingDossierHtml(model) {
   return `<!doctype html><html lang="nl-BE"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(model.title)} - ${escapeHtml(model.customer.name)}</title>${closingDossierStyles()}</head><body class="spcd-body">
     <div class="spcd-printbar"><button type="button" data-closing-dossier-print onclick="window.print()">PDF maken / afdrukken</button></div>
     <section class="spcd-cover">
-      <div class="spcd-brand"><div class="spcd-brand-mark">⚡</div><div>SmartPeak<div class="spcd-subtitle">Slim omgaan met jouw energie</div></div></div>
+      <div class="spcd-brand">SmartPeak<div class="spcd-subtitle">Slim omgaan met jouw energie</div></div>
       <h1>${escapeHtml(model.title)}</h1>
-      <p class="spcd-lead">Een gebundeld overzicht van de aanvraag, uitgevoerde installatie, beschikbare foto’s, serienummers, documenten en praktische opvolging.</p>
+      <p class="spcd-lead">Een gebundeld overzicht van de installatie, technische gegevens, documenten, foto’s en praktische opvolging.</p>
       <div class="spcd-cover-card"><div class="spcd-meta-grid">
         ${fact('Klant', model.customer.name)}${fact('Projectstatus', model.status)}${fact('Adres', model.customer.address)}${fact('Keuring gepland', model.planning.inspectionPlannedDate)}${fact('Contact', [model.customer.email, model.customer.phone].filter(Boolean).join(' · '))}${fact('Dossierdatum', generatedDate)}
       </div></div>
     </section>
     <main class="spcd-page">
-      ${section('Inhoud en bedoeling', `<ul><li>Projectoverzicht vanuit klantperspectief</li><li>Originele aanvraag en bekeken situatie</li><li>Geplaatste of voorziene oplossing</li><li>Foto-overzicht: situatie en serienummers</li><li>Technische documentatie, handleidingen, facturen en keuring</li></ul><div class="spcd-callout spcd-callout-warning"><strong>Bewust niet opgenomen:</strong> De berekening zelf wordt niet opgenomen in dit afsluitdossier, zodat het dossier focust op de uitgevoerde werken, documenten en praktische gegevens.</div>`)}
-      ${section('Projectoverzicht', `<div class="spcd-grid">${fact('Klant', model.customer.name)}${fact('Adres', model.customer.address)}${fact('E-mail', model.customer.email)}${fact('Telefoon', model.customer.phone)}${fact('EAN-code', model.meter.eanCode)}${fact('Meter', `${model.meter.meterType}${model.meter.meterNumber ? ` · ${model.meter.meterNumber}` : ''}`)}</div>`)}
-      ${section('Originele aanvraag en context', `<p>Dit onderdeel bundelt de oorspronkelijke klantvraag, plaatsbezoeknotities, foto’s van de bestaande situatie en de gemaakte keuze. Waar nog geen gestructureerde tekst beschikbaar is, blijft dit zichtbaar als aan te vullen onderdeel.</p><div class="spcd-callout"><strong>Toekomst:</strong> automatisch tonen welke opties bekeken werden, waarom de gekozen oplossing geplaatst werd, en welke randvoorwaarden of afspraken belangrijk waren.</div>`)}
-      ${section('Geplaatste / voorziene oplossing', `<div class="spcd-grid">${fact('Configuratie', model.solution.description)}${fact('Batterijcapaciteit', model.solution.batteryCapacity)}${fact('Batterij-omvormer', model.solution.batteryInverter)}${fact('PV-omvormer', model.solution.pvInverter)}${fact('Offerte', model.solution.offerte)}${fact('Keuring', model.planning.inspectionPlannedDate !== 'Nog niet ingevuld' || model.planning.inspectionDoneDate !== 'Nog niet ingevuld' ? 'Voorzien' : 'Nog te bevestigen')}</div>`)}
+      ${section('Projectoverzicht', `${paragraph(texts.projectSummary)}<div class="spcd-grid">${fact('Klant', model.customer.name)}${fact('Adres', model.customer.address)}${fact('E-mail', model.customer.email)}${fact('Telefoon', model.customer.phone)}${fact('EAN-code', model.meter.eanCode)}${fact('Meter', `${model.meter.meterType}${model.meter.meterNumber ? ` · ${model.meter.meterNumber}` : ''}`)}</div>`)}
+      ${section('Originele aanvraag', paragraph(texts.originalRequest))}
+      ${section('Geplaatste / voorziene oplossing', `${paragraph(texts.solutionSummary)}<div class="spcd-grid">${fact('Configuratie', model.solution.description)}${fact('Batterijcapaciteit', model.solution.batteryCapacity)}${fact('Batterij-omvormer', model.solution.batteryInverter)}${fact('PV-omvormer', model.solution.pvInverter)}${fact('Offerte', model.solution.offerte)}${fact('Keuring', model.planning.inspectionPlannedDate !== 'Nog niet ingevuld' || model.planning.inspectionDoneDate !== 'Nog niet ingevuld' ? 'Voorzien' : 'Nog te bevestigen')}</div><h3>Geplaatste onderdelen</h3>${placedItemsTable(model.placedItems)}`)}
+      ${section('Technische gegevens en metingen', `${paragraph(texts.technicalSummary)}<table class="spcd-table"><tbody>${tableRows(model.technicalRows, 'Nog geen technische metingen geregistreerd.')}</tbody></table>`)}
       ${section('Verbruik / injectie samenvatting', `<p class="spcd-muted">Compacte context, zonder ROI-detail of terugverdientijd.</p><div class="spcd-grid">${fact('CSV-periode', model.energyContext.period)}${fact('Afname jaarvenster', model.energyContext.totalAfname)}${fact('Injectie jaarvenster', model.energyContext.totalInjectie)}${fact('Energieprijs gebruikt', model.energyContext.effectivePrice)}</div><div class="spcd-callout spcd-callout-warning">De berekening zelf wordt niet opgenomen in dit afsluitdossier.</div>`)}
-      ${section('Planning en opvolging', `<div class="spcd-grid">${fact('Plaatsbezoek uitgevoerd', model.planning.visitDoneDate)}${fact('Installatie afgerond', model.planning.installationDoneDate)}${fact('Keuring gepland', model.planning.inspectionPlannedDate)}${fact('Keuring afgerond', model.planning.inspectionDoneDate)}</div><h3>Tijdlijn uit projectopmerkingen</h3>${timeline(model.timeline)}`)}
+      ${section('Planning en keuring', `<div class="spcd-grid">${fact('Plaatsbezoek uitgevoerd', model.planning.visitDoneDate)}${fact('Installatie afgerond', model.planning.installationDoneDate)}${fact('Keuring gepland', model.planning.inspectionPlannedDate)}${fact('Keuring afgerond', model.planning.inspectionDoneDate)}</div>`)}
       ${section('Serienummers', `<table class="spcd-table"><thead><tr><th>Categorie</th><th>Serienummer</th><th>Bron</th></tr></thead><tbody>${serialRows(model.serialNumbers)}</tbody></table>`)}
       ${section('Documenten en bijlagen', docCards)}
       ${section('Foto’s huidige / bekeken situatie', photoGrid(model.photos.situation, 'Situatiefoto'), 'spcd-break')}
@@ -238,8 +365,8 @@ export function renderClosingDossierHtml(model) {
   </body></html>`;
 }
 
-export function openClosingDossierPrintWindow(model, targetWindow = null) {
-  const html = renderClosingDossierHtml(model);
+export function openClosingDossierPrintWindow(model, targetWindow = null, options = {}) {
+  const html = renderClosingDossierHtml(model, options);
   const browserWindow = typeof globalThis.window !== 'undefined' ? globalThis.window : null;
   const win = targetWindow || (browserWindow ? browserWindow.open('', 'smartpeakClosingDossier') : null);
   if (!win) return { ok: false, html };
@@ -253,6 +380,8 @@ export function openClosingDossierPrintWindow(model, targetWindow = null) {
 if (typeof globalThis.window !== 'undefined') {
   globalThis.window.SmartPeakClosingDossier = {
     buildClosingDossierModel,
+    buildClosingDossierDraftTexts,
+    renderClosingDossierEditorModalHtml,
     renderClosingDossierHtml,
     openClosingDossierPrintWindow,
   };

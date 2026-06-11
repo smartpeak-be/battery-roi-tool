@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildClosingDossierModel,
+  buildClosingDossierDraftTexts,
   openClosingDossierPrintWindow,
+  renderClosingDossierEditorModalHtml,
+  renderClosingDossierHtml,
 } from '../assets/js/project-closing-dossier.js';
 
 const baseProject = {
@@ -78,8 +81,96 @@ describe('project closing dossier', () => {
     expect(model.photos.situation).toHaveLength(1);
     expect(model.photos.serial).toHaveLength(1);
     expect(model.documents.facturen).toHaveLength(1);
+    expect(model.timeline).toHaveLength(0);
     expect(JSON.stringify(model).toLowerCase()).not.toContain('payback');
     expect(JSON.stringify(model).toLowerCase()).not.toContain('terugverdientijd');
+  });
+
+  it('rendert klantvriendelijk zonder fake logo, interne keuken of letterlijke klantperspectief-copy', () => {
+    const project = {
+      ...baseProject,
+      situation: 'Klant wil batterij plaatsen voor hoger eigenverbruik.',
+      technical: {
+        earthResistanceMeasured: true,
+        earthResistanceOhm: 12.4,
+        earthResistanceMeasuredDate: '2026-05-18',
+        voltageMeasurements: { l1N: 230, l1Pe: 0.6 },
+        technicalNotes: 'Omvormer bereikbaar in technische ruimte.',
+      },
+      solar: { inverters: [{ brand: 'Huawei', model: 'SUN2000', powerKw: 5 }] },
+      site: { houseAgeOver10Years: true },
+      lastCalcRun: {
+        ...baseProject.lastCalcRun,
+        results: {
+          ...baseProject.lastCalcRun.results,
+          configResults: [{
+            cfg: {
+              ...baseProject.lastCalcRun.results.configResults[0].cfg,
+              items: [
+                { productId: 'bat-1', qty: 2 },
+                { productId: 'inv-1', qty: 1 },
+              ],
+            },
+          }],
+        },
+      },
+    };
+    const model = buildClosingDossierModel(project, {
+      productsById: {
+        'bat-1': { brand: 'Zendure', model: 'AB2000S', specs: { capacityKwh: 1.92, weightKg: 25 }, datasheetUrl: 'https://example.test/ab2000s.pdf', manualUrl: 'https://example.test/manual.pdf' },
+        'inv-1': { brand: 'Zendure', model: 'SolarFlow 2400 AC', specs: { powerKw: 2.4 }, datasheetUrl: 'https://example.test/sf2400.pdf' },
+      },
+      categoriesById: {},
+      comments: [{ text: 'woning is ouder dan 10 jaar, intern checken' }],
+      generatedAt: '2026-06-11T18:00:00.000Z',
+    });
+    const html = renderClosingDossierHtml(model);
+
+    expect(html).toContain('Projectoverzicht');
+    expect(html).not.toContain('Projectoverzicht vanuit klantperspectief');
+    expect(html).not.toContain('⚡');
+    expect(html).not.toContain('woning is ouder dan 10 jaar');
+    expect(html).toContain('Klant wil batterij plaatsen voor hoger eigenverbruik.');
+    expect(html).toContain('Technische gegevens en metingen');
+    expect(html).toContain('Aardweerstand');
+    expect(html).toContain('12.4 Ω');
+    expect(html).toContain('Spanning L1 - N');
+    expect(html).toContain('230 V');
+    expect(html).toContain('Huawei SUN2000');
+    expect(html).toContain('Geplaatste onderdelen');
+    expect(html).toContain('2x');
+    expect(html).toContain('Zendure AB2000S');
+    expect(html).toContain('1x');
+    expect(html).toContain('Zendure SolarFlow 2400 AC');
+    expect(html).toContain('Datasheet');
+    expect(html).toContain('Handleiding');
+  });
+
+  it('biedt vooraf ingevulde tekstvakken aan die voor generatie aangepast kunnen worden', () => {
+    const model = buildClosingDossierModel({
+      ...baseProject,
+      situation: 'Bestaande aanvraag uit projectbeschrijving.',
+      technical: { technicalNotes: 'Technische notitie.' },
+    }, { generatedAt: '2026-06-11T18:00:00.000Z' });
+
+    const drafts = buildClosingDossierDraftTexts(model);
+    const modalHtml = renderClosingDossierEditorModalHtml(drafts);
+    const html = renderClosingDossierHtml(model, {
+      texts: {
+        originalRequest: 'Aangepaste klanttekst aanvraag.',
+        projectSummary: 'Aangepast projectoverzicht.',
+        technicalSummary: 'Aangepaste technische toelichting.',
+      },
+    });
+
+    expect(drafts.originalRequest).toContain('Bestaande aanvraag uit projectbeschrijving.');
+    expect(modalHtml).toContain('textarea');
+    expect(modalHtml).toContain('data-closing-text="originalRequest"');
+    expect(modalHtml).toContain('data-closing-text="projectSummary"');
+    expect(modalHtml).toContain('data-closing-text="technicalSummary"');
+    expect(html).toContain('Aangepaste klanttekst aanvraag.');
+    expect(html).toContain('Aangepast projectoverzicht.');
+    expect(html).toContain('Aangepaste technische toelichting.');
   });
 
   it('opent het printvenster schrijfbaar zonder noopener zodat about:blank niet leeg blijft', () => {
