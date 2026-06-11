@@ -1,6 +1,7 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 import { mountProjectDocuments } from '../project-documents.js';
+import { buildClosingDossierModel, openClosingDossierPrintWindow } from '../project-closing-dossier.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
@@ -926,6 +927,7 @@ function renderDrawer(project) {
     <section class="border-bottom pb-3 mb-3">
       <div class="d-grid d-md-flex gap-2">
         <a class="btn btn-primary flex-md-grow-1" href="${calcHref}"><i class="fa-solid fa-calculator me-1" aria-hidden="true"></i> Open berekening</a>
+        <button type="button" class="btn btn-outline-primary flex-md-grow-1" id="drawerClosingDossierBtn"><i class="fa-solid fa-file-pdf me-1" aria-hidden="true"></i> Afsluitdossier</button>
         <a class="btn btn-outline-primary flex-md-grow-1" href="project-edit.html?project=${project.id}"><i class="fa-solid fa-pen-to-square me-1" aria-hidden="true"></i> Bewerk project</a>
         <button type="button" class="btn btn-outline-danger flex-md-grow-1" id="drawerDeleteBtn"><i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Verwijderen</button>
       </div>
@@ -1022,6 +1024,34 @@ function renderDrawer(project) {
           await refreshProjectList();
         } catch (err) {
           showToast('Verwijderen mislukt: ' + (err && err.message ? err.message : err), 'danger');
+        }
+      });
+    });
+  }
+
+  const closingBtn = document.getElementById('drawerClosingDossierBtn');
+  if (closingBtn) {
+    closingBtn.addEventListener('click', async () => {
+      closingBtn.disabled = true;
+      const oldHtml = closingBtn.innerHTML;
+      closingBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Dossier maken…';
+      await withSpinner(async () => {
+        try {
+          const [comments, photos, documents] = await Promise.all([
+            listComments(project.id).catch(err => { console.warn('closing dossier comments failed', err); return []; }),
+            listProjectPhotos(project.id).catch(err => { console.warn('closing dossier photos failed', err); return []; }),
+            listProjectDocuments(project.id).catch(err => { console.warn('closing dossier documents failed', err); return []; }),
+          ]);
+          const model = buildClosingDossierModel(_currentDrawerProject || project, { comments, photos, documents });
+          const result = openClosingDossierPrintWindow(model);
+          if (!result.ok) {
+            showToast('Popup geblokkeerd. Sta popups toe om het afsluitdossier te openen.', 'warning');
+          }
+        } catch (err) {
+          showToast('Afsluitdossier maken mislukt: ' + (err && err.message ? err.message : err), 'danger');
+        } finally {
+          closingBtn.disabled = false;
+          closingBtn.innerHTML = oldHtml;
         }
       });
     });
