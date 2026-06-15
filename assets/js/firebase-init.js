@@ -1190,7 +1190,19 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   if (!workType.startsWith('image/')) throw new Error('Alleen afbeeldingen.');
   const MAX_BYTES = 15 * 1024 * 1024;
   if (workFile.size > MAX_BYTES) throw new Error('Te groot (max 15 MB).');
-  const tag = opts.tag === 'serial' ? 'serial' : 'situatie';
+  const allowedPhotoTags = new Set([
+    'situatie', // legacy alias
+    'situation_before',
+    'inverter_before',
+    'situation_after',
+    'equipment_after',
+    'electrical_cabinet',
+    'meter_cabinet',
+    'serial',
+    'inspection',
+    'other',
+  ]);
+  const tag = allowedPhotoTags.has(opts.tag) ? opts.tag : 'situation_before';
   console.log('[upload] post-conversion size:', workFile.size, 'bytes', '(type:', workType + ')');
 
   // ── Step 2a — resize full file (max 2000px longest, q=0.85) ─────────────
@@ -1272,6 +1284,8 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
       width:            fullDims.width,
       height:           fullDims.height,
       tag,
+      includeInCloseoutPdf: tag !== 'other',
+      includeInInspectionPack: ['situation_after', 'equipment_after', 'electrical_cabinet', 'meter_cabinet', 'serial', 'inspection'].includes(tag),
       uploadedAt:       firebase.firestore.FieldValue.serverTimestamp(),
       uploadedBy:       email,
     });
@@ -1413,7 +1427,7 @@ async function listProjectPhotos(projectId) {
       d.annotatedThumbUrl = null;
     }
     // Defaults for legacy docs
-    if (!d.tag) d.tag = 'situatie';
+    if (!d.tag) d.tag = 'situatie'; // legacy default, rendered as situation_before in UI
   }));
   return docs;
 }
@@ -1474,12 +1488,20 @@ async function requestPhotoOcrRerun(projectId, photoId) {
  */
 async function setPhotoSerialTag(projectId, photoId, category) {
   const db = firebase.firestore();
+  const aliases = {
+    batterij: 'battery',
+    omvormer: 'inverter',
+    omvormer_batterij: 'battery_inverter',
+  };
+  const normalizedCategory = aliases[category] || category || 'battery';
   await db.collection('projects').doc(projectId)
     .collection('photos').doc(photoId)
     .update({
       tag: 'serial',
-      serialCategory: category,
+      serialCategory: normalizedCategory,
       ocrStatus: 'pending',
+      includeInCloseoutPdf: true,
+      includeInInspectionPack: true,
     });
 }
 
@@ -1550,6 +1572,9 @@ async function uploadProjectDocument(projectId, file, meta = {}) {
       createdAt: now,
       updatedAt: now,
       uploadedBy: email,
+      documentKind: String(meta.documentKind || 'other').trim() || 'other',
+      includeInCloseoutPdf: !!meta.includeInCloseoutPdf,
+      includeInInspectionPack: !!meta.includeInInspectionPack,
       createdBy: email,
       updatedBy: email,
     });
@@ -1583,6 +1608,9 @@ async function updateProjectDocument(projectId, documentId, patch = {}) {
   };
   if ('title' in patch) data.title = cleanDocumentTitle(patch.title, 'Document');
   if ('description' in patch) data.description = String(patch.description || '').trim();
+  if ('documentKind' in patch) data.documentKind = String(patch.documentKind || 'other').trim() || 'other';
+  if ('includeInCloseoutPdf' in patch) data.includeInCloseoutPdf = !!patch.includeInCloseoutPdf;
+  if ('includeInInspectionPack' in patch) data.includeInInspectionPack = !!patch.includeInInspectionPack;
   await projectDocumentsCol(projectId).doc(documentId).update(data);
 }
 

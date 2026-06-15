@@ -660,6 +660,7 @@ async function openDrawer(projectId) {
       });
       _drawerDocumentsExplorer = mountProjectDocuments(document.getElementById('drawerDocumentsMount'), {
         projectId: project.id,
+        project,
         onChange: refreshDrawerAfterChange,
       });
       // Populate the count header once the initial refresh lands.

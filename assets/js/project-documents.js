@@ -1,4 +1,10 @@
 import { escapeHtml, showConfirm } from './shared-helpers.js';
+import {
+  DOCUMENT_KINDS,
+  defaultDocumentFlags,
+  documentKindMeta,
+  normalizeDocumentKind,
+} from './project-taxonomy.js';
 
 export const NEW_FOLDER_PARENT = '__NEW_FOLDER__';
 
@@ -31,6 +37,9 @@ export function documentUploadPlan(filesLike, meta = {}) {
         title: safeText(meta.title, fileBaseName(file)),
         description: safeText(meta.description),
         parentId,
+        documentKind: normalizeDocumentKind(meta.documentKind),
+        includeInCloseoutPdf: !!meta.includeInCloseoutPdf,
+        includeInInspectionPack: !!meta.includeInInspectionPack,
       }],
     };
   }
@@ -50,6 +59,9 @@ export function documentUploadPlan(filesLike, meta = {}) {
       title: fileBaseName(file),
       description: '',
       parentId: NEW_FOLDER_PARENT,
+      documentKind: normalizeDocumentKind(meta.documentKind),
+      includeInCloseoutPdf: !!meta.includeInCloseoutPdf,
+      includeInInspectionPack: !!meta.includeInInspectionPack,
     })),
   };
 }
@@ -126,12 +138,25 @@ function renderNode(node, level = 0, collapsedIds = new Set()) {
     ? `${node.children.length} item${node.children.length === 1 ? '' : 's'}`
     : [node.name, formatBytes(node.sizeBytes)].filter(Boolean).join(' · ');
   const desc = node.description ? `<div class="small text-muted sp-pre-wrap">${escapeHtml(node.description)}</div>` : '';
+  const kind = !isFolder ? documentKindMeta(node.documentKind) : null;
+  const kindBadge = kind && node.documentKind
+    ? `<span class="badge rounded-pill text-bg-light border me-1"><i class="fa-solid ${escapeAttr(kind.icon)} me-1" aria-hidden="true"></i>${escapeHtml(kind.label)}</span>`
+    : '';
+  const dossierBadges = !isFolder
+    ? `${node.includeInCloseoutPdf ? '<span class="badge rounded-pill text-bg-primary-subtle text-primary-emphasis me-1">Opleverdossier</span>' : ''}${node.includeInInspectionPack ? '<span class="badge rounded-pill text-bg-warning-subtle text-warning-emphasis me-1">Keuring</span>' : ''}`
+    : '';
   const download = (!isFolder && node.downloadUrl)
     ? `<a class="btn btn-sm btn-outline-primary" href="${escapeAttr(node.downloadUrl)}" target="_blank" rel="noopener" title="Openen"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>`
     : '';
   const toggle = isFolder
     ? `<button type="button" class="btn btn-sm btn-link text-secondary sp-doc-toggle" data-doc-action="toggle-folder" aria-expanded="${isCollapsed ? 'false' : 'true'}" title="Map ${isCollapsed ? 'openklappen' : 'toeklappen'}"><i class="fa-solid ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'}"></i></button>`
     : '<span class="sp-doc-toggle-spacer" aria-hidden="true"></span>';
+  const mutableActions = node.virtual ? '' : `
+        ${isFolder ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-doc-action="upload-here" title="Upload in deze map"><i class="fa-solid fa-upload"></i></button>` : ''}
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-doc-action="edit" title="Titel/beschrijving wijzigen"><i class="fa-solid fa-pen"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-doc-action="move" title="Verplaatsen"><i class="fa-solid fa-folder-tree"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-doc-action="delete" title="Verwijderen"><i class="fa-solid fa-trash"></i></button>
+      `;
   return `
     <div class="sp-doc-row" data-doc-id="${escapeAttr(node.id)}" data-doc-type="${escapeAttr(node.type)}" style="--doc-level:${level}">
       <div class="sp-doc-main">
@@ -140,15 +165,13 @@ function renderNode(node, level = 0, collapsedIds = new Set()) {
         <div class="sp-doc-content">
           <div class="fw-semibold sp-doc-title">${escapeHtml(node.title)}</div>
           <div class="small text-muted sp-doc-meta">${escapeHtml(meta)}</div>
+          ${kindBadge || dossierBadges ? `<div class="small mt-1">${kindBadge}${dossierBadges}</div>` : ''}
           ${desc}
         </div>
       </div>
       <div class="sp-doc-actions">
         ${download}
-        ${isFolder ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-doc-action="upload-here" title="Upload in deze map"><i class="fa-solid fa-upload"></i></button>` : ''}
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-doc-action="edit" title="Titel/beschrijving wijzigen"><i class="fa-solid fa-pen"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-doc-action="move" title="Verplaatsen"><i class="fa-solid fa-folder-tree"></i></button>
-        <button type="button" class="btn btn-sm btn-outline-danger" data-doc-action="delete" title="Verwijderen"><i class="fa-solid fa-trash"></i></button>
+        ${mutableActions}
       </div>
     </div>
     ${isFolder && node.children.length ? `<div class="sp-doc-children${isCollapsed ? ' d-none' : ''}">${node.children.map(child => renderNode(child, level + 1, collapsedIds)).join('')}</div>` : ''}
@@ -190,9 +213,25 @@ function ensureDocumentMetaModal() {
               <input id="spDocumentMetaTitle" type="text" class="form-control" data-doc-meta-input-title required>
               <div class="invalid-feedback">Geef een titel of mapnaam op.</div>
             </div>
-            <div class="mb-0">
+            <div class="mb-3">
               <label class="form-label" for="spDocumentMetaDescription">Beschrijving/notitie</label>
               <textarea id="spDocumentMetaDescription" class="form-control" data-doc-meta-input-description rows="3" placeholder="Optioneel"></textarea>
+            </div>
+            <div data-doc-kind-fields>
+              <div class="mb-3">
+                <label class="form-label" for="spDocumentMetaKind">Documenttype</label>
+                <select id="spDocumentMetaKind" class="form-select" data-doc-meta-kind>
+                  ${DOCUMENT_KINDS.map(kind => `<option value="${escapeAttr(kind.value)}">${escapeHtml(kind.label)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-check">
+                <input id="spDocumentMetaCloseout" type="checkbox" class="form-check-input" data-doc-meta-closeout>
+                <label class="form-check-label" for="spDocumentMetaCloseout">Opnemen in opleverdossier</label>
+              </div>
+              <div class="form-check">
+                <input id="spDocumentMetaInspection" type="checkbox" class="form-check-input" data-doc-meta-inspection>
+                <label class="form-check-label" for="spDocumentMetaInspection">Nuttig voor keuring</label>
+              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -212,6 +251,10 @@ function openDocumentMetaModal(options = {}) {
     helpText = '',
     title = '',
     description = '',
+    documentKind = 'other',
+    includeInCloseoutPdf = null,
+    includeInInspectionPack = null,
+    showDocumentFields = false,
     saveText = 'Opslaan',
   } = options;
   if (typeof document === 'undefined' || typeof bootstrap === 'undefined') return Promise.resolve(null);
@@ -221,6 +264,10 @@ function openDocumentMetaModal(options = {}) {
   const helpEl = el.querySelector('[data-doc-meta-help]');
   const titleInput = el.querySelector('[data-doc-meta-input-title]');
   const descriptionInput = el.querySelector('[data-doc-meta-input-description]');
+  const kindFields = el.querySelector('[data-doc-kind-fields]');
+  const kindInput = el.querySelector('[data-doc-meta-kind]');
+  const closeoutInput = el.querySelector('[data-doc-meta-closeout]');
+  const inspectionInput = el.querySelector('[data-doc-meta-inspection]');
   const saveBtn = el.querySelector('[data-doc-meta-save]');
 
   titleEl.innerHTML = `<i class="fa-solid fa-file-circle-plus me-2" aria-hidden="true"></i>${escapeHtml(modalTitle)}`;
@@ -228,6 +275,20 @@ function openDocumentMetaModal(options = {}) {
   helpEl.classList.toggle('d-none', !helpText);
   titleInput.value = title;
   descriptionInput.value = description;
+  const normalizedKind = normalizeDocumentKind(documentKind);
+  const defaults = defaultDocumentFlags(normalizedKind);
+  if (kindFields) kindFields.hidden = !showDocumentFields;
+  if (kindInput) kindInput.value = normalizedKind;
+  if (closeoutInput) closeoutInput.checked = includeInCloseoutPdf === null ? defaults.includeInCloseoutPdf : !!includeInCloseoutPdf;
+  if (inspectionInput) inspectionInput.checked = includeInInspectionPack === null ? defaults.includeInInspectionPack : !!includeInInspectionPack;
+  if (kindInput && !kindInput.dataset.docKindWired) {
+    kindInput.dataset.docKindWired = '1';
+    kindInput.addEventListener('change', () => {
+      const next = defaultDocumentFlags(kindInput.value);
+      if (closeoutInput) closeoutInput.checked = next.includeInCloseoutPdf;
+      if (inspectionInput) inspectionInput.checked = next.includeInInspectionPack;
+    });
+  }
   saveBtn.textContent = saveText;
   form.classList.remove('was-validated');
 
@@ -253,7 +314,15 @@ function openDocumentMetaModal(options = {}) {
         titleInput.focus();
         return;
       }
-      close({ title: nextTitle, description: descriptionInput.value.trim() });
+      close({
+        title: nextTitle,
+        description: descriptionInput.value.trim(),
+        ...(showDocumentFields ? {
+          documentKind: normalizeDocumentKind(kindInput && kindInput.value),
+          includeInCloseoutPdf: !!(closeoutInput && closeoutInput.checked),
+          includeInInspectionPack: !!(inspectionInput && inspectionInput.checked),
+        } : {}),
+      });
       modal.hide();
     };
     form.addEventListener('submit', onSubmit);
@@ -273,6 +342,8 @@ function promptMeta(files, parentTitle = '') {
       : `Dit document wordt opgeslagen${parentTitle ? ` in ${parentTitle}` : ''}.`,
     title: fallback,
     description: '',
+    documentKind: 'other',
+    showDocumentFields: true,
     saveText: 'Uploaden',
   });
 }
@@ -293,6 +364,10 @@ function editDocumentMeta(doc) {
     helpText: 'Pas titel en beschrijving aan.',
     title: doc.title || doc.name || '',
     description: doc.description || '',
+    documentKind: doc.documentKind || 'other',
+    includeInCloseoutPdf: 'includeInCloseoutPdf' in doc ? !!doc.includeInCloseoutPdf : null,
+    includeInInspectionPack: 'includeInInspectionPack' in doc ? !!doc.includeInInspectionPack : null,
+    showDocumentFields: doc.type !== 'folder',
     saveText: 'Opslaan',
   });
 }
@@ -308,6 +383,35 @@ function descendantIds(tree, id) {
   };
   if (root) walk(root);
   return ids;
+}
+
+export function virtualOfferDocuments(project = {}) {
+  const offertes = project && project.offertes && typeof project.offertes === 'object' ? project.offertes : {};
+  return Object.entries(offertes)
+    .filter(([, offer]) => offer && offer.storagePath)
+    .map(([configType, offer]) => ({
+      id: `virtual-offer-${configType}`,
+      type: 'file',
+      virtual: true,
+      source: 'project.offertes',
+      configType,
+      parentId: null,
+      documentKind: 'offer',
+      title: offer.title || offer.filename || `Offerte ${configType}`,
+      name: offer.filename || `Offerte ${configType}.pdf`,
+      contentType: offer.contentType || 'application/pdf',
+      sizeBytes: offer.sizeBytes || 0,
+      storagePath: offer.storagePath,
+      downloadUrl: offer.downloadUrl || null,
+      includeInCloseoutPdf: 'includeInCloseoutPdf' in offer ? !!offer.includeInCloseoutPdf : true,
+      includeInInspectionPack: !!offer.includeInInspectionPack,
+      createdAt: offer.uploadedAt || offer.createdAt || null,
+      uploadedAt: offer.uploadedAt || null,
+    }));
+}
+
+export function mergeProjectDocuments(entries = [], project = {}) {
+  return [...(entries || []), ...virtualOfferDocuments(project)];
 }
 
 function promptMoveTarget(tree, doc) {
@@ -327,7 +431,7 @@ function promptMoveTarget(tree, doc) {
 }
 
 export function mountProjectDocuments(containerEl, opts = {}) {
-  const options = { projectId: null, onChange: null, ...opts };
+  const options = { projectId: null, project: null, onChange: null, ...opts };
   const state = { entries: [], tree: buildDocumentTree([]), busy: false, collapsedIds: new Set() };
 
   containerEl.innerHTML = `
@@ -372,7 +476,8 @@ export function mountProjectDocuments(containerEl, opts = {}) {
       return;
     }
     try {
-      state.entries = await window.listProjectDocuments(options.projectId);
+      const entries = await window.listProjectDocuments(options.projectId);
+      state.entries = mergeProjectDocuments(entries, options.project || {});
       render();
     } catch (err) {
       setError('Documenten laden mislukt: ' + (err && err.message ? err.message : err));
@@ -516,7 +621,9 @@ if (typeof window !== 'undefined') {
     buildDocumentTree,
     documentUploadPlan,
     iconForDocument,
+    mergeProjectDocuments,
     mountProjectDocuments,
     renderDocumentExplorerHtml,
+    virtualOfferDocuments,
   };
 }

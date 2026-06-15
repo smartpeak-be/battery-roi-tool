@@ -4,13 +4,20 @@ import {
   documentUploadPlan,
   iconForDocument,
   renderDocumentExplorerHtml,
+  virtualOfferDocuments,
 } from '../assets/js/project-documents.js';
 
 describe('project documents explorer helpers', () => {
   it('maakt bij één upload één bestandrecord zonder automatische map', () => {
     const files = [{ name: 'fluvius.csv', type: 'text/csv', size: 1234 }];
 
-    const plan = documentUploadPlan(files, { title: 'Fluvius data', description: 'CSV van klant' });
+    const plan = documentUploadPlan(files, {
+      title: 'Fluvius data',
+      description: 'CSV van klant',
+      documentKind: 'fluvius_data',
+      includeInCloseoutPdf: false,
+      includeInInspectionPack: false,
+    });
 
     expect(plan.folder).toBeNull();
     expect(plan.files).toHaveLength(1);
@@ -19,6 +26,7 @@ describe('project documents explorer helpers', () => {
       description: 'CSV van klant',
       name: 'fluvius.csv',
       parentId: null,
+      documentKind: 'fluvius_data',
     });
   });
 
@@ -95,5 +103,53 @@ describe('project documents explorer helpers', () => {
     expect(html).toContain('sp-doc-title');
     expect(html).toContain('sp-doc-meta');
     expect(html).not.toContain('text-truncate');
+  });
+
+  it('rendert documenttype en dossierbadges', () => {
+    const tree = buildDocumentTree([
+      {
+        id: 'd1',
+        type: 'file',
+        title: 'Schema.pdf',
+        name: 'schema.pdf',
+        contentType: 'application/pdf',
+        documentKind: 'electrical_schema',
+        includeInCloseoutPdf: true,
+        includeInInspectionPack: true,
+        parentId: null,
+      },
+    ]);
+
+    const html = renderDocumentExplorerHtml(tree);
+
+    expect(html).toContain('Elektrisch schema');
+    expect(html).toContain('Opleverdossier');
+    expect(html).toContain('Keuring');
+  });
+
+  it('zet offertes als read-only virtuele documenten klaar', () => {
+    const docs = virtualOfferDocuments({
+      offertes: {
+        zendure_2x2: {
+          filename: 'offerte.pdf',
+          storagePath: 'projects/p1/offertes/zendure_2x2.pdf',
+          sizeBytes: 123,
+        },
+      },
+    });
+
+    expect(docs).toEqual([
+      expect.objectContaining({
+        id: 'virtual-offer-zendure_2x2',
+        virtual: true,
+        source: 'project.offertes',
+        documentKind: 'offer',
+        includeInCloseoutPdf: true,
+      }),
+    ]);
+
+    const html = renderDocumentExplorerHtml(buildDocumentTree(docs));
+    expect(html).toContain('Offerte');
+    expect(html).not.toContain('data-doc-action="delete"');
   });
 });

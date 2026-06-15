@@ -12,6 +12,7 @@ describe('project documents dashboard integration', () => {
     expect(dashboardSource).toContain('data-bs-target="#drawerDocumentsPane"');
     expect(dashboardSource).toContain('id="drawerDocumentsMount"');
     expect(dashboardSource).toContain('mountProjectDocuments(document.getElementById(\'drawerDocumentsMount\')');
+    expect(dashboardSource).toContain('project,');
   });
 
   it('heeft Firestore/Storage helpers voor mappen, upload, verplaatsen, verwijderen en cascade-delete', () => {
@@ -20,6 +21,8 @@ describe('project documents dashboard integration', () => {
     expect(firebaseSource).toContain('async function moveProjectDocument(projectId, documentId, parentId)');
     expect(firebaseSource).toContain('async function deleteProjectDocument(projectId, documentId)');
     expect(firebaseSource).toContain('projects/${projectId}/documents/${ts}_${safeName}');
+    expect(firebaseSource).toContain("documentKind: String(meta.documentKind || 'other').trim() || 'other'");
+    expect(firebaseSource).toContain("if ('documentKind' in patch) data.documentKind");
     expect(firebaseSource).toContain('window.listProjectDocuments = listProjectDocuments;');
     expect(firebaseSource).toContain('const documentsSnap = await projectDoc(id).collection(\'documents\').get();');
     expect(firebaseSource).toContain('Document storage delete failed');
