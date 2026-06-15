@@ -268,7 +268,8 @@
 .sp-lightbox .del:hover { background: rgba(229,69,69,1); }
 .sp-lightbox .annotate { bottom: 68px; right: 14px; }
 .sp-lightbox .annotate.active { background: rgba(var(--bs-primary-rgb), 0.95); }
-.sp-lightbox .zoom { bottom: 122px; right: 14px; }
+.sp-lightbox .retag { bottom: 122px; right: 14px; }
+.sp-lightbox .zoom { bottom: 176px; right: 14px; }
 .sp-lightbox .zoom.active { background: rgba(var(--bs-primary-rgb), 0.95); }
 .pu-annotation-stage {
   position: relative;
@@ -315,6 +316,42 @@
   font-size: 0.82rem;
   text-align: center;
   pointer-events: none;
+}
+.pu-lightbox-meta {
+  position: absolute;
+  z-index: 2;
+  left: 14px;
+  top: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-direction: column;
+  max-width: min(360px, calc(100vw - 96px));
+  color: #fff;
+  pointer-events: none;
+}
+.pu-lightbox-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(var(--bs-primary-rgb), 0.92);
+  border: 1px solid rgba(255,255,255,0.22);
+  font-size: 0.86rem;
+  font-weight: 600;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+}
+.pu-lightbox-name {
+  max-width: 100%;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.48);
+  color: rgba(255,255,255,0.78);
+  font-size: 0.76rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sp-lightbox.is-zoomed .pu-lightbox-hint,
 .sp-lightbox.annotation-mode .pu-lightbox-hint {
@@ -367,7 +404,15 @@
     padding: 16px;
   }
   .sp-lightbox .annotate { bottom: 64px; right: 10px; }
-  .sp-lightbox .zoom { bottom: 118px; right: 10px; }
+  .sp-lightbox .retag { bottom: 118px; right: 10px; }
+  .sp-lightbox .zoom { bottom: 172px; right: 10px; }
+  .pu-lightbox-meta {
+    left: 10px;
+    top: 10px;
+    max-width: calc(100vw - 74px);
+  }
+  .pu-lightbox-tag { font-size: 0.78rem; }
+  .pu-lightbox-name { display: none; }
   .pu-lightbox-hint {
     top: auto;
     bottom: 10px;
@@ -542,6 +587,9 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   pointer-events: none;
 }
 .pu-progress .progress-bar { transition: width 0.15s ease; }
+#pu-tag-modal {
+  z-index: 1095; /* above .sp-lightbox (1080) so retag dialog stays clickable */
+}
 
 /* ── Global spinner overlay ───────────────────────────────────────────── */
 

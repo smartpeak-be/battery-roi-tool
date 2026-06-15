@@ -1486,23 +1486,56 @@ async function requestPhotoOcrRerun(projectId, photoId) {
  * for multi-photo saves; this helper is for single-photo flows / future
  * retag UX).
  */
-async function setPhotoSerialTag(projectId, photoId, category) {
+async function updateProjectPhotoTag(projectId, photoId, tag, serialCategory) {
   const db = firebase.firestore();
+  const allowedPhotoTags = new Set([
+    'situation_before',
+    'inverter_before',
+    'situation_after',
+    'equipment_after',
+    'electrical_cabinet',
+    'meter_cabinet',
+    'serial',
+    'inspection',
+    'other',
+  ]);
   const aliases = {
-    batterij: 'battery',
-    omvormer: 'inverter',
-    omvormer_batterij: 'battery_inverter',
+    situatie: 'situation_before',
   };
-  const normalizedCategory = aliases[category] || category || 'battery';
+  const normalizedTag = allowedPhotoTags.has(tag) ? tag : (aliases[tag] || 'situation_before');
+  const flags = {
+    includeInCloseoutPdf: normalizedTag !== 'other',
+    includeInInspectionPack: ['situation_after', 'equipment_after', 'electrical_cabinet', 'meter_cabinet', 'serial', 'inspection'].includes(normalizedTag),
+  };
+  const data = {
+    tag: normalizedTag,
+    ...flags,
+  };
+  if (normalizedTag === 'serial') {
+    const serialAliases = {
+      batterij: 'battery',
+      omvormer: 'inverter',
+      omvormer_batterij: 'battery_inverter',
+    };
+    data.serialCategory = serialAliases[serialCategory] || serialCategory || 'battery';
+    data.ocrStatus = 'pending';
+  } else {
+    data.serialCategory = firebase.firestore.FieldValue.delete();
+    data.ocrStatus = firebase.firestore.FieldValue.delete();
+    data.ocrError = firebase.firestore.FieldValue.delete();
+  }
   await db.collection('projects').doc(projectId)
     .collection('photos').doc(photoId)
-    .update({
-      tag: 'serial',
-      serialCategory: normalizedCategory,
-      ocrStatus: 'pending',
-      includeInCloseoutPdf: true,
-      includeInInspectionPack: true,
-    });
+    .update(data);
+  try {
+    await projectDoc(projectId).update({ updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+  } catch (e) {
+    console.warn('project updatedAt na foto-tag update mislukt (niet fataal):', e);
+  }
+}
+
+async function setPhotoSerialTag(projectId, photoId, category) {
+  await updateProjectPhotoTag(projectId, photoId, 'serial', category);
 }
 
 // ─── PROJECT DOCUMENTS (Explorer-style folders + files) ─────────────────────
@@ -2588,6 +2621,7 @@ window.uploadProductDatasheet = uploadProductDatasheet;
 window.listProductDatasheets = listProductDatasheets;
 window.deleteProductDatasheet = deleteProductDatasheet;
 window.requestPhotoOcrRerun = requestPhotoOcrRerun;
+window.updateProjectPhotoTag = updateProjectPhotoTag;
 window.setPhotoSerialTag = setPhotoSerialTag;
 window.normalizedAddressStructured = normalizedAddressStructured;
 window.formatStructuredAddress = formatStructuredAddress;

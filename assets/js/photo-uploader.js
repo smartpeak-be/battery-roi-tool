@@ -1,5 +1,5 @@
 /* global firebase, bootstrap, uploadProjectPhotoWithThumb, listProjectPhotos,
-          deleteProjectPhoto, backfillThumbnail, saveProjectPhotoAnnotation,
+          updateProjectPhotoTag, deleteProjectPhoto, backfillThumbnail, saveProjectPhotoAnnotation,
           deleteProjectPhotoAnnotation, showToast, showSpinner, updateSpinner, hideSpinner */
 
 import { escapeHtml, showConfirm } from './shared-helpers.js';
@@ -223,6 +223,17 @@ import {
       select.value = state.photoFilter;
     }
 
+    function _photoTagLabel(photo) {
+      const meta = photoTagMeta(photo && photo.tag);
+      return photo && normalizePhotoTag(photo.tag) === 'serial' && photo.serialCategory
+        ? `${meta.label} · ${serialCategoryMeta(photo.serialCategory).label}`
+        : meta.label;
+    }
+
+    function _photoTagIcon(photo) {
+      return photoTagMeta(photo && photo.tag).icon || 'fa-camera';
+    }
+
     function _renderGrid() {
       const grid = containerEl.querySelector('[data-pu-grid]');
       if (!grid) return;
@@ -241,11 +252,8 @@ import {
         if (!src) {
           return `<div class="photo-tile broken" title="${escapeHtml(p.fetchError || 'Kon foto niet laden')}">${escapeHtml(p.name || 'onbekend')}</div>`;
         }
-        const meta = photoTagMeta(p.tag);
-        const tagIcon  = meta.icon || 'fa-camera';
-        const tagLabel = p.tag === 'serial' && p.serialCategory
-          ? `${meta.label} · ${serialCategoryMeta(p.serialCategory).label}`
-          : meta.label;
+        const tagIcon = _photoTagIcon(p);
+        const tagLabel = _photoTagLabel(p);
         return `<div class="photo-tile" data-pu-tile data-idx="${i}">
           <img src="${escapeHtml(src)}" alt="${escapeHtml(p.name || '')}" />
           <span class="pu-tag-indicator" title="${escapeHtml(tagLabel)}"><i class="fa-solid ${escapeHtml(tagIcon)}"></i></span>
@@ -286,11 +294,16 @@ import {
           <button type="button" class="sp-lightbox-btn prev" title="Vorige" aria-label="Vorige foto">‹</button>
           <button type="button" class="sp-lightbox-btn next" title="Volgende" aria-label="Volgende foto">›</button>
           <button type="button" class="sp-lightbox-btn del" title="Verwijder foto" aria-label="Verwijder foto"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+          <button type="button" class="sp-lightbox-btn retag" title="Fotocategorie wijzigen" aria-label="Fotocategorie wijzigen"><i class="fa-solid fa-tags" aria-hidden="true"></i></button>
           <button type="button" class="sp-lightbox-btn annotate" title="Aantekenen" aria-label="Aantekenen"><i class="fa-solid fa-pencil" aria-hidden="true"></i></button>
           <button type="button" class="sp-lightbox-btn zoom" title="Zoom in/uit" aria-label="Zoom in of uit"><i class="fa-solid fa-magnifying-glass-plus" aria-hidden="true"></i></button>
           <div class="pu-annotation-stage" data-pu-annotation-stage>
             <img data-pu-lightbox-img alt="Foto" />
             <canvas data-pu-annotation-canvas aria-label="Aantekeningenlaag"></canvas>
+          </div>
+          <div class="pu-lightbox-meta" data-pu-lightbox-meta>
+            <span class="pu-lightbox-tag" data-pu-lightbox-tag-label></span>
+            <span class="pu-lightbox-name" data-pu-lightbox-name></span>
           </div>
           <div class="pu-lightbox-hint" data-pu-zoom-hint>Knijp met twee vingers of gebruik Ctrl + scroll om in te zoomen. Sleep om te verplaatsen.</div>
           <div class="pu-annotation-toolbar" data-pu-annotation-toolbar hidden>
@@ -336,6 +349,15 @@ import {
         annotateBtn.onclick = e => {
           e.stopPropagation();
           _setAnnotationMode(!state.annotationMode);
+        };
+      }
+      const retagBtn = lb.querySelector('.retag');
+      if (retagBtn) {
+        retagBtn.hidden = !!options.readOnly;
+        retagBtn.onclick = e => {
+          e.stopPropagation();
+          const photo = state.photos[state.lightboxIdx];
+          if (photo) _openEditTagModal(photo);
         };
       }
       const zoomBtn = lb.querySelector('.zoom');
@@ -421,6 +443,7 @@ import {
       img.crossOrigin = 'anonymous';
       img.src = (p && (p.downloadUrl || p.thumbUrl)) || '';
       img.alt = (p && p.name) || '';
+      _updateLightboxMeta(p);
       if (p && p.annotationUrl) {
         try {
           const bitmap = await _loadBitmapFromUrl(p.annotationUrl);
@@ -439,6 +462,24 @@ import {
       _setAnnotationMode(false);
       _updateAnnotationControls();
     }
+    function _updateLightboxMeta(photo) {
+      const lb = document.getElementById('pu-lightbox');
+      if (!lb) return;
+      const metaWrap = lb.querySelector('[data-pu-lightbox-meta]');
+      const tagEl = lb.querySelector('[data-pu-lightbox-tag-label]');
+      const nameEl = lb.querySelector('[data-pu-lightbox-name]');
+      if (!photo) {
+        if (metaWrap) metaWrap.hidden = true;
+        return;
+      }
+      if (metaWrap) metaWrap.hidden = false;
+      if (tagEl) {
+        const icon = _photoTagIcon(photo);
+        tagEl.innerHTML = `<i class="fa-solid ${escapeHtml(icon)} me-1" aria-hidden="true"></i>${escapeHtml(_photoTagLabel(photo))}`;
+      }
+      if (nameEl) nameEl.textContent = photo.name || '';
+    }
+
     async function _navLightbox(delta) {
       if (!state.photos.length) return;
       if (!await _confirmDiscardAnnotation()) return;
@@ -1003,9 +1044,80 @@ import {
       }
     }
 
+    async function _savePhotoTag(photo, tag, category) {
+      if (tag === 'serial') await updateProjectPhotoTag(options.projectId, photo.id, tag, category);
+      else await updateProjectPhotoTag(options.projectId, photo.id, tag, null);
+      await refresh();
+      const idx = state.photos.findIndex(p => p.id === photo.id);
+      if (idx >= 0) state.lightboxIdx = idx;
+      await _refreshLightboxImg();
+      if (typeof options.onChange === 'function') { try { await options.onChange(); } catch {} }
+    }
+
+    function _openEditTagModal(photo) {
+      if (!photo || !photo.id || options.readOnly) return;
+      const el = _ensureModalEl();
+      const title = el.querySelector('.modal-title');
+      if (title) title.innerHTML = '<i class="fa-solid fa-tags me-2"></i>Fotocategorie wijzigen';
+      el.querySelectorAll('[data-pu-bulk]').forEach(btn => { btn.hidden = true; });
+      const list = el.querySelector('[data-pu-modal-list]');
+      const src = photo.annotatedThumbUrl || photo.thumbUrl || photo.downloadUrl || '';
+      list.innerHTML = `
+        <div class="d-flex align-items-center gap-3 mb-2 pb-2 border-bottom" data-pu-modal-row data-photo-id="${escapeHtml(photo.id)}">
+          <img src="${escapeHtml(src)}" alt="${escapeHtml(photo.name || '')}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;" />
+          <div class="flex-grow-1">
+            <div class="small text-muted text-truncate" style="max-width:260px;">${escapeHtml(photo.name || 'Foto')}</div>
+            <div class="row g-2 mt-1">
+              <div class="col-12 col-md-7">
+                <label class="form-label small mb-1" for="tag-${escapeHtml(photo.id)}">Categorie</label>
+                <select class="form-select form-select-sm" id="tag-${escapeHtml(photo.id)}" data-pu-tag-select>
+                  ${_tagOptionsHtml(photo.tag)}
+                </select>
+              </div>
+              <div class="col-12 col-md-5" data-pu-cat-row hidden>
+                <label class="form-label small mb-1" for="cat-${escapeHtml(photo.id)}">Serieel type</label>
+                <select class="form-select form-select-sm" id="cat-${escapeHtml(photo.id)}" data-pu-cat-select>
+                  ${_serialCategoryOptionsHtml(photo.serialCategory || 'battery')}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      const row = list.querySelector('[data-pu-modal-row]');
+      const tagSelect = row.querySelector('[data-pu-tag-select]');
+      tagSelect.addEventListener('change', () => _syncSerialCategoryVisibility(row));
+      _syncSerialCategoryVisibility(row);
+
+      const saveBtn = el.querySelector('[data-pu-modal-save]');
+      saveBtn.onclick = async () => {
+        saveBtn.disabled = true;
+        const btnOrig = saveBtn.textContent;
+        saveBtn.textContent = 'Opslaan…';
+        showSpinner();
+        try {
+          const tag = normalizePhotoTag(tagSelect.value);
+          const catSelect = row.querySelector('[data-pu-cat-select]');
+          const category = normalizeSerialCategory(catSelect && catSelect.value);
+          await _savePhotoTag(photo, tag, category);
+          bootstrap.Modal.getOrCreateInstance(el).hide();
+          _toast('Fotocategorie aangepast.', 'success');
+        } catch (e) {
+          _toast('Fotocategorie opslaan mislukt: ' + (e && e.message ? e.message : e), 'danger');
+        } finally {
+          hideSpinner();
+          saveBtn.disabled = false;
+          saveBtn.textContent = btnOrig;
+        }
+      };
+      bootstrap.Modal.getOrCreateInstance(el).show();
+    }
+
     function _openTagModal(uploadedIds, localThumbs) {
       if (!uploadedIds || uploadedIds.length === 0) return;
       const el = _ensureModalEl();
+      const title = el.querySelector('.modal-title');
+      if (title) title.innerHTML = '<i class="fa-solid fa-tags me-2"></i>Foto\'s taggen';
+      el.querySelectorAll('[data-pu-bulk]').forEach(btn => { btn.hidden = false; });
       const list = el.querySelector('[data-pu-modal-list]');
       const thumbByIdMap = new Map(localThumbs.map(t => [t.id, t]));
 
