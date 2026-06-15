@@ -10,6 +10,15 @@ import {
   nextZoomTransform,
   panZoomTransform,
 } from './photo-lightbox-zoom.js';
+import {
+  PHOTO_TAGS,
+  SERIAL_CATEGORIES,
+  defaultPhotoFlags,
+  normalizePhotoTag,
+  normalizeSerialCategory,
+  photoTagMeta,
+  serialCategoryMeta,
+} from './project-taxonomy.js';
 
 // assets/js/photo-uploader.js
 // Shared photo-uploader component — used in dashboard.html drawer and
@@ -40,9 +49,12 @@ import {
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluit"></button>
           </div>
           <div class="modal-body">
-            <div class="d-flex gap-2 mb-3">
-              <button type="button" class="btn btn-sm btn-outline-primary" data-pu-bulk="situatie">
-                <i class="fa-solid fa-camera me-1"></i> Alles → Situatie
+            <div class="d-flex gap-2 mb-3 flex-wrap">
+              <button type="button" class="btn btn-sm btn-outline-primary" data-pu-bulk="situation_before">
+                <i class="fa-solid fa-camera me-1"></i> Alles → Vóór
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-primary" data-pu-bulk="situation_after">
+                <i class="fa-solid fa-camera-retro me-1"></i> Alles → Na
               </button>
               <button type="button" class="btn btn-sm btn-outline-primary" data-pu-bulk="serial">
                 <i class="fa-solid fa-barcode me-1"></i> Alles → Serieel · Batterij
@@ -77,6 +89,20 @@ import {
     { label: 'Large', value: 16 },
   ];
 
+  function _tagOptionsHtml(selectedValue = 'situation_before') {
+    const selected = normalizePhotoTag(selectedValue);
+    return PHOTO_TAGS.map(tag => `
+      <option value="${escapeHtml(tag.value)}" ${tag.value === selected ? 'selected' : ''}>${escapeHtml(tag.label)}</option>
+    `).join('');
+  }
+
+  function _serialCategoryOptionsHtml(selectedValue = 'battery') {
+    const selected = normalizeSerialCategory(selectedValue);
+    return SERIAL_CATEGORIES.map(cat => `
+      <option value="${escapeHtml(cat.value)}" ${cat.value === selected ? 'selected' : ''}>${escapeHtml(cat.label)}</option>
+    `).join('');
+  }
+
   function _renderSkeleton(opts) {
     const canCam  = !!opts.allowCamera;
     const canFile = !!opts.allowFileUpload;
@@ -97,6 +123,12 @@ import {
               </label>` : ''}
           </div>
         `}
+        <div class="d-flex align-items-center gap-2 mb-2" data-pu-filter-wrap hidden>
+          <label class="small text-muted mb-0" for="pu-photo-filter">Filter</label>
+          <select id="pu-photo-filter" class="form-select form-select-sm w-auto" data-pu-filter>
+            <option value="all">Alle foto's</option>
+          </select>
+        </div>
         <div class="photo-grid" data-pu-grid><p class="sp-empty-state">&#x23F3; Laden&hellip;</p></div>
         ${(!opts.readOnly && canDrop) ? `
           <div class="sp-drop-zone d-none d-md-block mt-2" data-pu-drop hidden>
@@ -133,6 +165,7 @@ import {
     // State
     const state = {
       photos:         [],
+      photoFilter:    'all',
       lightboxIdx:    0,
       backfillBusy:   false,
       backfillQueue:  [],
@@ -151,6 +184,14 @@ import {
       zoomPinchStart: null,
     };
 
+    const filterSelect = containerEl.querySelector('[data-pu-filter]');
+    if (filterSelect) {
+      filterSelect.addEventListener('change', () => {
+        state.photoFilter = filterSelect.value || 'all';
+        _renderGrid();
+      });
+    }
+
     async function refresh() {
       if (!options.projectId) {
         const grid = containerEl.querySelector('[data-pu-grid]');
@@ -160,7 +201,26 @@ import {
       }
       try { state.photos = await listProjectPhotos(options.projectId); }
       catch (e) { _toast('Foto\'s laden mislukt: ' + (e && e.message ? e.message : e), 'danger'); return; }
+      _renderFilterControls();
       _renderGrid();
+    }
+
+    function _visiblePhotos() {
+      if (state.photoFilter === 'all') return state.photos;
+      return state.photos.filter(p => normalizePhotoTag(p.tag) === state.photoFilter);
+    }
+
+    function _renderFilterControls() {
+      const wrap = containerEl.querySelector('[data-pu-filter-wrap]');
+      const select = containerEl.querySelector('[data-pu-filter]');
+      if (!wrap || !select) return;
+      wrap.hidden = state.photos.length === 0;
+      select.innerHTML = '<option value="all">Alle foto\'s</option>' + PHOTO_TAGS.map(tag => {
+        const count = state.photos.filter(p => normalizePhotoTag(p.tag) === tag.value).length;
+        return `<option value="${escapeHtml(tag.value)}">${escapeHtml(tag.label)}${count ? ` (${count})` : ''}</option>`;
+      }).join('');
+      if (state.photoFilter !== 'all' && !PHOTO_TAGS.some(tag => tag.value === state.photoFilter)) state.photoFilter = 'all';
+      select.value = state.photoFilter;
     }
 
     function _renderGrid() {
@@ -170,14 +230,22 @@ import {
         grid.innerHTML = '<p class="sp-empty-state">Nog geen foto\'s geüpload.</p>';
         return;
       }
-      grid.innerHTML = state.photos.map((p, i) => {
+      const visiblePhotos = _visiblePhotos();
+      if (visiblePhotos.length === 0) {
+        grid.innerHTML = '<p class="sp-empty-state">Geen foto\'s voor deze filter.</p>';
+        return;
+      }
+      grid.innerHTML = visiblePhotos.map((p) => {
+        const i = state.photos.findIndex(photo => photo.id === p.id);
         const src = p.annotatedThumbUrl || p.thumbUrl || p.downloadUrl;
         if (!src) {
           return `<div class="photo-tile broken" title="${escapeHtml(p.fetchError || 'Kon foto niet laden')}">${escapeHtml(p.name || 'onbekend')}</div>`;
         }
-        const isSerial = p.tag === 'serial';
-        const tagIcon  = isSerial ? 'fa-barcode' : 'fa-camera';
-        const tagLabel = isSerial ? 'Serieel'    : 'Situatie';
+        const meta = photoTagMeta(p.tag);
+        const tagIcon  = meta.icon || 'fa-camera';
+        const tagLabel = p.tag === 'serial' && p.serialCategory
+          ? `${meta.label} · ${serialCategoryMeta(p.serialCategory).label}`
+          : meta.label;
         return `<div class="photo-tile" data-pu-tile data-idx="${i}">
           <img src="${escapeHtml(src)}" alt="${escapeHtml(p.name || '')}" />
           <span class="pu-tag-indicator" title="${escapeHtml(tagLabel)}"><i class="fa-solid ${escapeHtml(tagIcon)}"></i></span>
@@ -906,7 +974,7 @@ import {
             // uploadProjectPhotoWithThumb returns { id, thumbBlob, displayName } —
             // reuse the thumbBlob for the local preview so we don't decode the
             // (possibly HEIC) source twice.
-            const res = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: 'situatie', onStep: reportStep });
+            const res = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: 'situation_before', onStep: reportStep });
             uploadedIds.push(res.id);
             localThumbs.push({ id: res.id, blobUrl: URL.createObjectURL(res.thumbBlob), name: res.displayName || file.name });
             updateSpinner({ current: i + 1, total: files.length });
@@ -949,20 +1017,18 @@ import {
             <img src="${escapeHtml(t.blobUrl)}" alt="${escapeHtml(t.name)}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;" />
             <div class="flex-grow-1">
               <div class="small text-muted text-truncate" style="max-width:200px;">${escapeHtml(t.name)}</div>
-              <div class="d-flex flex-wrap gap-2 mt-1">
-                <div class="btn-group btn-group-sm" role="group">
-                  <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-s" value="situatie" checked />
-                  <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-s"><i class="fa-solid fa-camera me-1"></i>Situatie</label>
-                  <input type="radio" class="btn-check" name="tag-${escapeHtml(id)}" id="tag-${escapeHtml(id)}-r" value="serial" />
-                  <label class="btn btn-outline-primary" for="tag-${escapeHtml(id)}-r"><i class="fa-solid fa-barcode me-1"></i>Serieel</label>
+              <div class="row g-2 mt-1">
+                <div class="col-12 col-md-7">
+                  <label class="form-label small mb-1" for="tag-${escapeHtml(id)}">Categorie</label>
+                  <select class="form-select form-select-sm" id="tag-${escapeHtml(id)}" data-pu-tag-select>
+                    ${_tagOptionsHtml('situation_before')}
+                  </select>
                 </div>
-                <div class="btn-group btn-group-sm pu-serial-cat w-100 flex-wrap mt-2" role="group" data-pu-cat-row hidden>
-                  <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-b" value="batterij" checked />
-                  <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-b">Batterij</label>
-                  <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-o" value="omvormer" />
-                  <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-o">Omvormer</label>
-                  <input type="radio" class="btn-check" name="cat-${escapeHtml(id)}" id="cat-${escapeHtml(id)}-c" value="omvormer_batterij" />
-                  <label class="btn btn-outline-secondary" for="cat-${escapeHtml(id)}-c">Omvormer+Batterij</label>
+                <div class="col-12 col-md-5" data-pu-cat-row hidden>
+                  <label class="form-label small mb-1" for="cat-${escapeHtml(id)}">Serieel type</label>
+                  <select class="form-select form-select-sm" id="cat-${escapeHtml(id)}" data-pu-cat-select>
+                    ${_serialCategoryOptionsHtml('battery')}
+                  </select>
                 </div>
               </div>
             </div>
@@ -971,8 +1037,8 @@ import {
 
       // Show category row only when this photo is tagged as serial.
       list.querySelectorAll('[data-pu-modal-row]').forEach(row => {
-        row.querySelectorAll('input[type="radio"][name^="tag-"]').forEach(radio => {
-          radio.addEventListener('change', () => {
+        row.querySelectorAll('[data-pu-tag-select]').forEach(select => {
+          select.addEventListener('change', () => {
             _syncSerialCategoryVisibility(row);
           });
         });
@@ -984,8 +1050,8 @@ import {
         btn.onclick = () => {
           const target = btn.getAttribute('data-pu-bulk');
           list.querySelectorAll('[data-pu-modal-row]').forEach(row => {
-            const radio = row.querySelector(`input[type="radio"][name^="tag-"][value="${target}"]`);
-            if (radio) radio.checked = true;
+            const select = row.querySelector('[data-pu-tag-select]');
+            if (select) select.value = target;
             _syncSerialCategoryVisibility(row);
           });
           // When bulk-tagging as serial, also reveal the category row and reset
@@ -993,8 +1059,8 @@ import {
           if (target === 'serial') {
             list.querySelectorAll(`[data-pu-cat-row]`).forEach(catRow => {
               catRow.hidden = false;
-              const def = catRow.querySelector(`input[value="batterij"]`);
-              if (def) def.checked = true;
+              const def = catRow.querySelector('[data-pu-cat-select]');
+              if (def) def.value = 'battery';
             });
           } else {
             list.querySelectorAll(`[data-pu-cat-row]`).forEach(catRow => {
@@ -1017,20 +1083,28 @@ import {
           let patches = 0;
           uploadedIds.forEach(id => {
             const row = list.querySelector(`[data-photo-id="${CSS.escape(id)}"]`);
-            const tagChecked = row && row.querySelector(`input[type="radio"][name^="tag-"]:checked`);
-            const isSerial = tagChecked && tagChecked.value === 'serial';
+            const tagSelect = row && row.querySelector('[data-pu-tag-select]');
+            const tag = normalizePhotoTag(tagSelect && tagSelect.value);
             const ref = db.collection('projects').doc(options.projectId).collection('photos').doc(id);
-            if (isSerial) {
-              const catChecked = row.querySelector(`input[type="radio"][name^="cat-"]:checked`);
-              const category = (catChecked && catChecked.value) || 'batterij';
+            const flags = defaultPhotoFlags(tag);
+            if (tag === 'serial') {
+              const catSelect = row.querySelector('[data-pu-cat-select]');
+              const category = normalizeSerialCategory(catSelect && catSelect.value);
               batch.update(ref, {
                 tag: 'serial',
                 serialCategory: category,
                 ocrStatus: 'pending',
+                ...flags,
               });
-              patches++;
+            } else {
+              batch.update(ref, {
+                tag,
+                serialCategory: firebase.firestore.FieldValue.delete(),
+                ocrStatus: firebase.firestore.FieldValue.delete(),
+                ...flags,
+              });
             }
-            // No write needed when situatie (default) — saves Firestore quota.
+            patches++;
           });
           if (patches > 0) await batch.commit();
           bootstrap.Modal.getOrCreateInstance(el).hide();
@@ -1055,14 +1129,14 @@ import {
     }
 
     function _syncSerialCategoryVisibility(row) {
-      const tagChecked = row.querySelector(`input[type="radio"][name^="tag-"]:checked`);
+      const tagSelect = row.querySelector('[data-pu-tag-select]');
       const catRow = row.querySelector('[data-pu-cat-row]');
       if (!catRow) return;
-      const isSerial = tagChecked && tagChecked.value === 'serial';
+      const isSerial = tagSelect && tagSelect.value === 'serial';
       catRow.hidden = !isSerial;
-      if (isSerial && !catRow.querySelector('input[type="radio"]:checked')) {
-        const def = catRow.querySelector('input[value="batterij"]');
-        if (def) def.checked = true;
+      if (isSerial) {
+        const def = catRow.querySelector('[data-pu-cat-select]');
+        if (def && !def.value) def.value = 'battery';
       }
     }
 

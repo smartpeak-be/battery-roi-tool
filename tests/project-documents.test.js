@@ -4,13 +4,22 @@ import {
   documentUploadPlan,
   iconForDocument,
   renderDocumentExplorerHtml,
+  projectDocumentBadgeCount,
+  resolveDocumentDownloadUrls,
+  virtualOfferDocuments,
 } from '../assets/js/project-documents.js';
 
 describe('project documents explorer helpers', () => {
   it('maakt bij één upload één bestandrecord zonder automatische map', () => {
     const files = [{ name: 'fluvius.csv', type: 'text/csv', size: 1234 }];
 
-    const plan = documentUploadPlan(files, { title: 'Fluvius data', description: 'CSV van klant' });
+    const plan = documentUploadPlan(files, {
+      title: 'Fluvius data',
+      description: 'CSV van klant',
+      documentKind: 'fluvius_data',
+      includeInCloseoutPdf: false,
+      includeInInspectionPack: false,
+    });
 
     expect(plan.folder).toBeNull();
     expect(plan.files).toHaveLength(1);
@@ -19,6 +28,7 @@ describe('project documents explorer helpers', () => {
       description: 'CSV van klant',
       name: 'fluvius.csv',
       parentId: null,
+      documentKind: 'fluvius_data',
     });
   });
 
@@ -95,5 +105,95 @@ describe('project documents explorer helpers', () => {
     expect(html).toContain('sp-doc-title');
     expect(html).toContain('sp-doc-meta');
     expect(html).not.toContain('text-truncate');
+  });
+
+  it('rendert documenttype en dossierbadges', () => {
+    const tree = buildDocumentTree([
+      {
+        id: 'd1',
+        type: 'file',
+        title: 'Schema.pdf',
+        name: 'schema.pdf',
+        contentType: 'application/pdf',
+        documentKind: 'electrical_schema',
+        includeInCloseoutPdf: true,
+        includeInInspectionPack: true,
+        parentId: null,
+      },
+    ]);
+
+    const html = renderDocumentExplorerHtml(tree);
+
+    expect(html).toContain('Elektrisch schema');
+    expect(html).toContain('Opleverdossier');
+    expect(html).toContain('Keuring');
+  });
+
+  it('zet offertes als read-only virtuele documenten klaar', () => {
+    const docs = virtualOfferDocuments({
+      offertes: {
+        zendure_2x2: {
+          filename: 'offerte.pdf',
+          storagePath: 'projects/p1/offertes/zendure_2x2.pdf',
+          downloadUrl: 'https://example.test/offerte.pdf',
+          sizeBytes: 123,
+        },
+      },
+    });
+
+    expect(docs).toEqual([
+      expect.objectContaining({
+        id: 'virtual-offer-zendure_2x2',
+        virtual: true,
+        source: 'project.offertes',
+        documentKind: 'offer',
+        includeInCloseoutPdf: true,
+        downloadUrl: 'https://example.test/offerte.pdf',
+      }),
+    ]);
+
+    const html = renderDocumentExplorerHtml(buildDocumentTree(docs));
+    expect(html).toContain('Offerte');
+    expect(html).toContain('aria-label="Openen"');
+    expect(html).toContain('aria-label="Downloaden"');
+    expect(html).not.toContain('data-doc-action="delete"');
+  });
+
+  it('lost download-urls voor storage-only documenten op', async () => {
+    const previousFirebase = globalThis.firebase;
+    globalThis.firebase = {
+      storage: () => ({
+        ref: path => ({
+          getDownloadURL: async () => `https://storage.test/${encodeURIComponent(path)}`,
+        }),
+      }),
+    };
+
+    try {
+      const docs = await resolveDocumentDownloadUrls([
+        { id: 'offer-1', type: 'file', storagePath: 'projects/p1/offertes/offer.pdf', title: 'Offerte' },
+        { id: 'folder-1', type: 'folder', storagePath: 'ignored' },
+      ]);
+
+      expect(docs[0].downloadUrl).toBe('https://storage.test/projects%2Fp1%2Foffertes%2Foffer.pdf');
+      expect(docs[1].downloadUrl).toBeUndefined();
+    } finally {
+      globalThis.firebase = previousFirebase;
+    }
+  });
+
+  it('telt geüploade documenten en virtuele offertes voor de documententab-badge', () => {
+    const count = projectDocumentBadgeCount(
+      [{ id: 'doc-1', type: 'file', title: 'Factuur.pdf' }],
+      {
+        offertes: {
+          small: { storagePath: 'projects/p1/offertes/small.pdf' },
+          large: { storagePath: 'projects/p1/offertes/large.pdf' },
+          draftWithoutPdf: { filename: 'draft.pdf' },
+        },
+      },
+    );
+
+    expect(count).toBe(3);
   });
 });

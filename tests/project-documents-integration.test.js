@@ -7,11 +7,14 @@ const firestoreRules = readFileSync(new URL('../firestore.rules', import.meta.ur
 
 describe('project documents dashboard integration', () => {
   it('voorziet een documenten-tab naast fotos in de projectdrawer', () => {
-    expect(dashboardSource).toContain("import { mountProjectDocuments }");
+    expect(dashboardSource).toContain('mountProjectDocuments');
+    expect(dashboardSource).toContain('onCountChange: setDrawerDocumentsCount');
+    expect(dashboardSource).toContain('function setDrawerDocumentsCount(count)');
     expect(dashboardSource).toContain('id="drawerMediaTabs"');
     expect(dashboardSource).toContain('data-bs-target="#drawerDocumentsPane"');
     expect(dashboardSource).toContain('id="drawerDocumentsMount"');
     expect(dashboardSource).toContain('mountProjectDocuments(document.getElementById(\'drawerDocumentsMount\')');
+    expect(dashboardSource).toContain('project,');
   });
 
   it('heeft Firestore/Storage helpers voor mappen, upload, verplaatsen, verwijderen en cascade-delete', () => {
@@ -20,6 +23,8 @@ describe('project documents dashboard integration', () => {
     expect(firebaseSource).toContain('async function moveProjectDocument(projectId, documentId, parentId)');
     expect(firebaseSource).toContain('async function deleteProjectDocument(projectId, documentId)');
     expect(firebaseSource).toContain('projects/${projectId}/documents/${ts}_${safeName}');
+    expect(firebaseSource).toContain("documentKind: String(meta.documentKind || 'other').trim() || 'other'");
+    expect(firebaseSource).toContain("if ('documentKind' in patch) data.documentKind");
     expect(firebaseSource).toContain('window.listProjectDocuments = listProjectDocuments;');
     expect(firebaseSource).toContain('const documentsSnap = await projectDoc(id).collection(\'documents\').get();');
     expect(firebaseSource).toContain('Document storage delete failed');

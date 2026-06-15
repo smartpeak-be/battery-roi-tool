@@ -1,6 +1,7 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 import { mountProjectDocuments } from '../project-documents.js';
+import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
@@ -659,6 +660,8 @@ async function openDrawer(projectId) {
       });
       _drawerDocumentsExplorer = mountProjectDocuments(document.getElementById('drawerDocumentsMount'), {
         projectId: project.id,
+        project,
+        onCountChange: setDrawerDocumentsCount,
         onChange: refreshDrawerAfterChange,
       });
       // Populate the count header once the initial refresh lands.
@@ -710,17 +713,13 @@ function closeDrawer() {
   bootstrap.Offcanvas.getOrCreateInstance(el).hide();
 }
 
+function setDrawerDocumentsCount(count) {
+  const docCountEl = document.getElementById('drawerDocumentsCount');
+  if (docCountEl) docCountEl.textContent = count > 0 ? `(${count})` : '';
+}
+
 async function refreshDrawerAfterChange() {
   const countEl = document.getElementById('drawerPhotosCount');
-  if (_drawerProjectId) {
-    const docCountEl = document.getElementById('drawerDocumentsCount');
-    if (docCountEl) {
-      try {
-        const docs = await listProjectDocuments(_drawerProjectId);
-        docCountEl.textContent = docs.length > 0 ? `(${docs.length})` : '';
-      } catch {}
-    }
-  }
   if (!countEl || !_drawerPhotoUploader || !_drawerProjectId) return;
   try {
     const photos = await listProjectPhotos(_drawerProjectId);
@@ -926,6 +925,7 @@ function renderDrawer(project) {
     <section class="border-bottom pb-3 mb-3">
       <div class="d-grid d-md-flex gap-2">
         <a class="btn btn-primary flex-md-grow-1" href="${calcHref}"><i class="fa-solid fa-calculator me-1" aria-hidden="true"></i> Open berekening</a>
+        <button type="button" class="btn btn-outline-primary flex-md-grow-1" id="drawerClosingDossierBtn"><i class="fa-solid fa-file-pdf me-1" aria-hidden="true"></i> Afsluitdossier</button>
         <a class="btn btn-outline-primary flex-md-grow-1" href="project-edit.html?project=${project.id}"><i class="fa-solid fa-pen-to-square me-1" aria-hidden="true"></i> Bewerk project</a>
         <button type="button" class="btn btn-outline-danger flex-md-grow-1" id="drawerDeleteBtn"><i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Verwijderen</button>
       </div>
@@ -1022,6 +1022,44 @@ function renderDrawer(project) {
           await refreshProjectList();
         } catch (err) {
           showToast('Verwijderen mislukt: ' + (err && err.message ? err.message : err), 'danger');
+        }
+      });
+    });
+  }
+
+  const closingBtn = document.getElementById('drawerClosingDossierBtn');
+  if (closingBtn) {
+    closingBtn.addEventListener('click', async () => {
+      closingBtn.disabled = true;
+      const oldHtml = closingBtn.innerHTML;
+      closingBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Dossier voorbereiden…';
+      await withSpinner(async () => {
+        try {
+          const [photos, documents] = await Promise.all([
+            listProjectPhotos(project.id).catch(err => { console.warn('closing dossier photos failed', err); return []; }),
+            listProjectDocuments(project.id).catch(err => { console.warn('closing dossier documents failed', err); return []; }),
+          ]);
+          const model = buildClosingDossierModel(_currentDrawerProject || project, { photos, documents });
+          const drafts = buildClosingDossierDraftTexts(model);
+          document.getElementById('spClosingDossierModal')?.remove();
+          document.body.insertAdjacentHTML('beforeend', renderClosingDossierEditorModalHtml(drafts));
+          const modalEl = document.getElementById('spClosingDossierModal');
+          const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+          modalEl.querySelector('[data-closing-generate]').addEventListener('click', () => {
+            const texts = {};
+            modalEl.querySelectorAll('[data-closing-text]').forEach(input => {
+              texts[input.getAttribute('data-closing-text')] = input.value;
+            });
+            const result = openClosingDossierPrintWindow(model, null, { texts });
+            if (!result.ok) showToast('Popup geblokkeerd. Sta popups toe om het afsluitdossier te openen.', 'warning');
+            else modal.hide();
+          }, { once: true });
+          modal.show();
+        } catch (err) {
+          showToast('Afsluitdossier maken mislukt: ' + (err && err.message ? err.message : err), 'danger');
+        } finally {
+          closingBtn.disabled = false;
+          closingBtn.innerHTML = oldHtml;
         }
       });
     });
