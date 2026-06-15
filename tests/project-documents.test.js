@@ -5,6 +5,7 @@ import {
   iconForDocument,
   renderDocumentExplorerHtml,
   projectDocumentBadgeCount,
+  resolveDocumentDownloadUrls,
   virtualOfferDocuments,
 } from '../assets/js/project-documents.js';
 
@@ -134,6 +135,7 @@ describe('project documents explorer helpers', () => {
         zendure_2x2: {
           filename: 'offerte.pdf',
           storagePath: 'projects/p1/offertes/zendure_2x2.pdf',
+          downloadUrl: 'https://example.test/offerte.pdf',
           sizeBytes: 123,
         },
       },
@@ -146,12 +148,38 @@ describe('project documents explorer helpers', () => {
         source: 'project.offertes',
         documentKind: 'offer',
         includeInCloseoutPdf: true,
+        downloadUrl: 'https://example.test/offerte.pdf',
       }),
     ]);
 
     const html = renderDocumentExplorerHtml(buildDocumentTree(docs));
     expect(html).toContain('Offerte');
+    expect(html).toContain('aria-label="Openen"');
+    expect(html).toContain('aria-label="Downloaden"');
     expect(html).not.toContain('data-doc-action="delete"');
+  });
+
+  it('lost download-urls voor storage-only documenten op', async () => {
+    const previousFirebase = globalThis.firebase;
+    globalThis.firebase = {
+      storage: () => ({
+        ref: path => ({
+          getDownloadURL: async () => `https://storage.test/${encodeURIComponent(path)}`,
+        }),
+      }),
+    };
+
+    try {
+      const docs = await resolveDocumentDownloadUrls([
+        { id: 'offer-1', type: 'file', storagePath: 'projects/p1/offertes/offer.pdf', title: 'Offerte' },
+        { id: 'folder-1', type: 'folder', storagePath: 'ignored' },
+      ]);
+
+      expect(docs[0].downloadUrl).toBe('https://storage.test/projects%2Fp1%2Foffertes%2Foffer.pdf');
+      expect(docs[1].downloadUrl).toBeUndefined();
+    } finally {
+      globalThis.firebase = previousFirebase;
+    }
   });
 
   it('telt geüploade documenten en virtuele offertes voor de documententab-badge', () => {

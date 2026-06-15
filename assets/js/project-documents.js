@@ -145,8 +145,11 @@ function renderNode(node, level = 0, collapsedIds = new Set()) {
   const dossierBadges = !isFolder
     ? `${node.includeInCloseoutPdf ? '<span class="badge rounded-pill text-bg-primary-subtle text-primary-emphasis me-1">Opleverdossier</span>' : ''}${node.includeInInspectionPack ? '<span class="badge rounded-pill text-bg-warning-subtle text-warning-emphasis me-1">Keuring</span>' : ''}`
     : '';
-  const download = (!isFolder && node.downloadUrl)
-    ? `<a class="btn btn-sm btn-outline-primary" href="${escapeAttr(node.downloadUrl)}" target="_blank" rel="noopener" title="Openen"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>`
+  const openActions = (!isFolder && node.downloadUrl)
+    ? `
+        <a class="btn btn-sm btn-outline-primary" href="${escapeAttr(node.downloadUrl)}" target="_blank" rel="noopener" title="Openen" aria-label="Openen"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+        <a class="btn btn-sm btn-outline-secondary" href="${escapeAttr(node.downloadUrl)}" download="${escapeAttr(node.name || node.title || 'document')}" title="Downloaden" aria-label="Downloaden"><i class="fa-solid fa-download"></i></a>
+      `
     : '';
   const toggle = isFolder
     ? `<button type="button" class="btn btn-sm btn-link text-secondary sp-doc-toggle" data-doc-action="toggle-folder" aria-expanded="${isCollapsed ? 'false' : 'true'}" title="Map ${isCollapsed ? 'openklappen' : 'toeklappen'}"><i class="fa-solid ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'}"></i></button>`
@@ -170,7 +173,7 @@ function renderNode(node, level = 0, collapsedIds = new Set()) {
         </div>
       </div>
       <div class="sp-doc-actions">
-        ${download}
+        ${openActions}
         ${mutableActions}
       </div>
     </div>
@@ -418,6 +421,30 @@ export function projectDocumentBadgeCount(entries = [], project = {}) {
   return mergeProjectDocuments(entries, project).length;
 }
 
+function storageRefForPath(storagePath) {
+  if (!storagePath) return null;
+  if (typeof window !== 'undefined' && window.firebase && typeof window.firebase.storage === 'function') {
+    return window.firebase.storage().ref(storagePath);
+  }
+  if (typeof globalThis !== 'undefined' && globalThis.firebase && typeof globalThis.firebase.storage === 'function') {
+    return globalThis.firebase.storage().ref(storagePath);
+  }
+  return null;
+}
+
+export async function resolveDocumentDownloadUrls(entries = []) {
+  return Promise.all((entries || []).map(async entry => {
+    if (!entry || entry.downloadUrl || !entry.storagePath || entry.type === 'folder') return entry;
+    const ref = storageRefForPath(entry.storagePath);
+    if (!ref || typeof ref.getDownloadURL !== 'function') return entry;
+    try {
+      return { ...entry, downloadUrl: await ref.getDownloadURL() };
+    } catch (err) {
+      return { ...entry, downloadUrlError: err && err.message ? err.message : String(err) };
+    }
+  }));
+}
+
 function promptMoveTarget(tree, doc) {
   const blocked = doc.type === 'folder' ? descendantIds(tree, doc.id) : new Set();
   blocked.add(doc.id);
@@ -483,7 +510,7 @@ export function mountProjectDocuments(containerEl, opts = {}) {
     }
     try {
       const entries = await window.listProjectDocuments(options.projectId);
-      state.entries = mergeProjectDocuments(entries, options.project || {});
+      state.entries = await resolveDocumentDownloadUrls(mergeProjectDocuments(entries, options.project || {}));
       render();
     } catch (err) {
       setError('Documenten laden mislukt: ' + (err && err.message ? err.message : err));
@@ -629,7 +656,9 @@ if (typeof window !== 'undefined') {
     iconForDocument,
     mergeProjectDocuments,
     mountProjectDocuments,
+    projectDocumentBadgeCount,
     renderDocumentExplorerHtml,
+    resolveDocumentDownloadUrls,
     virtualOfferDocuments,
   };
 }
