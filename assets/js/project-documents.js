@@ -414,6 +414,10 @@ export function mergeProjectDocuments(entries = [], project = {}) {
   return [...(entries || []), ...virtualOfferDocuments(project)];
 }
 
+export function projectDocumentBadgeCount(entries = [], project = {}) {
+  return mergeProjectDocuments(entries, project).length;
+}
+
 function promptMoveTarget(tree, doc) {
   const blocked = doc.type === 'folder' ? descendantIds(tree, doc.id) : new Set();
   blocked.add(doc.id);

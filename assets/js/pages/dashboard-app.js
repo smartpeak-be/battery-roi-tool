@@ -1,6 +1,6 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
-import { mountProjectDocuments } from '../project-documents.js';
+import { mountProjectDocuments, projectDocumentBadgeCount } from '../project-documents.js';
 import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
@@ -719,7 +719,8 @@ async function refreshDrawerAfterChange() {
     if (docCountEl) {
       try {
         const docs = await listProjectDocuments(_drawerProjectId);
-        docCountEl.textContent = docs.length > 0 ? `(${docs.length})` : '';
+        const count = projectDocumentBadgeCount(docs, _currentDrawerProject || {});
+        docCountEl.textContent = count > 0 ? `(${count})` : '';
       } catch {}
     }
   }

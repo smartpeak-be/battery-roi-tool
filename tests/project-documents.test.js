@@ -4,6 +4,7 @@ import {
   documentUploadPlan,
   iconForDocument,
   renderDocumentExplorerHtml,
+  projectDocumentBadgeCount,
   virtualOfferDocuments,
 } from '../assets/js/project-documents.js';
 
@@ -151,5 +152,20 @@ describe('project documents explorer helpers', () => {
     const html = renderDocumentExplorerHtml(buildDocumentTree(docs));
     expect(html).toContain('Offerte');
     expect(html).not.toContain('data-doc-action="delete"');
+  });
+
+  it('telt geüploade documenten en virtuele offertes voor de documententab-badge', () => {
+    const count = projectDocumentBadgeCount(
+      [{ id: 'doc-1', type: 'file', title: 'Factuur.pdf' }],
+      {
+        offertes: {
+          small: { storagePath: 'projects/p1/offertes/small.pdf' },
+          large: { storagePath: 'projects/p1/offertes/large.pdf' },
+          draftWithoutPdf: { filename: 'draft.pdf' },
+        },
+      },
+    );
+
+    expect(count).toBe(3);
   });
 });
