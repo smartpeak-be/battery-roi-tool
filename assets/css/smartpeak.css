@@ -587,6 +587,9 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   pointer-events: none;
 }
 .pu-progress .progress-bar { transition: width 0.15s ease; }
+#pu-tag-modal {
+  z-index: 1095; /* above .sp-lightbox (1080) so retag dialog stays clickable */
+}
 
 /* ── Global spinner overlay ───────────────────────────────────────────── */
 

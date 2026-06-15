@@ -21,9 +21,11 @@ describe('project photo category editing integration', () => {
     expect(photoUploaderSource).toContain("await updateProjectPhotoTag(options.projectId, photo.id, tag, null);");
   });
 
-  it('heeft styling voor zichtbaar categorielabel in de lightbox', () => {
+  it('heeft styling voor zichtbaar categorielabel en modal boven de lightbox', () => {
     expect(cssSource).toContain('.pu-lightbox-meta');
     expect(cssSource).toContain('.pu-lightbox-tag');
     expect(cssSource).toContain('.sp-lightbox .retag');
+    expect(cssSource).toContain('#pu-tag-modal');
+    expect(cssSource).toContain('z-index: 1095');
   });
 });
