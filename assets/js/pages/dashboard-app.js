@@ -1,6 +1,6 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
-import { mountProjectDocuments, projectDocumentBadgeCount } from '../project-documents.js';
+import { mountProjectDocuments } from '../project-documents.js';
 import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
@@ -661,6 +661,7 @@ async function openDrawer(projectId) {
       _drawerDocumentsExplorer = mountProjectDocuments(document.getElementById('drawerDocumentsMount'), {
         projectId: project.id,
         project,
+        onCountChange: setDrawerDocumentsCount,
         onChange: refreshDrawerAfterChange,
       });
       // Populate the count header once the initial refresh lands.
@@ -712,18 +713,13 @@ function closeDrawer() {
   bootstrap.Offcanvas.getOrCreateInstance(el).hide();
 }
 
+function setDrawerDocumentsCount(count) {
+  const docCountEl = document.getElementById('drawerDocumentsCount');
+  if (docCountEl) docCountEl.textContent = count > 0 ? `(${count})` : '';
+}
+
 async function refreshDrawerAfterChange() {
   const countEl = document.getElementById('drawerPhotosCount');
-  if (_drawerProjectId) {
-    const docCountEl = document.getElementById('drawerDocumentsCount');
-    if (docCountEl) {
-      try {
-        const docs = await listProjectDocuments(_drawerProjectId);
-        const count = projectDocumentBadgeCount(docs, _currentDrawerProject || {});
-        docCountEl.textContent = count > 0 ? `(${count})` : '';
-      } catch {}
-    }
-  }
   if (!countEl || !_drawerPhotoUploader || !_drawerProjectId) return;
   try {
     const photos = await listProjectPhotos(_drawerProjectId);

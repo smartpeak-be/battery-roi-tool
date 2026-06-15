@@ -435,7 +435,7 @@ function promptMoveTarget(tree, doc) {
 }
 
 export function mountProjectDocuments(containerEl, opts = {}) {
-  const options = { projectId: null, project: null, onChange: null, ...opts };
+  const options = { projectId: null, project: null, onChange: null, onCountChange: null, ...opts };
   const state = { entries: [], tree: buildDocumentTree([]), busy: false, collapsedIds: new Set() };
 
   containerEl.innerHTML = `
@@ -472,11 +472,13 @@ export function mountProjectDocuments(containerEl, opts = {}) {
     const folderIds = new Set(Array.from(state.tree.byId.values()).filter(node => node.type === 'folder').map(node => node.id));
     state.collapsedIds = new Set(Array.from(state.collapsedIds).filter(id => folderIds.has(id)));
     listEl.innerHTML = renderDocumentExplorerHtml(state.tree, state.collapsedIds);
+    if (typeof options.onCountChange === 'function') options.onCountChange(state.entries.length);
   }
 
   async function refresh() {
     if (!options.projectId) {
       listEl.innerHTML = '<p class="sp-empty-state mb-0">Sla het project eerst op om documenten toe te voegen.</p>';
+      if (typeof options.onCountChange === 'function') options.onCountChange(0);
       return;
     }
     try {
