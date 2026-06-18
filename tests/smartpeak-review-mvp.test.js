@@ -31,15 +31,21 @@ describe('SmartPeak review MVP', () => {
 
   it('adds dashboard review link generation and an embeddable carousel widget', () => {
     const dashboard = read('assets/js/pages/dashboard-app.js');
+    const dashboardHtml = read('dashboard.html');
+    const embedPage = read('reviews-embed.html');
     const widget = read('assets/js/widgets/reviews.js');
     const rules = read('firestore.rules');
 
     expect(dashboard).toContain('reviewLinkBtn');
     expect(dashboard).toContain('createAndCopyReviewLink');
     expect(dashboard).toContain('createReviewRequestForProject(projectId)');
+    expect(dashboardHtml).toContain('reviews-beheer.html');
+    expect(embedPage).toContain('data-limit="10"');
+    expect(embedPage).toContain('Wat SmartPeak-klanten zeggen');
     expect(widget).toContain("collectionId: 'reviews'");
     expect(widget).toContain("stringValue: 'published'");
     expect(widget).toContain('sp-review-widget__track');
+    expect(widget).toContain('data-sp-review-next');
     expect(rules).toContain('match /reviewRequests/{requestId}');
     expect(rules).toContain('allow list:   if isSignedIn();');
     expect(rules).toContain('allow create: if isSignedIn() && isValidReviewRequestCreate();');
