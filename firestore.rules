@@ -4,9 +4,18 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper: check if the authenticated user is whitelisted
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function signedInEmail() {
+      return isSignedIn() && request.auth.token.email is string
+        ? request.auth.token.email
+        : '';
+    }
+
     function isWhitelisted() {
-      return request.auth != null &&
-             request.auth.token.email in ['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be'];
+      return signedInEmail() in ['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be'];
     }
 
     function leadPath(leadId) {
@@ -194,7 +203,7 @@ service cloud.firestore {
         && isOptionalShortString(data, 'suggestedDisplayName', 160)
         && isOptionalShortString(data, 'googleReviewUrl', 500)
         && data.status == 'active'
-        && data.createdBy is string
+        && data.createdBy == signedInEmail()
         && data.createdAt == request.time
         && data.updatedAt == request.time
         && data.submittedAt == null;
@@ -266,8 +275,8 @@ service cloud.firestore {
     // ─── Reviews (public request + submitted reviews, moderated publishing) ─
     match /reviewRequests/{requestId} {
       allow get:    if isWhitelisted() || isPublicReviewRequestGet();
-      allow list:   if isWhitelisted();
-      allow create: if isWhitelisted() && isValidReviewRequestCreate();
+      allow list:   if isSignedIn();
+      allow create: if isSignedIn() && isValidReviewRequestCreate();
       allow update: if isWhitelisted() || isPublicReviewRequestSubmissionUpdate();
       allow delete: if isWhitelisted();
     }

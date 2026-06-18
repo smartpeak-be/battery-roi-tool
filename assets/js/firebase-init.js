@@ -2097,12 +2097,17 @@ async function createReviewRequestForProject(projectId) {
   if (!email) throw new Error('Niet ingelogd');
   const project = await getProject(projectId);
   if (!project) throw new Error('Project niet gevonden');
-  const existing = await reviewRequestsCol()
-    .where('projectId', '==', projectId)
-    .where('status', '==', 'active')
-    .limit(1)
-    .get();
-  if (!existing.empty) {
+  let existing = null;
+  try {
+    existing = await reviewRequestsCol()
+      .where('projectId', '==', projectId)
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+  } catch (e) {
+    console.warn('Bestaande reviewlink controleren mislukt, maak nieuwe link aan', e);
+  }
+  if (existing && !existing.empty) {
     const doc = existing.docs[0];
     return { id: doc.id, url: publicReviewUrl(doc.id), ...doc.data() };
   }
