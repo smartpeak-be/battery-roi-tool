@@ -136,6 +136,9 @@ function rowHTML(p, isDeleted) {
   const calcBtn = (!isDeleted && p.lastCalcRun && p.lastCalcRun.calculatedAt)
     ? `<a class="btn btn-sm btn-outline-secondary calcBtn" data-id="${p.id}" href="index.html?project=${p.id}#results" title="Open berekening" aria-label="Open berekening"><i class="fa-solid fa-calculator" aria-hidden="true"></i></a>`
     : '';
+  const reviewBtn = isDeleted
+    ? ''
+    : `<button type="button" class="btn btn-sm btn-outline-primary reviewLinkBtn" data-id="${p.id}" title="Reviewlink maken/kopiëren" aria-label="Reviewlink maken/kopiëren"><i class="fa-solid fa-star" aria-hidden="true"></i></button>`;
   const action  = isDeleted
     ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreBtn" data-id="${p.id}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
        <button type="button" class="btn btn-sm btn-outline-danger permdelBtn"   data-id="${p.id}" data-name="${escapeHtml(getProjectLabel(p))}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
@@ -171,6 +174,7 @@ function rowHTML(p, isDeleted) {
       <td class="text-end">
         <div class="d-flex gap-1 justify-content-end">
           ${calcBtn}
+          ${reviewBtn}
           ${editBtn}
           ${action}
         </div>
@@ -473,10 +477,39 @@ function kanbanCardHTML(p) {
   `;
 }
 
+async function createAndCopyReviewLink(projectId, btn) {
+  if (!projectId || typeof createReviewRequestForProject !== 'function') return;
+  const oldHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+  }
+  try {
+    const request = await createReviewRequestForProject(projectId);
+    const url = request.url;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Reviewlink gekopieerd.', 'success');
+    } catch {
+      window.prompt('Reviewlink kopiëren:', url);
+    }
+  } catch (err) {
+    showToast('Reviewlink maken mislukt: ' + (err && err.message ? err.message : err), 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = oldHtml;
+    }
+  }
+}
+
 function wireRowActions(el) {
   // Wire project-name buttons → open drawer
   el.querySelectorAll('.projectNameBtn').forEach(btn => {
     btn.addEventListener('click', () => openDrawer(btn.dataset.id));
+  });
+  el.querySelectorAll('.reviewLinkBtn').forEach(btn => {
+    btn.addEventListener('click', async () => createAndCopyReviewLink(btn.dataset.id, btn));
   });
   el.querySelectorAll('.deleteBtn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -724,6 +757,7 @@ async function refreshDrawerAfterChange() {
   try {
     const photos = await listProjectPhotos(_drawerProjectId);
     countEl.textContent = photos.length > 0 ? `(${photos.length})` : '';
+    setWorkflowPhotoCounts(photos);
   } catch {}
 }
 
@@ -750,6 +784,94 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+
+function workflowStatusHtml({ count = 0, required = false } = {}) {
+  if (count > 0) return '<span class="sp-workflow-status text-bg-success"><i class="fa-solid fa-check" aria-hidden="true"></i> Klaar</span>';
+  if (required) return '<span class="sp-workflow-status text-bg-warning"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Nodig</span>';
+  return '<span class="sp-workflow-status text-bg-secondary"><i class="fa-regular fa-circle" aria-hidden="true"></i> Open</span>';
+}
+
+function renderProjectWorkflowQuickMenu(project) {
+  const projectName = getProjectLabel(project);
+  return `
+    <div class="sp-workflow-intro mb-3">
+      <div class="fw-semibold">Snelle plaatsingsflow</div>
+      <div class="small text-muted">Mobiel menu per afgebakend blok. Start wat je nodig hebt, zonder verplichte wizard.</div>
+    </div>
+    <div class="sp-workflow-grid" aria-label="Werkflow voor ${escapeHtml(projectName)}">
+      <article class="sp-workflow-card" data-workflow-block="photos-before">
+        <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+          <div>
+            <div class="sp-workflow-kicker">Vooraf / intake</div>
+            <h6 class="mb-1"><i class="fa-solid fa-camera me-1" aria-hidden="true"></i> Situatiefoto’s vóór</h6>
+          </div>
+          <span data-workflow-status="photos-before">${workflowStatusHtml({ required: true })}</span>
+        </div>
+        <p class="small text-muted mb-3">Trek of upload een reeks foto’s. Ze worden direct opgeslagen als “Situatie vóór installatie”.</p>
+        <div class="d-grid gap-2">
+          <button type="button" class="btn btn-primary" data-workflow-action="photos-before-camera">
+            <i class="fa-solid fa-camera me-1" aria-hidden="true"></i> Foto’s trekken
+          </button>
+          <button type="button" class="btn btn-outline-primary" data-workflow-action="photos-before-gallery">
+            <i class="fa-solid fa-folder-open me-1" aria-hidden="true"></i> Uit galerij
+          </button>
+        </div>
+      </article>
+      ${[
+        ['checks-before', 'Voorinstallatie checks', 'Netaansluiting, ruimte, kabeltraject', 'fa-clipboard-check'],
+        ['measurements', 'Metingen', 'Spanning/stroom en technische waarden', 'fa-gauge-high'],
+        ['installation', 'Installatie', 'Toestellen, bekabeling, serienummers', 'fa-screwdriver-wrench'],
+        ['photos-after', 'Na installatie', 'Eindfoto’s en bewijs proper werk', 'fa-camera-retro'],
+        ['inspection', 'Keuring / oplevering', 'Keuringsstukken en dossier klaarzetten', 'fa-file-circle-check'],
+      ].map(([id, title, text, icon]) => `
+        <article class="sp-workflow-card is-placeholder" data-workflow-block="${escapeHtml(id)}">
+          <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+            <div>
+              <div class="sp-workflow-kicker">Volgende fase</div>
+              <h6 class="mb-1"><i class="fa-solid ${escapeHtml(icon)} me-1" aria-hidden="true"></i> ${escapeHtml(title)}</h6>
+            </div>
+            ${workflowStatusHtml()}
+          </div>
+          <p class="small text-muted mb-0">${escapeHtml(text)}</p>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function setWorkflowPhotoCounts(photos) {
+  const beforeCount = (photos || []).filter(p => {
+    const tag = p && p.tag ? String(p.tag) : 'situatie';
+    return tag === 'situatie' || tag === 'situation_before';
+  }).length;
+  const card = document.querySelector('[data-workflow-block="photos-before"]');
+  const status = document.querySelector('[data-workflow-status="photos-before"]');
+  if (card) card.classList.toggle('is-done', beforeCount > 0);
+  if (status) status.innerHTML = workflowStatusHtml({ count: beforeCount, required: true });
+}
+
+function showDrawerTab(targetSelector) {
+  const trigger = document.querySelector(`[data-bs-target="${targetSelector}"]`);
+  if (trigger && window.bootstrap) bootstrap.Tab.getOrCreateInstance(trigger).show();
+}
+
+function wireProjectWorkflowQuickMenu(project) {
+  void project;
+  const mount = document.getElementById('drawerWorkflowMount');
+  if (!mount) return;
+  mount.addEventListener('click', (e) => {
+    const actionBtn = e.target.closest('[data-workflow-action]');
+    if (!actionBtn) return;
+    const action = actionBtn.getAttribute('data-workflow-action');
+    if (action === 'photos-before-camera') {
+      showDrawerTab('#drawerPhotosPane');
+      _drawerPhotoUploader?.startUploadForTag('situation_before', 'camera');
+    } else if (action === 'photos-before-gallery') {
+      showDrawerTab('#drawerPhotosPane');
+      _drawerPhotoUploader?.startUploadForTag('situation_before', 'gallery');
+    }
+  });
+}
 
 function renderDrawer(project) {
   const header = document.getElementById('drawerHeader');
@@ -925,6 +1047,7 @@ function renderDrawer(project) {
     <section class="border-bottom pb-3 mb-3">
       <div class="d-grid d-md-flex gap-2">
         <a class="btn btn-primary flex-md-grow-1" href="${calcHref}"><i class="fa-solid fa-calculator me-1" aria-hidden="true"></i> Open berekening</a>
+        <button type="button" class="btn btn-outline-primary flex-md-grow-1" id="drawerReviewLinkBtn"><i class="fa-solid fa-star me-1" aria-hidden="true"></i> Reviewlink</button>
         <button type="button" class="btn btn-outline-primary flex-md-grow-1" id="drawerClosingDossierBtn"><i class="fa-solid fa-file-pdf me-1" aria-hidden="true"></i> Afsluitdossier</button>
         <a class="btn btn-outline-primary flex-md-grow-1" href="project-edit.html?project=${project.id}"><i class="fa-solid fa-pen-to-square me-1" aria-hidden="true"></i> Bewerk project</a>
         <button type="button" class="btn btn-outline-danger flex-md-grow-1" id="drawerDeleteBtn"><i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Verwijderen</button>
@@ -958,7 +1081,12 @@ function renderDrawer(project) {
     <section class="border-bottom pb-3 mb-3" id="drawerMediaSection">
       <ul class="nav nav-tabs mb-3" id="drawerMediaTabs" role="tablist">
         <li class="nav-item" role="presentation">
-          <button class="nav-link active" id="drawerPhotosTab" data-bs-toggle="tab" data-bs-target="#drawerPhotosPane" type="button" role="tab" aria-controls="drawerPhotosPane" aria-selected="true">
+          <button class="nav-link active" id="drawerWorkflowTab" data-bs-toggle="tab" data-bs-target="#drawerWorkflowPane" type="button" role="tab" aria-controls="drawerWorkflowPane" aria-selected="true">
+            <i class="fa-solid fa-list-check" aria-hidden="true"></i> Werkflow
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="drawerPhotosTab" data-bs-toggle="tab" data-bs-target="#drawerPhotosPane" type="button" role="tab" aria-controls="drawerPhotosPane" aria-selected="false">
             <i class="fa-solid fa-images" aria-hidden="true"></i> Foto's <span id="drawerPhotosCount" class="text-muted fw-normal"></span>
           </button>
         </li>
@@ -969,7 +1097,10 @@ function renderDrawer(project) {
         </li>
       </ul>
       <div class="tab-content">
-        <div class="tab-pane fade show active" id="drawerPhotosPane" role="tabpanel" aria-labelledby="drawerPhotosTab" tabindex="0">
+        <div class="tab-pane fade show active" id="drawerWorkflowPane" role="tabpanel" aria-labelledby="drawerWorkflowTab" tabindex="0">
+          <div id="drawerWorkflowMount">${renderProjectWorkflowQuickMenu(project)}</div>
+        </div>
+        <div class="tab-pane fade" id="drawerPhotosPane" role="tabpanel" aria-labelledby="drawerPhotosTab" tabindex="0">
           <div id="drawerPhotoUploader"></div>
         </div>
         <div class="tab-pane fade" id="drawerDocumentsPane" role="tabpanel" aria-labelledby="drawerDocumentsTab" tabindex="0">
@@ -1002,6 +1133,7 @@ function renderDrawer(project) {
 
   body.innerHTML = sections.join('');
 
+  wireProjectWorkflowQuickMenu(project);
   renderDrawerSerials(project);
 
   // Wire delete button (soft-delete from drawer)
@@ -1025,6 +1157,11 @@ function renderDrawer(project) {
         }
       });
     });
+  }
+
+  const reviewBtn = document.getElementById('drawerReviewLinkBtn');
+  if (reviewBtn) {
+    reviewBtn.addEventListener('click', async () => createAndCopyReviewLink(project.id, reviewBtn));
   }
 
   const closingBtn = document.getElementById('drawerClosingDossierBtn');

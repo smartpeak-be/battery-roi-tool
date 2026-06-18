@@ -1036,15 +1036,6 @@ async function _heicToJpegIfNeeded(file, onStep) {
   return Array.isArray(out) ? out[0] : out;
 }
 
-// Resize-down + re-encode a Blob to a "medium" JPEG meant for full-screen
-// viewing. Output is capped at 2000px longest side, JPEG q=0.85 — typically
-// ~500-900 KB for a 12MP source. Keeps full uploads in the simple-upload
-// path (under the 5MB resumable threshold) which avoids new-bucket CORS
-// gotchas on the resumable protocol.
-async function makeFullSizedJpeg(source) {
-  return _resizeToJpeg(source, 2000, 0.85);
-}
-
 // Accepts a File/Blob (new upload) or HTMLImageElement (backfill).
 // Returns { blob: Blob, width: number, height: number }.
 //
@@ -1205,19 +1196,20 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   const tag = allowedPhotoTags.has(opts.tag) ? opts.tag : 'situation_before';
   console.log('[upload] post-conversion size:', workFile.size, 'bytes', '(type:', workType + ')');
 
-  // ── Step 2a — resize full file (max 2000px longest, q=0.85) ─────────────
-  // Site-survey photos don't need source-resolution detail; 2000px is already
-  // larger than the lightbox display. Resizing here keeps full uploads under
-  // ~1MB so they go via the simple-upload path (avoids resumable-protocol
-  // CORS quirks on new Storage buckets) and finish in seconds on mobile.
-  onStep('Foto verkleinen…');
-  let fullForUpload, fullDims;
+  // ── Step 2a — keep the full/original upload unchanged ──────────────────
+  // The full photo is used in the lightbox and closing dossier; keep the
+  // source-resolution file instead of resizing/re-encoding it. HEIC/HEIF may
+  // already have been converted to JPEG above for browser compatibility.
+  onStep('Originele foto voorbereiden…');
+  const originalForUpload = workFile;
+  const originalContentType = workType || originalForUpload.type || 'image/jpeg';
+  let originalDims;
   try {
-    const r = await makeFullSizedJpeg(workFile);
-    fullForUpload = r.blob;
-    fullDims      = { width: r.width, height: r.height };
-  } catch (e) { throw new Error('Stap 2a (verkleinen) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
-  console.log('[upload] full resized:', fullDims.width, 'x', fullDims.height, '/', fullForUpload.size, 'bytes');
+    const decoded = await _decodeBlobForCanvas(originalForUpload);
+    originalDims = { width: decoded.width, height: decoded.height };
+    decoded.cleanup();
+  } catch (e) { throw new Error('Stap 2a (originele foto lezen) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
+  console.log('[upload] original kept:', originalDims.width, 'x', originalDims.height, '/', originalForUpload.size, 'bytes', '(type:', originalContentType + ')');
 
   const safeName     = workName.replace(/[^\w.-]+/g, '_').slice(0, 80);
   const safeStripped = safeName.replace(/\.[^.]+$/, '') || 'photo';
@@ -1228,7 +1220,7 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   // ── Step 2b — thumbnail (400px max, JPEG q=0.82) ────────────────────────
   onStep('Thumbnail genereren…');
   let thumb;
-  try { thumb = await makeThumbnail(fullForUpload); }
+  try { thumb = await makeThumbnail(originalForUpload); }
   catch (e) { throw new Error('Stap 2b (thumbnail) mislukt: ' + (e && e.message ? e.message : e), { cause: e }); }
   console.log('[upload] thumb created:', thumb.width, 'x', thumb.height, '/', thumb.blob.size, 'bytes');
 
@@ -1259,9 +1251,9 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
   });
   try {
     await Promise.all([
-      // Both are now small JPEGs (full ≤ ~1MB, thumb ~20KB). 60s is plenty.
-      putWithProgress(fullPath,  fullForUpload, 'image/jpeg', 'full',  60_000),
-      putWithProgress(thumbPath, thumb.blob,    'image/jpeg', 'thumb', 30_000),
+      // Full/original keeps the uploaded file unchanged; only the thumb is a small JPEG.
+      putWithProgress(fullPath,  originalForUpload, originalContentType, 'full',  120_000),
+      putWithProgress(thumbPath, thumb.blob,         'image/jpeg',        'thumb', 30_000),
     ]);
   } catch (e) {
     // best-effort cleanup of whichever blob(s) landed
@@ -1279,10 +1271,10 @@ async function uploadProjectPhotoWithThumb(projectId, file, opts = {}) {
       storagePath:      fullPath,
       thumbStoragePath: thumbPath,
       name:             workName,
-      contentType:      'image/jpeg',
-      sizeBytes:        fullForUpload.size,
-      width:            fullDims.width,
-      height:           fullDims.height,
+      contentType:      originalContentType,
+      sizeBytes:        originalForUpload.size,
+      width:            originalDims.width,
+      height:           originalDims.height,
       tag,
       includeInCloseoutPdf: tag !== 'other',
       includeInInspectionPack: ['situation_after', 'equipment_after', 'electrical_cabinet', 'meter_cabinet', 'serial', 'inspection'].includes(tag),
@@ -2090,6 +2082,108 @@ async function convertLeadToProject(lead, opts = {}) {
   return ref.id;
 }
 
+// ─── REVIEWS ────────────────────────────────────────────────────────────────
+
+function reviewRequestsCol() { return getDb().collection('reviewRequests'); }
+function reviewsCol() { return getDb().collection('reviews'); }
+
+function publicReviewUrl(reviewRequestId) {
+  const base = window.location.origin + window.location.pathname.replace(/[^/]*$/, 'review.html');
+  return `${base}?r=${encodeURIComponent(reviewRequestId)}`;
+}
+
+async function createReviewRequestForProject(projectId) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  const project = await getProject(projectId);
+  if (!project) throw new Error('Project niet gevonden');
+  const existing = await reviewRequestsCol()
+    .where('projectId', '==', projectId)
+    .where('status', '==', 'active')
+    .limit(1)
+    .get();
+  if (!existing.empty) {
+    const doc = existing.docs[0];
+    return { id: doc.id, url: publicReviewUrl(doc.id), ...doc.data() };
+  }
+  const settings = await getSettings();
+  const ref = await reviewRequestsCol().add({
+    projectId,
+    originalProjectName: project.projectName || '',
+    originalCustomerName: project.customerName || '',
+    suggestedDisplayName: project.customerName || project.projectName || '',
+    googleReviewUrl: settings.googleReviewUrl || null,
+    status: 'active',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: email,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    submittedAt: null,
+  });
+  return { id: ref.id, url: publicReviewUrl(ref.id) };
+}
+
+async function getReviewRequest(id) {
+  const snap = await reviewRequestsCol().doc(id).get();
+  return snap.exists ? { id: snap.id, ...snap.data() } : null;
+}
+
+async function submitSmartPeakReview(data) {
+  if (!data || !data.requestId) throw new Error('Reviewlink ontbreekt');
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const review = {
+    requestId: data.requestId,
+    projectId: data.projectId || null,
+    originalProjectName: data.originalProjectName || '',
+    originalCustomerName: data.originalCustomerName || '',
+    displayName: data.displayName || '',
+    rating: Number(data.rating) || 0,
+    shortReview: data.shortReview || '',
+    privateFeedback: data.privateFeedback || '',
+    consentWebsite: data.consentWebsite === true,
+    consentSocials: data.consentSocials === true,
+    googleReviewUrl: data.googleReviewUrl || null,
+    googleClicked: false,
+    status: 'submitted',
+    createdAt: now,
+    updatedAt: now,
+  };
+  const ref = await reviewsCol().add(review);
+  try {
+    await reviewRequestsCol().doc(data.requestId).set({
+      submittedAt: now,
+      latestReviewId: ref.id,
+      updatedAt: now,
+    }, { merge: true });
+  } catch (e) {
+    console.warn('Review request status bijwerken mislukt', e);
+  }
+  return ref.id;
+}
+
+async function updateReviewGoogleClicked(reviewId) {
+  await reviewsCol().doc(reviewId).set({
+    googleClicked: true,
+    googleClickedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+async function listSmartPeakReviews(limit = 50) {
+  const snap = await reviewsCol().orderBy('createdAt', 'desc').limit(limit).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+async function updateSmartPeakReviewStatus(reviewId, status, extra = {}) {
+  const allowed = ['submitted', 'approved', 'published', 'rejected'];
+  if (!allowed.includes(status)) throw new Error('Ongeldige reviewstatus');
+  await reviewsCol().doc(reviewId).set({
+    ...extra,
+    status,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    moderatedBy: currentUserEmail() || 'unknown',
+  }, { merge: true });
+}
+
 // ─── SETTINGS ────────────────────────────────────────────────────────────────
 
 async function getSettings() {
@@ -2590,6 +2684,12 @@ window.isManualConfig = isManualConfig;
 window.isProductConfig = isProductConfig;
 window.getSettings = getSettings;
 window.saveSettings = saveSettings;
+window.createReviewRequestForProject = createReviewRequestForProject;
+window.getReviewRequest = getReviewRequest;
+window.submitSmartPeakReview = submitSmartPeakReview;
+window.updateReviewGoogleClicked = updateReviewGoogleClicked;
+window.listSmartPeakReviews = listSmartPeakReviews;
+window.updateSmartPeakReviewStatus = updateSmartPeakReviewStatus;
 window.listProductCategories = listProductCategories;
 window.createProductCategory = createProductCategory;
 window.updateProductCategory = updateProductCategory;

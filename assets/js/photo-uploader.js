@@ -158,7 +158,9 @@ import {
       allowFileUpload:true,
       allowDropZone:  true,
       readOnly:       false,
+      defaultTag:     'situation_before',
     }, opts || {});
+    options.defaultTag = normalizePhotoTag(options.defaultTag);
 
     containerEl.innerHTML = _renderSkeleton(options);
 
@@ -178,6 +180,8 @@ import {
       annotationDrawing: false,
       annotationLastPoint: null,
       lightboxSeq:    0,
+      nextUploadTag:  null,
+      skipTagModalOnce: false,
       zoom:           { scale: 1, x: 0, y: 0 },
       zoomPointers:   new Map(),
       zoomPanLast:    null,
@@ -927,6 +931,23 @@ import {
       if (idx >= 0) _openLightbox(idx);
     }
 
+    function startUploadForTag(tag, source = 'camera') {
+      if (options.readOnly) return false;
+      state.nextUploadTag = normalizePhotoTag(tag || options.defaultTag);
+      state.skipTagModalOnce = true;
+      const input = source === 'gallery'
+        ? containerEl.querySelector('[data-pu-gallery]')
+        : containerEl.querySelector('[data-pu-camera]');
+      if (!input) {
+        _toast('Uploadknop niet beschikbaar voor deze flow.', 'warning');
+        state.nextUploadTag = null;
+        state.skipTagModalOnce = false;
+        return false;
+      }
+      input.click();
+      return true;
+    }
+
     // Lazy backfill — one at a time, fail-soft.
     async function _drainBackfillQueue() {
       if (state.backfillBusy) return;
@@ -991,11 +1012,19 @@ import {
           if (f.type && f.type.startsWith('image/')) return true;
           return /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(f.name || '');
         });
-        if (files.length === 0) return;
+        if (files.length === 0) {
+          state.nextUploadTag = null;
+          state.skipTagModalOnce = false;
+          return;
+        }
         _setErr('');
 
         const uploadedIds = [];
         const localThumbs = [];
+        const uploadTag = normalizePhotoTag(state.nextUploadTag || options.defaultTag);
+        const skipTagModal = !!state.skipTagModalOnce;
+        state.nextUploadTag = null;
+        state.skipTagModalOnce = false;
         _setProgress(0, files.length, files[0].name);
 
         showSpinner({ progress: true, current: 0, total: files.length, message: 'Foto\'s uploaden...' });
@@ -1015,7 +1044,7 @@ import {
             // uploadProjectPhotoWithThumb returns { id, thumbBlob, displayName } —
             // reuse the thumbBlob for the local preview so we don't decode the
             // (possibly HEIC) source twice.
-            const res = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: 'situation_before', onStep: reportStep });
+            const res = await uploadProjectPhotoWithThumb(options.projectId, file, { tag: uploadTag, onStep: reportStep });
             uploadedIds.push(res.id);
             localThumbs.push({ id: res.id, blobUrl: URL.createObjectURL(res.thumbBlob), name: res.displayName || file.name });
             updateSpinner({ current: i + 1, total: files.length });
@@ -1032,8 +1061,10 @@ import {
         await refresh();
         hideSpinner();
 
-        if (uploadedIds.length > 0) {
-          _openTagModal(uploadedIds, localThumbs);
+        if (uploadedIds.length > 0 && !skipTagModal) {
+          _openTagModal(uploadedIds, localThumbs, uploadTag);
+        } else {
+          localThumbs.forEach(t => { try { URL.revokeObjectURL(t.blobUrl); } catch {} });
         }
 
         if (typeof options.onChange === 'function') {
@@ -1112,7 +1143,7 @@ import {
       bootstrap.Modal.getOrCreateInstance(el).show();
     }
 
-    function _openTagModal(uploadedIds, localThumbs) {
+    function _openTagModal(uploadedIds, localThumbs, initialTag = options.defaultTag) {
       if (!uploadedIds || uploadedIds.length === 0) return;
       const el = _ensureModalEl();
       const title = el.querySelector('.modal-title');
@@ -1133,7 +1164,7 @@ import {
                 <div class="col-12 col-md-7">
                   <label class="form-label small mb-1" for="tag-${escapeHtml(id)}">Categorie</label>
                   <select class="form-select form-select-sm" id="tag-${escapeHtml(id)}" data-pu-tag-select>
-                    ${_tagOptionsHtml('situation_before')}
+                    ${_tagOptionsHtml(initialTag)}
                   </select>
                 </div>
                 <div class="col-12 col-md-5" data-pu-cat-row hidden>
@@ -1304,7 +1335,7 @@ import {
 
     refresh();
 
-    return { refresh, destroy, openByPhotoId };
+    return { refresh, destroy, openByPhotoId, startUploadForTag };
   }
 
   global.mountPhotoUploader = mountPhotoUploader;

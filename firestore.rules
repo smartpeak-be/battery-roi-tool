@@ -174,6 +174,70 @@ service cloud.firestore {
         && data.expiresAt <= request.time + duration.value(180, 'd');
     }
 
+    function reviewRequestPath(requestId) {
+      return /databases/$(database)/documents/reviewRequests/$(requestId);
+    }
+
+    function isPublicReviewRequestGet() {
+      return resource.data.status == 'active';
+    }
+
+    function isValidReviewRequestCreate() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'projectId', 'originalProjectName', 'originalCustomerName', 'suggestedDisplayName',
+          'googleReviewUrl', 'status', 'createdAt', 'createdBy', 'updatedAt', 'submittedAt'
+        ])
+        && isShortString(data.projectId, 160)
+        && isOptionalShortString(data, 'originalProjectName', 160)
+        && isOptionalShortString(data, 'originalCustomerName', 160)
+        && isOptionalShortString(data, 'suggestedDisplayName', 160)
+        && isOptionalShortString(data, 'googleReviewUrl', 500)
+        && data.status == 'active'
+        && data.createdBy is string
+        && data.createdAt == request.time
+        && data.updatedAt == request.time
+        && data.submittedAt == null;
+    }
+
+    function isPublicReviewRequestSubmissionUpdate() {
+      return resource.data.status == 'active'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['submittedAt', 'latestReviewId', 'updatedAt'])
+        && request.resource.data.submittedAt == request.time
+        && isShortString(request.resource.data.latestReviewId, 160)
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function isPublishedWebsiteReview() {
+      return resource.data.status == 'published' && resource.data.consentWebsite == true;
+    }
+
+    function isValidReviewCreate() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'requestId', 'projectId', 'originalProjectName', 'originalCustomerName', 'displayName',
+          'rating', 'shortReview', 'privateFeedback', 'consentWebsite', 'consentSocials',
+          'googleReviewUrl', 'googleClicked', 'status', 'createdAt', 'updatedAt'
+        ])
+        && isShortString(data.requestId, 160)
+        && exists(reviewRequestPath(data.requestId))
+        && get(reviewRequestPath(data.requestId)).data.status == 'active'
+        && (data.projectId == null || data.projectId is string)
+        && isOptionalShortString(data, 'originalProjectName', 160)
+        && isOptionalShortString(data, 'originalCustomerName', 160)
+        && isOptionalShortString(data, 'displayName', 160)
+        && data.rating is number && data.rating >= 1 && data.rating <= 5
+        && isShortString(data.shortReview, 1200)
+        && isOptionalShortString(data, 'privateFeedback', 2000)
+        && data.consentWebsite is bool
+        && data.consentSocials is bool
+        && isOptionalShortString(data, 'googleReviewUrl', 500)
+        && data.googleClicked == false
+        && data.status == 'submitted'
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
     // ─── Projects ──────────────────────────────────────────────────
     match /projects/{projectId} {
       allow read, write: if isWhitelisted();
@@ -197,6 +261,21 @@ service cloud.firestore {
       allow create: if isWhitelisted() && isValidShareCreate();
       allow delete: if isWhitelisted();
       allow update: if false;
+    }
+
+    // ─── Reviews (public request + submitted reviews, moderated publishing) ─
+    match /reviewRequests/{requestId} {
+      allow get:    if isWhitelisted() || isPublicReviewRequestGet();
+      allow list:   if isWhitelisted();
+      allow create: if isWhitelisted() && isValidReviewRequestCreate();
+      allow update: if isWhitelisted() || isPublicReviewRequestSubmissionUpdate();
+      allow delete: if isWhitelisted();
+    }
+
+    match /reviews/{reviewId} {
+      allow get, list: if isWhitelisted() || isPublishedWebsiteReview();
+      allow create:   if isValidReviewCreate();
+      allow update, delete: if isWhitelisted();
     }
 
     // ─── Config ──────────────────────────────────────────────
