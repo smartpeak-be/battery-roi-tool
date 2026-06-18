@@ -10,8 +10,12 @@ describe('SmartPeak review moderation', () => {
 
     expect(html).toContain('Review moderatie');
     expect(html).toContain('reviews-embed.html');
+    expect(html).toContain('reviews-widget.html');
     expect(html).toContain('assets/js/pages/reviews-beheer-app.js');
     expect(js).toContain('listSmartPeakReviews(100)');
+    expect(js).toContain('withSpinner(async () =>');
+    expect(js).not.toContain('withSpinner(btn, async');
+    expect(js).toContain('btn.innerHTML');
     expect(js).toContain('updateSmartPeakReviewStatus(reviewId, status, extra)');
     expect(js).toContain("publishedLabel = 'Geverifieerde SmartPeak klant'");
     expect(js).toContain('data-review-action="publish"');

@@ -148,11 +148,22 @@ async function handleReviewAction(action, reviewId, btn) {
     extra.publishedAt = firebase.firestore.FieldValue.serverTimestamp();
     extra.publishedLabel = 'Geverifieerde SmartPeak klant';
   }
-  await withSpinner(btn, async () => {
-    await updateSmartPeakReviewStatus(reviewId, status, extra);
+  const oldHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Opslaan…';
+  try {
+    await withSpinner(async () => {
+      await updateSmartPeakReviewStatus(reviewId, status, extra);
+      await refreshReviews();
+    }, { message: 'Reviewstatus opslaan…' });
     showToast(`Review ${STATUS_LABELS[status].toLowerCase()}.`, 'success');
-    await refreshReviews();
-  }, 'Opslaan…');
+  } catch (e) {
+    console.error(e);
+    showToast(`Review bijwerken mislukt: ${e.message || e}`, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = oldHtml;
+  }
 }
 
 function stars(rating) {

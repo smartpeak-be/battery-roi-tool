@@ -33,6 +33,7 @@ describe('SmartPeak review MVP', () => {
     const dashboard = read('assets/js/pages/dashboard-app.js');
     const dashboardHtml = read('dashboard.html');
     const embedPage = read('reviews-embed.html');
+    const widgetOnlyPage = read('reviews-widget.html');
     const widget = read('assets/js/widgets/reviews.js');
     const rules = read('firestore.rules');
 
@@ -41,7 +42,11 @@ describe('SmartPeak review MVP', () => {
     expect(dashboard).toContain('createReviewRequestForProject(projectId)');
     expect(dashboardHtml).toContain('reviews-beheer.html');
     expect(embedPage).toContain('data-limit="10"');
-    expect(embedPage).toContain('Wat SmartPeak-klanten zeggen');
+    expect(embedPage).toContain('SmartPeak reviews embed');
+    expect(embedPage).toContain('configuratie- en testpagina');
+    expect(embedPage).toContain('reviews-widget.html');
+    expect(widgetOnlyPage).toContain('<div id="smartpeak-reviews"></div>');
+    expect(widgetOnlyPage).toContain('assets/js/widgets/reviews.js');
     expect(widget).toContain("collectionId: 'reviews'");
     expect(widget).toContain("stringValue: 'published'");
     expect(widget).toContain('sp-review-widget__track');
