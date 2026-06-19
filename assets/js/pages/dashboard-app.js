@@ -793,14 +793,14 @@ function workflowStatusHtml({ count = 0, done = false, required = false } = {}) 
 
 function workflowDoneState(project) {
   const p = mergeProjectMetadata(project || {});
-  const workflow = (project && project.workflow) || {};
-  const checks = workflow.checksBefore || {};
   const measurements = p.technical || {};
   const voltage = measurements.voltageMeasurements || {};
   const serials = Array.isArray(p.serialNumbers) ? p.serialNumbers : [];
   const inspection = p.inspection || {};
+  const electrical = p.electrical || {};
+  const cabinet = p.cabinet || {};
   return {
-    checksBefore: !!(checks.done || checks.gridConnectionChecked || checks.spaceChecked || checks.cableRouteChecked || p.cabinet.lineGroundChecked),
+    checksBefore: !!(electrical.connectionType || electrical.fuseRatingA || cabinet.freeUnits != null || cabinet.wiringDiameterMm2 || cabinet.lineGroundChecked),
     measurements: !!(measurements.earthResistanceOhm || measurements.technicalNotes || voltage.l1Pe || voltage.l2Pe || voltage.l3Pe),
     installation: serials.length > 0,
     inspection: !!(inspection.company || inspection.reference || inspection.notes || p.planning.inspectionPlannedDate || p.planning.inspectionDoneDate),
@@ -848,7 +848,7 @@ function renderProjectWorkflowQuickMenu(project) {
         id: 'checks-before',
         kicker: 'Voorinstallatie',
         title: 'Checks',
-        text: 'Vink netaansluiting, plaatsing en kabeltraject af. Fase-aarde check wordt mee opgeslagen.',
+        text: 'Registreer aansluiting, zekeringsterkte, vrije modules, bekabeling en fase-aarde check.',
         icon: 'fa-clipboard-check',
         status: { done: done.checksBefore },
         actions: '<button type="button" class="btn btn-outline-primary" data-workflow-action="checks-before"><i class="fa-solid fa-clipboard-check me-1" aria-hidden="true"></i> Checks invullen</button>',
@@ -939,11 +939,6 @@ function valByName(form, name) {
   return el ? String(el.value || '').trim() : '';
 }
 
-function checkedByName(form, name) {
-  const el = form.elements[name];
-  return !!(el && el.checked);
-}
-
 function numberOrNull(value) {
   const raw = String(value || '').trim().replace(',', '.');
   if (!raw) return null;
@@ -979,50 +974,92 @@ function ensureWorkflowModal() {
   return el;
 }
 
-function workflowCheck(name, label, checked = false) {
-  return `
-    <div class="form-check mb-2">
-      <input class="form-check-input" type="checkbox" id="wf-${escapeHtml(name)}" name="${escapeHtml(name)}" ${checked ? 'checked' : ''}>
-      <label class="form-check-label" for="wf-${escapeHtml(name)}">${escapeHtml(label)}</label>
-    </div>`;
-}
-
 async function openWorkflowChecksModal(project) {
   const modalEl = ensureWorkflowModal();
   const form = modalEl.querySelector('[data-workflow-form]');
-  const workflow = (project.workflow && project.workflow.checksBefore) || {};
   const m = mergeProjectMetadata(project);
-  modalEl.querySelector('[data-workflow-title]').innerHTML = '<i class="fa-solid fa-clipboard-check me-2"></i>Voorinstallatie checks';
+  const el = m.electrical || {};
+  const c = m.cabinet || {};
+  const connTypes = ['', '1x230', '3x230', '3x400+N'].map(t =>
+    `<option value="${t}" ${t === (el.connectionType || '') ? 'selected' : ''}>${t === '' ? '— Niet bepaald —' : t}</option>`
+  ).join('');
+  const tri = (name, value) => `
+    <div class="btn-group w-100" role="group" aria-label="${escapeHtml(name)}">
+      ${[['', 'Onbekend'], ['yes', 'Ja'], ['no', 'Nee']].map(([raw, label]) => `
+        <input type="radio" class="btn-check" name="${escapeHtml(name)}" id="wf-${escapeHtml(name)}-${raw || 'unknown'}" value="${raw}" ${String(value ?? '') === raw ? 'checked' : ''}>
+        <label class="btn btn-outline-secondary" for="wf-${escapeHtml(name)}-${raw || 'unknown'}">${escapeHtml(label)}</label>
+      `).join('')}
+    </div>`;
+  modalEl.querySelector('[data-workflow-title]').innerHTML = '<i class="fa-solid fa-clipboard-check me-2"></i>Aansluiting & voorinstallatie';
   modalEl.querySelector('[data-workflow-body]').innerHTML = `
-    ${workflowCheck('gridConnectionChecked', 'Netaansluiting / tellerkast bekeken', workflow.gridConnectionChecked)}
-    ${workflowCheck('spaceChecked', 'Plaats voor batterij/omvormer gecontroleerd', workflow.spaceChecked)}
-    ${workflowCheck('cableRouteChecked', 'Kabeltraject / boring / afstand bekeken', workflow.cableRouteChecked)}
-    ${workflowCheck('lineGroundChecked', 'Fase ↔ aarde check uitgevoerd', workflow.lineGroundChecked || m.cabinet.lineGroundChecked)}
-    <div class="mt-3">
-      <label class="form-label" for="wf-checks-notes">Notities</label>
-      <textarea id="wf-checks-notes" name="notes" class="form-control" rows="3" placeholder="bv. extra automaat nodig, kabeltraject via garage…">${escapeHtml(workflow.notes || '')}</textarea>
+    <div class="row g-3">
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="wf-connection-type">Type aansluiting</label>
+        <select id="wf-connection-type" name="connectionType" class="form-select">${connTypes}</select>
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="wf-fuse-rating">Zekeringsterkte Fluvius-zijde (A)</label>
+        <input id="wf-fuse-rating" name="fuseRatingA" type="number" min="0" step="1" class="form-control" value="${escapeHtml(el.fuseRatingA ?? '')}" placeholder="bv. 40">
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="wf-free-units">Vrije modules in kast</label>
+        <input id="wf-free-units" name="freeUnits" type="number" min="0" step="1" class="form-control" value="${escapeHtml(c.freeUnits ?? '')}">
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label" for="wf-wiring-diameter">Diameter bekabeling (mm²)</label>
+        <input id="wf-wiring-diameter" name="wiringDiameterMm2" type="number" min="0" step="0.5" class="form-control" value="${escapeHtml(c.wiringDiameterMm2 ?? '')}">
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label">Rem-automaat aanwezig?</label>
+        ${tri('hasRemAutomaat', c.hasRemAutomaat)}
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label">Stopcontact bij Fluvius?</label>
+        ${tri('hasOutletNearFluvius', c.hasOutletNearFluvius)}
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label">Wifi bij Fluvius?</label>
+        ${tri('hasWifiNearFluvius', c.hasWifiNearFluvius)}
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label">Wifi bij zekeringkast?</label>
+        ${tri('hasWifiNearCabinet', c.hasWifiNearCabinet)}
+      </div>
+      <div class="col-12">
+        <label class="form-label mb-1">Meting fase ↔ aarde</label>
+        <div class="d-flex flex-wrap gap-3">
+          <div class="form-check"><input class="form-check-input" type="radio" name="lineGround" id="wf-lg-none" value="" ${!c.lineGroundChecked ? 'checked' : ''}><label class="form-check-label" for="wf-lg-none">Niet gemeten</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="lineGround" id="wf-lg-under30" value="under30" ${c.lineGroundChecked === 'under30' || c.lineGroundChecked === true ? 'checked' : ''}><label class="form-check-label" for="wf-lg-under30">Uitgevoerd — onder 30 V</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="lineGround" id="wf-lg-over30" value="over30" ${c.lineGroundChecked === 'over30' ? 'checked' : ''}><label class="form-check-label" for="wf-lg-over30">Uitgevoerd — boven 30 V</label></div>
+        </div>
+      </div>
+      <div class="col-12">
+        <label class="form-label" for="wf-checks-notes">Voorinstallatie-notities</label>
+        <textarea id="wf-checks-notes" name="notes" class="form-control" rows="3" placeholder="bv. extra automaat nodig, kabeltraject via garage…">${escapeHtml(c.preInstallationNotes || '')}</textarea>
+      </div>
     </div>`;
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const patch = {
-      workflow: {
-        checksBefore: {
-          gridConnectionChecked: checkedByName(form, 'gridConnectionChecked'),
-          spaceChecked: checkedByName(form, 'spaceChecked'),
-          cableRouteChecked: checkedByName(form, 'cableRouteChecked'),
-          lineGroundChecked: checkedByName(form, 'lineGroundChecked'),
-          done: checkedByName(form, 'gridConnectionChecked') && checkedByName(form, 'spaceChecked') && checkedByName(form, 'cableRouteChecked'),
-          notes: valByName(form, 'notes') || null,
-          updatedBy: currentUserEmail(),
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        },
-      },
-      cabinet: { lineGroundChecked: checkedByName(form, 'lineGroundChecked') },
-    };
+    const lineGround = valByName(form, 'lineGround') || null;
     await withSpinner(async () => {
-      await updateProjectMetadata(project.id, patch);
-      showToast('Voorinstallatie checks opgeslagen', 'success');
+      await updateProjectMetadata(project.id, {
+        electrical: {
+          connectionType: valByName(form, 'connectionType') || null,
+          fuseRatingA: numberOrNull(valByName(form, 'fuseRatingA')),
+        },
+        cabinet: {
+          freeUnits: numberOrNull(valByName(form, 'freeUnits')),
+          wiringDiameterMm2: numberOrNull(valByName(form, 'wiringDiameterMm2')),
+          hasRemAutomaat: valByName(form, 'hasRemAutomaat') || null,
+          hasOutletNearFluvius: valByName(form, 'hasOutletNearFluvius') || null,
+          hasWifiNearFluvius: valByName(form, 'hasWifiNearFluvius') || null,
+          hasWifiNearCabinet: valByName(form, 'hasWifiNearCabinet') || null,
+          lineGroundChecked: lineGround,
+          preInstallationNotes: valByName(form, 'notes') || null,
+        },
+      });
+      showToast('Aansluiting en voorinstallatie opgeslagen', 'success');
       modal.hide();
       await _refreshCurrentDrawer();
     });

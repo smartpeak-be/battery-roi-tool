@@ -35,10 +35,14 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('startUploadWithMeta');
   });
 
-  it('slaat workflow formulieren op in projectmetadata', () => {
-    expect(dashboardSource).toContain('workflow: {');
-    expect(dashboardSource).toContain('checksBefore: {');
-    expect(dashboardSource).toContain('cabinet: { lineGroundChecked:');
+  it('slaat workflow formulieren op in echte projectmetadata', () => {
+    expect(dashboardSource).toContain('Aansluiting & voorinstallatie');
+    expect(dashboardSource).toContain('name="connectionType"');
+    expect(dashboardSource).toContain('fuseRatingA: numberOrNull');
+    expect(dashboardSource).toContain('freeUnits: numberOrNull');
+    expect(dashboardSource).toContain('wiringDiameterMm2: numberOrNull');
+    expect(dashboardSource).toContain('hasRemAutomaat: valByName');
+    expect(dashboardSource).toContain('lineGroundChecked: lineGround');
     expect(dashboardSource).toContain('technical: {');
     expect(dashboardSource).toContain('voltageMeasurements: {');
     expect(dashboardSource).toContain('inspection: {');
