@@ -47,6 +47,8 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('freeUnits: numberOrNull');
     expect(dashboardSource).toContain('wiringDiameterMm2: numberOrNull');
     expect(dashboardSource).toContain("hasRemAutomaat: triValue(valByName(form, 'hasRemAutomaat'))");
+    expect(dashboardSource).toContain('Plaats voor batterijen?');
+    expect(dashboardSource).toContain("batteryPlacementRoom: triValue(valByName(form, 'batteryPlacementRoom'))");
     expect(dashboardSource).toContain('lineGroundChecked: lineGround');
     expect(dashboardSource).toContain('technical: {');
     expect(dashboardSource).toContain('voltageMeasurements: collectWorkflowVoltages(form, connectionType)');

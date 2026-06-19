@@ -1147,6 +1147,10 @@ async function openWorkflowChecksModal(project) {
         <label class="form-label">Wifi bij zekeringkast?</label>
         ${tri('hasWifiNearCabinet', c.hasWifiNearCabinet)}
       </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label">Plaats voor batterijen?</label>
+        ${tri('batteryPlacementRoom', c.batteryPlacementRoom)}
+      </div>
       <div class="col-12">
         <label class="form-label mb-1">Meting fase ↔ aarde</label>
         <div class="d-flex flex-wrap gap-3">
@@ -1203,6 +1207,7 @@ async function openWorkflowChecksModal(project) {
           hasOutletNearFluvius: triValue(valByName(form, 'hasOutletNearFluvius')) || null,
           hasWifiNearFluvius: triValue(valByName(form, 'hasWifiNearFluvius')) || null,
           hasWifiNearCabinet: triValue(valByName(form, 'hasWifiNearCabinet')) || null,
+          batteryPlacementRoom: triValue(valByName(form, 'batteryPlacementRoom')) || null,
           lineGroundChecked: lineGround,
           preInstallationNotes: valByName(form, 'notes') || null,
         },
