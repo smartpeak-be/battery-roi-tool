@@ -12,9 +12,13 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain('getReviewRequest(requestId)');
     expect(js).toContain('id="displayName"');
     expect(js).toContain('Dit wijzigt enkel de reviewnaam, niet onze projectgegevens.');
+    expect(js).toContain('name="nameVisibility"');
+    expect(js).toContain('Toon mijn review liever anoniem als "SmartPeak klant".');
+    expect(js).toContain("? 'SmartPeak klant'");
     expect(js).toContain('Tekst kopiëren');
     expect(js).toContain('Google review openen');
     expect(js).toContain('Transparantie is belangrijk voor ons.');
+    expect(js).toContain('via telefoon of mail');
     expect(js).toContain('Reviews die we op onze website tonen, publiceren we pas na goedkeuring');
   });
 

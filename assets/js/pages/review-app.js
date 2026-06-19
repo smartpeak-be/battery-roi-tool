@@ -38,7 +38,7 @@ function displayNameFromRequest(req) {
 
 function googleTextFallback(req) {
   const name = req.originalProjectName || req.originalCustomerName || 'onze installatie';
-  return `Wij zijn tevreden over de samenwerking met SmartPeak voor ${name}. Duidelijke communicatie, correcte opvolging en een propere aanpak.`;
+  return `We zijn tevreden over de samenwerking met SmartPeak voor ${name}. De installatie is vlot verlopen en de communicatie was duidelijk.`;
 }
 
 function renderForm(req) {
@@ -51,7 +51,8 @@ function renderForm(req) {
           <i class="fa-solid fa-bolt"></i> SmartPeak
         </div>
         <h1 class="display-6 fw-bold mb-3">Hoe heb je onze samenwerking ervaren?</h1>
-        <p class="lead text-muted mb-0">Kort en eerlijk is perfect. Je helpt ons én toekomstige klanten enorm.</p>
+        <p class="lead text-muted mb-2">Je installatie zit erop en je batterij is live. Vanaf nu kan je je eigen energie slimmer opslaan en gebruiken.</p>
+        <p class="text-muted mb-0">We hopen dat alles vlot verlopen is. Als je wil, mag je hieronder een korte review achterlaten. Kort en eerlijk is perfect.</p>
       </div>
     </section>
 
@@ -65,6 +66,18 @@ function renderForm(req) {
           <div class="form-text">Dit wijzigt enkel de reviewnaam, niet onze projectgegevens.</div>
         </div>
 
+        <fieldset class="mb-4">
+          <legend class="form-label fw-semibold mb-2">Hoe mogen we je naam tonen op de website?</legend>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityFull" value="full" checked>
+            <label class="form-check-label" for="nameVisibilityFull">Mijn volledige naam mag bij de review staan.</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityAnonymous" value="anonymous">
+            <label class="form-check-label" for="nameVisibilityAnonymous">Toon mijn review liever anoniem als "SmartPeak klant".</label>
+          </div>
+        </fieldset>
+
         <div class="mb-4">
           <label class="form-label fw-semibold d-block">Algemene score</label>
           ${starInputHtml()}
@@ -73,17 +86,18 @@ function renderForm(req) {
         <div class="mb-4">
           <label for="shortReview" class="form-label fw-semibold">Als je dit kort zou samenvatten, wat mag er dan als review staan?</label>
           <textarea id="shortReview" name="shortReview" class="form-control" rows="4" maxlength="1200" required>${escapeHtml(googleText)}</textarea>
-          <div class="form-text">Deze tekst tonen we straks ook met een kopieerknop voor Google.</div>
+          <div class="form-text">Deze tekst tonen we straks ook met een kopieerknop voor Google. Het is gewoon een voorbeeldtekst: pas gerust aan of schrijf iets volledig in je eigen woorden.</div>
         </div>
 
         <div class="mb-4">
           <label for="privateFeedback" class="form-label fw-semibold">Extra feedback voor ons <span class="text-muted fw-normal">(optioneel)</span></label>
           <textarea id="privateFeedback" name="privateFeedback" class="form-control" rows="3" maxlength="2000" placeholder="Wat liep goed? Wat kan beter?"></textarea>
+          <div class="form-text">Dit is enkel voor ons en komt niet publiek bij je review.</div>
         </div>
 
         <div class="sp-review-note mb-4">
           <strong>Transparantie is belangrijk voor ons.</strong><br>
-          Eerlijke feedback mag zeker, ook als er verbeterpunten zijn. Was er iets tijdens of na de installatie dat nog niet goed besproken is? Dan appreciëren we het als je ons dat eerst laat weten, zodat we kunnen kijken hoe we het correct oplossen. Reviews die we op onze website tonen, publiceren we pas na goedkeuring en met respectvolle formulering.
+          We streven ernaar dat elke klant tevreden is wanneer we een installatie afronden. Is er volgens jou toch nog iets niet helemaal in orde, of kunnen we nog iets voor je betekenen? Laat het ons dan gerust eerst weten via telefoon of mail, voor je je review definitief op punt zet. Zo kunnen we het nog bekijken en waar nodig rechtzetten. Een eerlijke review mag uiteraard altijd, ook als er verbeterpunten zijn. Reviews die we op onze website tonen, publiceren we pas na goedkeuring en met respectvolle formulering.
         </div>
 
         <div class="form-check mb-3">
@@ -101,7 +115,16 @@ function renderForm(req) {
       </div>
     </form>`;
 
-  document.getElementById('reviewForm').addEventListener('submit', submitForm);
+  const form = document.getElementById('reviewForm');
+  const displayNameInput = document.getElementById('displayName');
+  form.addEventListener('change', event => {
+    if (event.target && event.target.name === 'nameVisibility') {
+      const anonymous = form.elements.nameVisibility.value === 'anonymous';
+      displayNameInput.disabled = anonymous;
+      displayNameInput.closest('.mb-4')?.classList.toggle('opacity-50', anonymous);
+    }
+  });
+  form.addEventListener('submit', submitForm);
 }
 
 function renderThanks(review) {
@@ -140,12 +163,16 @@ async function submitForm(event) {
   const form = event.currentTarget;
   const data = new FormData(form);
   const rating = Number(data.get('rating')) || 0;
+  const nameVisibility = String(data.get('nameVisibility') || 'full');
+  const publicDisplayName = nameVisibility === 'anonymous'
+    ? 'SmartPeak klant'
+    : String(data.get('displayName') || '').trim();
   const payload = {
     requestId,
     projectId: reviewRequest.projectId || null,
     originalProjectName: reviewRequest.originalProjectName || '',
     originalCustomerName: reviewRequest.originalCustomerName || '',
-    displayName: String(data.get('displayName') || '').trim(),
+    displayName: publicDisplayName,
     rating,
     shortReview: String(data.get('shortReview') || '').trim(),
     privateFeedback: String(data.get('privateFeedback') || '').trim(),
