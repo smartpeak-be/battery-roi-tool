@@ -20,6 +20,8 @@ describe('SmartPeak review moderation', () => {
     expect(js).toContain("publishedLabel = 'Geverifieerde SmartPeak klant'");
     expect(js).toContain('data-review-action="publish"');
     expect(js).toContain('Geen website-toestemming');
+    expect(js).toContain('reviewRatingsHtml(review)');
+    expect(js).toContain('Afwerking en netheid');
   });
 
   it('styles the embed page and moderation cards in the SmartPeak brand layer', () => {

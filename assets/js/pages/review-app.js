@@ -22,13 +22,21 @@ function renderError(message) {
     </section>`;
 }
 
-function starInputHtml() {
+function starInputHtml(name = 'rating', label = 'Score') {
   return `
-    <div class="sp-star-rating" role="radiogroup" aria-label="Score">
+    <div class="sp-star-rating" role="radiogroup" aria-label="${escapeHtml(label)}">
       ${[5, 4, 3, 2, 1].map(value => `
-        <input type="radio" id="rating-${value}" name="rating" value="${value}" ${value === 5 ? 'checked' : ''}>
-        <label for="rating-${value}" title="${value} op 5"><i class="fa-solid fa-star"></i></label>
+        <input type="radio" id="${escapeHtml(name)}-${value}" name="${escapeHtml(name)}" value="${value}" ${value === 5 ? 'checked' : ''}>
+        <label for="${escapeHtml(name)}-${value}" title="${value} op 5"><i class="fa-solid fa-star"></i></label>
       `).join('')}
+    </div>`;
+}
+
+function extraRatingHtml(name, label) {
+  return `
+    <div class="col-md-6">
+      <label class="form-label fw-semibold d-block mb-1">${escapeHtml(label)}</label>
+      ${starInputHtml(name, label)}
     </div>`;
 }
 
@@ -63,7 +71,6 @@ function renderForm(req) {
         <div class="mb-4">
           <label for="displayName" class="form-label fw-semibold">Naam die bij de review mag staan</label>
           <input id="displayName" name="displayName" class="form-control form-control-lg" maxlength="120" value="${escapeHtml(displayName)}" autocomplete="name">
-          <div class="form-text">Dit wijzigt enkel de reviewnaam, niet onze projectgegevens.</div>
         </div>
 
         <fieldset class="mb-4">
@@ -84,9 +91,18 @@ function renderForm(req) {
         </div>
 
         <div class="mb-4">
+          <label class="form-label fw-semibold d-block">Waarvoor geef je ons welke score?</label>
+          <div class="row g-3">
+            ${extraRatingHtml('ratingCommunication', 'Communicatie')}
+            ${extraRatingHtml('ratingPlanning', 'Planning en afspraken')}
+            ${extraRatingHtml('ratingInstallation', 'Installatie')}
+            ${extraRatingHtml('ratingFinish', 'Afwerking en netheid')}
+          </div>
+        </div>
+
+        <div class="mb-4">
           <label for="shortReview" class="form-label fw-semibold">Als je dit kort zou samenvatten, wat mag er dan als review staan?</label>
           <textarea id="shortReview" name="shortReview" class="form-control" rows="4" maxlength="1200" required>${escapeHtml(googleText)}</textarea>
-          <div class="form-text">Deze tekst tonen we straks ook met een kopieerknop voor Google. Het is gewoon een voorbeeldtekst: pas gerust aan of schrijf iets volledig in je eigen woorden.</div>
         </div>
 
         <div class="mb-4">
@@ -162,7 +178,8 @@ async function submitForm(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const data = new FormData(form);
-  const rating = Number(data.get('rating')) || 0;
+  const readRating = name => Number(data.get(name)) || 0;
+  const rating = readRating('rating');
   const nameVisibility = String(data.get('nameVisibility') || 'full');
   const publicDisplayName = nameVisibility === 'anonymous'
     ? 'SmartPeak klant'
@@ -174,6 +191,10 @@ async function submitForm(event) {
     originalCustomerName: reviewRequest.originalCustomerName || '',
     displayName: publicDisplayName,
     rating,
+    ratingCommunication: readRating('ratingCommunication'),
+    ratingPlanning: readRating('ratingPlanning'),
+    ratingInstallation: readRating('ratingInstallation'),
+    ratingFinish: readRating('ratingFinish'),
     shortReview: String(data.get('shortReview') || '').trim(),
     privateFeedback: String(data.get('privateFeedback') || '').trim(),
     consentWebsite: data.get('consentWebsite') === '1',
@@ -187,6 +208,11 @@ async function submitForm(event) {
   }
   if (payload.rating < 1 || payload.rating > 5) {
     showToast('Kies een score van 1 tot 5 sterren.', 'warning');
+    return;
+  }
+  const extraRatings = [payload.ratingCommunication, payload.ratingPlanning, payload.ratingInstallation, payload.ratingFinish];
+  if (extraRatings.some(value => value < 1 || value > 5)) {
+    showToast('Kies overal een score van 1 tot 5 sterren.', 'warning');
     return;
   }
 

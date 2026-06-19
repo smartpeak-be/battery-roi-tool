@@ -11,7 +11,6 @@ describe('SmartPeak review MVP', () => {
     expect(html).toContain('assets/js/pages/review-app.js');
     expect(js).toContain('getReviewRequest(requestId)');
     expect(js).toContain('id="displayName"');
-    expect(js).toContain('Dit wijzigt enkel de reviewnaam, niet onze projectgegevens.');
     expect(js).toContain('name="nameVisibility"');
     expect(js).toContain('Toon mijn review liever anoniem als "SmartPeak klant".');
     expect(js).toContain("? 'SmartPeak klant'");
@@ -19,6 +18,12 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain('Google review openen');
     expect(js).toContain('Transparantie is belangrijk voor ons.');
     expect(js).toContain('via telefoon of mail');
+    expect(js).toContain('Waarvoor geef je ons welke score?');
+    expect(js).toContain("extraRatingHtml('ratingCommunication', 'Communicatie')");
+    expect(js).toContain("extraRatingHtml('ratingPlanning', 'Planning en afspraken')");
+    expect(js).toContain("extraRatingHtml('ratingInstallation', 'Installatie')");
+    expect(js).toContain("extraRatingHtml('ratingFinish', 'Afwerking en netheid')");
+    expect(js).not.toContain('Deze tekst tonen we straks ook met een kopieerknop voor Google.');
     expect(js).toContain('Reviews die we op onze website tonen, publiceren we pas na goedkeuring');
   });
 
@@ -33,6 +38,8 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain("const publicDisplayName = nameVisibility === 'anonymous'");
     expect(js).toContain(": String(data.get('displayName') || '').trim()");
     expect(js).toContain('displayName: publicDisplayName');
+    expect(js).toContain("ratingCommunication: readRating('ratingCommunication')");
+    expect(firebase).toContain('ratingCommunication: Number(data.ratingCommunication) || 0');
   });
 
   it('adds dashboard review link generation and an embeddable carousel widget', () => {
@@ -62,6 +69,8 @@ describe('SmartPeak review MVP', () => {
     expect(rules).toContain('allow create: if isSignedIn() && isValidReviewRequestCreate();');
     expect(rules).toContain('data.createdBy == signedInEmail()');
     expect(rules).toContain('match /reviews/{reviewId}');
+    expect(rules).toContain("'ratingCommunication'");
+    expect(rules).toContain('data.ratingCommunication is number');
     expect(rules).toContain('isPublishedWebsiteReview');
   });
 });

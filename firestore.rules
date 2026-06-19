@@ -225,7 +225,8 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasOnly([
           'requestId', 'projectId', 'originalProjectName', 'originalCustomerName', 'displayName',
-          'rating', 'shortReview', 'privateFeedback', 'consentWebsite', 'consentSocials',
+          'rating', 'ratingCommunication', 'ratingPlanning', 'ratingInstallation', 'ratingFinish',
+          'shortReview', 'privateFeedback', 'consentWebsite', 'consentSocials',
           'googleReviewUrl', 'googleClicked', 'status', 'createdAt', 'updatedAt'
         ])
         && isShortString(data.requestId, 160)
@@ -236,6 +237,10 @@ service cloud.firestore {
         && isOptionalShortString(data, 'originalCustomerName', 160)
         && isOptionalShortString(data, 'displayName', 160)
         && data.rating is number && data.rating >= 1 && data.rating <= 5
+        && data.ratingCommunication is number && data.ratingCommunication >= 1 && data.ratingCommunication <= 5
+        && data.ratingPlanning is number && data.ratingPlanning >= 1 && data.ratingPlanning <= 5
+        && data.ratingInstallation is number && data.ratingInstallation >= 1 && data.ratingInstallation <= 5
+        && data.ratingFinish is number && data.ratingFinish >= 1 && data.ratingFinish <= 5
         && isShortString(data.shortReview, 1200)
         && isOptionalShortString(data, 'privateFeedback', 2000)
         && data.consentWebsite is bool

@@ -120,6 +120,7 @@ function reviewCardHtml(review) {
           <span class="badge ${STATUS_BADGES[status] || 'text-bg-light'}">${escapeHtml(STATUS_LABELS[status] || status)}</span>
         </div>
         <blockquote class="sp-review-moderation-quote">${escapeHtml(review.shortReview || '')}</blockquote>
+        ${reviewRatingsHtml(review)}
         ${review.privateFeedback ? `<div class="alert alert-light border py-2 mb-2"><strong>Privé feedback:</strong><br>${escapeHtml(review.privateFeedback)}</div>` : ''}
         <p class="text-muted small mb-0">Toestemming: ${consent.length ? escapeHtml(consent.join(', ')) : 'geen website/socials toestemming'}</p>
       </div>
@@ -135,6 +136,22 @@ function reviewCardHtml(review) {
         </button>
       </div>
     </article>`;
+}
+
+function reviewRatingsHtml(review) {
+  const ratings = [
+    ['Communicatie', review.ratingCommunication],
+    ['Planning en afspraken', review.ratingPlanning],
+    ['Installatie', review.ratingInstallation],
+    ['Afwerking en netheid', review.ratingFinish],
+  ].filter(([, value]) => Number(value) > 0);
+  if (!ratings.length) return '';
+  return `
+    <div class="d-flex flex-wrap gap-2 mb-2">
+      ${ratings.map(([label, value]) => `
+        <span class="badge text-bg-light border">${escapeHtml(label)}: ${escapeHtml(stars(value))}</span>
+      `).join('')}
+    </div>`;
 }
 
 async function handleReviewAction(action, reviewId, btn) {
