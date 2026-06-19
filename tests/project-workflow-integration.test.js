@@ -33,9 +33,11 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('openWorkflowChecksModal(project)');
     expect(dashboardSource).toContain('data-workflow-action="solar-inverters"');
     expect(dashboardSource).toContain('openWorkflowSolarModal(project)');
-    expect(dashboardSource).toContain("startUploadForTag('equipment_after', 'camera')");
-    expect(dashboardSource).toContain("startUploadForTag('situation_after', 'camera')");
-    expect(dashboardSource).toContain("startUploadForTag('situation_after', 'gallery')");
+    expect(dashboardSource).toContain("openWorkflowPhotoTypeModal('camera', WORKFLOW_INSTALLATION_PHOTO_TAGS, 'equipment_after')");
+    expect(dashboardSource).toContain("openWorkflowPhotoTypeModal('camera', WORKFLOW_AFTER_PHOTO_TAGS, 'situation_after')");
+    expect(dashboardSource).toContain("openWorkflowPhotoTypeModal('gallery', WORKFLOW_AFTER_PHOTO_TAGS, 'situation_after')");
+    expect(dashboardSource).toContain('WORKFLOW_INSTALLATION_PHOTO_TAGS');
+    expect(dashboardSource).toContain('WORKFLOW_AFTER_PHOTO_TAGS');
     expect(dashboardSource).toContain('openWorkflowInspectionModal(project)');
     expect(dashboardSource).toContain('startUploadWithMeta');
   });

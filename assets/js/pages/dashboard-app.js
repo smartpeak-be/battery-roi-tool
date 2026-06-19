@@ -1012,6 +1012,21 @@ const WORKFLOW_BEFORE_PHOTO_TAGS = [
   ['inverter_before', 'Bestaande omvormer(s)'],
 ];
 
+const WORKFLOW_INSTALLATION_PHOTO_TAGS = [
+  ['equipment_after', 'Toestellen na installatie'],
+  ['serial', 'Serienummer / typeplaatje'],
+  ['electrical_cabinet', 'Elektrische kast'],
+  ['meter_cabinet', 'Meterkast / digitale meter'],
+];
+
+const WORKFLOW_AFTER_PHOTO_TAGS = [
+  ['situation_after', 'Situatie na installatie'],
+  ['equipment_after', 'Toestellen na installatie'],
+  ['electrical_cabinet', 'Elektrische kast'],
+  ['meter_cabinet', 'Meterkast / digitale meter'],
+  ['inspection', 'Keuring / bewijs'],
+];
+
 function ensureWorkflowPhotoTypeModal() {
   let el = document.getElementById('spWorkflowPhotoTypeModal');
   if (el) return el;
@@ -1039,12 +1054,13 @@ function ensureWorkflowPhotoTypeModal() {
   return document.getElementById('spWorkflowPhotoTypeModal');
 }
 
-function openWorkflowPhotoTypeModal(source = 'camera') {
+function openWorkflowPhotoTypeModal(source = 'camera', tagOptions = WORKFLOW_BEFORE_PHOTO_TAGS, fallbackTag = 'situation_before') {
   if (!_drawerPhotoUploader) return;
   const modalEl = ensureWorkflowPhotoTypeModal();
   const form = modalEl.querySelector('[data-workflow-photo-type-form]');
   const select = form.elements.photoTag;
-  select.innerHTML = WORKFLOW_BEFORE_PHOTO_TAGS.map(([value, label]) =>
+  const options = Array.isArray(tagOptions) && tagOptions.length ? tagOptions : WORKFLOW_BEFORE_PHOTO_TAGS;
+  select.innerHTML = options.map(([value, label]) =>
     `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`
   ).join('');
   const submit = modalEl.querySelector('[data-workflow-photo-submit]');
@@ -1054,7 +1070,7 @@ function openWorkflowPhotoTypeModal(source = 'camera') {
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   form.onsubmit = (e) => {
     e.preventDefault();
-    const tag = select.value || 'situation_before';
+    const tag = select.value || fallbackTag;
     modal.hide();
     _drawerPhotoUploader.startUploadForTag(tag, source);
   };
@@ -1417,15 +1433,15 @@ function wireProjectWorkflowQuickMenu(project) {
       openWorkflowSolarModal(project);
     } else if (action === 'installation-camera') {
       showDrawerTab('#drawerPhotosPane');
-      _drawerPhotoUploader?.startUploadForTag('equipment_after', 'camera');
+      openWorkflowPhotoTypeModal('camera', WORKFLOW_INSTALLATION_PHOTO_TAGS, 'equipment_after');
     } else if (action === 'installation-serials') {
       scrollDrawerSection('#drawerSerialsSection');
     } else if (action === 'photos-after-camera') {
       showDrawerTab('#drawerPhotosPane');
-      _drawerPhotoUploader?.startUploadForTag('situation_after', 'camera');
+      openWorkflowPhotoTypeModal('camera', WORKFLOW_AFTER_PHOTO_TAGS, 'situation_after');
     } else if (action === 'photos-after-gallery') {
       showDrawerTab('#drawerPhotosPane');
-      _drawerPhotoUploader?.startUploadForTag('situation_after', 'gallery');
+      openWorkflowPhotoTypeModal('gallery', WORKFLOW_AFTER_PHOTO_TAGS, 'situation_after');
     } else if (action === 'inspection-info') {
       openWorkflowInspectionModal(project);
     } else if (action === 'inspection-docs') {
