@@ -30,7 +30,9 @@ describe('SmartPeak review MVP', () => {
     expect(firebase).toContain('originalCustomerName: project.customerName ||');
     expect(firebase).toContain('suggestedDisplayName: project.customerName || project.projectName ||');
     expect(js).toContain('originalProjectName: reviewRequest.originalProjectName ||');
-    expect(js).toContain('displayName: String(data.get(\'displayName\') || \'\').trim()');
+    expect(js).toContain("const publicDisplayName = nameVisibility === 'anonymous'");
+    expect(js).toContain(": String(data.get('displayName') || '').trim()");
+    expect(js).toContain('displayName: publicDisplayName');
   });
 
   it('adds dashboard review link generation and an embeddable carousel widget', () => {
