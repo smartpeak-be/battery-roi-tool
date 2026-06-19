@@ -102,7 +102,7 @@ function renderForm(req) {
 
         <div class="mb-4">
           <label for="shortReview" class="form-label fw-semibold">Als je dit kort zou samenvatten, wat mag er dan als review staan?</label>
-          <textarea id="shortReview" name="shortReview" class="form-control" rows="4" maxlength="1200" required>${escapeHtml(googleText)}</textarea>
+          <textarea id="shortReview" name="shortReview" class="form-control" rows="4" maxlength="1200" placeholder="${escapeHtml(googleText)}" required></textarea>
         </div>
 
         <div class="mb-4">

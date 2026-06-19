@@ -16,6 +16,8 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain("? 'SmartPeak klant'");
     expect(js).toContain('Tekst kopiëren');
     expect(js).toContain('Google review openen');
+    expect(js).toContain('placeholder="${escapeHtml(googleText)}" required></textarea>');
+    expect(js).not.toContain('required>${escapeHtml(googleText)}</textarea>');
     expect(js).toContain('Transparantie is belangrijk voor ons.');
     expect(js).toContain('via telefoon of mail');
     expect(js).toContain('Waarvoor geef je ons welke score?');
