@@ -94,6 +94,32 @@ function pruneVoltageMeasurementsForConnection(connectionType) {
   );
 }
 
+function normalizeInverterCircuits(inv) {
+  const count = Math.max(0, Math.trunc(Number(inv.circuitCount) || 0));
+  const existing = Array.isArray(inv.circuits) ? inv.circuits : [];
+  inv.circuits = Array.from({ length: count }, (_, idx) => ({
+    panelCount: existing[idx]?.panelCount ?? null,
+    voltage: existing[idx]?.voltage ?? null,
+    panelBrand: existing[idx]?.panelBrand || '',
+    panelModel: existing[idx]?.panelModel || '',
+  }));
+}
+
+function inverterTemplate(values = {}) {
+  const inv = {
+    id: values.id || genInverterId(),
+    powerKw: values.powerKw ?? null,
+    brand: values.brand || '',
+    model: values.model || '',
+    panelCount: values.panelCount ?? null,
+    circuitCount: values.circuitCount ?? null,
+    circuits: Array.isArray(values.circuits) ? values.circuits : [],
+    orientation: values.orientation || '',
+  };
+  normalizeInverterCircuits(inv);
+  return inv;
+}
+
 function addressGoogleApiKey(settings) {
   return (settings && (
     settings.addressAutocompleteGoogleMapsApiKey
@@ -616,7 +642,7 @@ function wireBlokA() {
       const invs = _project.solar.inverters;
       const v = e.target.value === '' ? null : parseFloat(e.target.value);
       if (invs.length === 0) {
-        invs.push({ id: genInverterId(), powerKw: v, brand: '', model: '', panelCount: null, circuitCount: null, orientation: '' });
+        invs.push(inverterTemplate({ powerKw: v }));
       } else {
         invs[0].powerKw = v;
       }
@@ -902,7 +928,37 @@ function sectionBlokC() {
     `).join('')
     : '<div class="col-12"><p class="text-muted small mb-0">Kies eerst het type aansluiting om de juiste spanningsmetingen te tonen.</p></div>';
 
-  const inverterCards = invs.map((inv, idx) => `
+  invs.forEach(inv => {
+    if (!inv.id) inv.id = genInverterId();
+    normalizeInverterCircuits(inv);
+  });
+  const inverterCards = invs.map((inv, idx) => {
+    const circuitRows = (inv.circuits || []).map((circuit, circuitIdx) => `
+          <div class="card bg-light border-0 mt-2" data-inv-circuit="${inv.id}:${circuitIdx}">
+            <div class="card-body py-2">
+              <div class="fw-semibold small mb-2">Kring ${circuitIdx + 1}</div>
+              <div class="row g-2">
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Panelen in kring</label>
+                  <input type="number" data-circuit-field="panelCount" data-inv-id="${inv.id}" data-circuit-index="${circuitIdx}" class="form-control" min="0" step="1" value="${circuit.panelCount != null ? circuit.panelCount : ''}" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Spanning kring (V)</label>
+                  <input type="number" data-circuit-field="voltage" data-inv-id="${inv.id}" data-circuit-index="${circuitIdx}" class="form-control" min="0" step="0.1" value="${circuit.voltage != null ? circuit.voltage : ''}" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Merk panelen</label>
+                  <input type="text" data-circuit-field="panelBrand" data-inv-id="${inv.id}" data-circuit-index="${circuitIdx}" class="form-control" maxlength="60" value="${escapeHtml(circuit.panelBrand || '')}" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Type panelen</label>
+                  <input type="text" data-circuit-field="panelModel" data-inv-id="${inv.id}" data-circuit-index="${circuitIdx}" class="form-control" maxlength="80" value="${escapeHtml(circuit.panelModel || '')}" />
+                </div>
+              </div>
+            </div>
+          </div>
+    `).join('');
+    return `
     <div class="card mb-2" data-inv-id="${inv.id}">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start mb-2">
@@ -915,19 +971,19 @@ function sectionBlokC() {
             <input type="number" data-inv-field="powerKw" data-inv-id="${inv.id}" class="form-control" min="0" step="0.1" value="${inv.powerKw != null ? inv.powerKw : ''}" required />
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label">Merk</label>
+            <label class="form-label">Merk omvormer</label>
             <input type="text" data-inv-field="brand" data-inv-id="${inv.id}" class="form-control" maxlength="60" value="${escapeHtml(inv.brand || '')}" />
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label">Model</label>
+            <label class="form-label">Model omvormer</label>
             <input type="text" data-inv-field="model" data-inv-id="${inv.id}" class="form-control" maxlength="60" value="${escapeHtml(inv.model || '')}" />
           </div>
           <div class="col-6 col-md-4">
-            <label class="form-label">Panelen</label>
+            <label class="form-label">Totaal panelen</label>
             <input type="number" data-inv-field="panelCount" data-inv-id="${inv.id}" class="form-control" min="0" step="1" value="${inv.panelCount != null ? inv.panelCount : ''}" />
           </div>
           <div class="col-6 col-md-4">
-            <label class="form-label">Kringen</label>
+            <label class="form-label">Aantal kringen</label>
             <input type="number" data-inv-field="circuitCount" data-inv-id="${inv.id}" class="form-control" min="0" step="1" value="${inv.circuitCount != null ? inv.circuitCount : ''}" />
           </div>
           <div class="col-12 col-md-4">
@@ -935,9 +991,11 @@ function sectionBlokC() {
             <input type="text" data-inv-field="orientation" data-inv-id="${inv.id}" class="form-control" maxlength="40" value="${escapeHtml(inv.orientation || '')}" />
           </div>
         </div>
+        ${circuitRows ? `<div class="mt-3"><div class="small text-muted mb-1">Details per kring</div>${circuitRows}</div>` : '<div class="form-text mt-2">Vul “Aantal kringen” in om panelen, kring-spanning en paneeltype per kring te registreren.</div>'}
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   return `
     <div class="card collapsible-card">
@@ -1108,12 +1166,31 @@ function wireBlokC() {
       if (field === 'powerKw' || field === 'panelCount' || field === 'circuitCount') {
         const v = parseFloat(e.target.value);
         inv[field] = isNaN(v) ? null : v;
+        if (field === 'circuitCount') {
+          normalizeInverterCircuits(inv);
+          rerenderBlokC();
+          return;
+        }
       } else {
         inv[field] = e.target.value;
       }
       if (field === 'powerKw') {
         rerenderBlokA();
         updateSaveCalcEnabled();
+      }
+    });
+  });
+  document.querySelectorAll('[data-circuit-field]').forEach(inp => {
+    inp.addEventListener('input', e => {
+      const invId = e.target.getAttribute('data-inv-id');
+      const idx = Number(e.target.getAttribute('data-circuit-index'));
+      const field = e.target.getAttribute('data-circuit-field');
+      const inv = _project.solar.inverters.find(i => i.id === invId);
+      if (!inv || !Array.isArray(inv.circuits) || !inv.circuits[idx]) return;
+      if (field === 'panelCount' || field === 'voltage') {
+        inv.circuits[idx][field] = readOptionalNumber(e.target.value);
+      } else {
+        inv.circuits[idx][field] = e.target.value;
       }
     });
   });
@@ -1132,10 +1209,7 @@ function wireBlokC() {
   // Add-inverter
   document.getElementById('fAddInverter').addEventListener('click', () => {
     _project.solar = _project.solar || { inverters: [] };
-    _project.solar.inverters.push({
-      id: genInverterId(), powerKw: null, brand: '', model: '',
-      panelCount: null, circuitCount: null, orientation: '',
-    });
+    _project.solar.inverters.push(inverterTemplate());
     rerenderBlokC();
     rerenderBlokA();
   });

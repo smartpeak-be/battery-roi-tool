@@ -800,8 +800,8 @@ function workflowDoneState(project) {
   const electrical = p.electrical || {};
   const cabinet = p.cabinet || {};
   return {
-    checksBefore: !!(electrical.connectionType || electrical.fuseRatingA || cabinet.freeUnits != null || cabinet.wiringDiameterMm2 || cabinet.lineGroundChecked),
-    measurements: !!(measurements.earthResistanceOhm || measurements.technicalNotes || voltage.l1Pe || voltage.l2Pe || voltage.l3Pe),
+    checksBefore: !!(electrical.connectionType || electrical.fuseRatingA || cabinet.freeUnits != null || cabinet.wiringDiameterMm2 || cabinet.lineGroundChecked || measurements.earthResistanceOhm || measurements.technicalNotes || Object.values(voltage).some(value => value != null && value !== '')),
+    solarInverters: Array.isArray(p.solar?.inverters) && p.solar.inverters.some(inv => inv.powerKw || inv.brand || inv.model || inv.panelCount || inv.circuitCount || (Array.isArray(inv.circuits) && inv.circuits.length > 0)),
     installation: serials.length > 0,
     inspection: !!(inspection.company || inspection.reference || inspection.notes || p.planning.inspectionPlannedDate || p.planning.inspectionDoneDate),
   };
@@ -847,20 +847,20 @@ function renderProjectWorkflowQuickMenu(project) {
       ${workflowCardHtml({
         id: 'checks-before',
         kicker: 'Voorinstallatie',
-        title: 'Checks',
-        text: 'Registreer aansluiting, zekeringsterkte, vrije modules, bekabeling en fase-aarde check.',
+        title: 'Checks & metingen',
+        text: 'Registreer aansluiting, zekeringkast, aarding en spanningsmetingen volgens het gekozen aansluitingstype.',
         icon: 'fa-clipboard-check',
         status: { done: done.checksBefore },
-        actions: '<button type="button" class="btn btn-outline-primary" data-workflow-action="checks-before"><i class="fa-solid fa-clipboard-check me-1" aria-hidden="true"></i> Checks invullen</button>',
+        actions: '<button type="button" class="btn btn-outline-primary" data-workflow-action="checks-before"><i class="fa-solid fa-clipboard-check me-1" aria-hidden="true"></i> Checks & metingen invullen</button>',
       })}
       ${workflowCardHtml({
-        id: 'measurements',
+        id: 'solar-inverters',
         kicker: 'Techniek',
-        title: 'Metingen',
-        text: 'Noteer aarding, fase-aarde spanningen en technische opmerkingen.',
-        icon: 'fa-gauge-high',
-        status: { done: done.measurements },
-        actions: '<button type="button" class="btn btn-outline-primary" data-workflow-action="measurements"><i class="fa-solid fa-gauge-high me-1" aria-hidden="true"></i> Metingen invullen</button>',
+        title: 'Zonnepanelen & omvormer',
+        text: 'Noteer omvormer(s), paneel-aantallen en kringdetails met spanning per kring.',
+        icon: 'fa-solar-panel',
+        status: { done: done.solarInverters },
+        actions: '<button type="button" class="btn btn-outline-primary" data-workflow-action="solar-inverters"><i class="fa-solid fa-solar-panel me-1" aria-hidden="true"></i> PV/omvormers invullen</button>',
       })}
       ${workflowCardHtml({
         id: 'installation',
@@ -946,6 +946,64 @@ function numberOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+const WORKFLOW_CONNECTION_TYPES = ['1x230', '3x230', '3x400+N'];
+const WORKFLOW_VOLTAGE_MEASUREMENT_FIELDS = {
+  '1x230': [
+    ['l1N',  'L1 - N'],
+    ['l1Pe', 'L1 - PE'],
+    ['nPe',  'N - PE'],
+  ],
+  '3x230': [
+    ['l1L2', 'L1 - L2'],
+    ['l1L3', 'L1 - L3'],
+    ['l2L3', 'L2 - L3'],
+    ['l1Pe', 'L1 - PE'],
+    ['l2Pe', 'L2 - PE'],
+    ['l3Pe', 'L3 - PE'],
+  ],
+  '3x400+N': [
+    ['l1L2', 'L1 - L2'],
+    ['l1L3', 'L1 - L3'],
+    ['l2L3', 'L2 - L3'],
+    ['l1N',  'L1 - N'],
+    ['l2N',  'L2 - N'],
+    ['l3N',  'L3 - N'],
+    ['l1Pe', 'L1 - PE'],
+    ['l2Pe', 'L2 - PE'],
+    ['l3Pe', 'L3 - PE'],
+    ['nPe',  'N - PE'],
+  ],
+};
+
+function workflowVoltageFieldsForConnection(connectionType) {
+  return WORKFLOW_VOLTAGE_MEASUREMENT_FIELDS[connectionType] || [];
+}
+
+function workflowVoltageFieldsHtml(connectionType, voltage = {}) {
+  const fields = workflowVoltageFieldsForConnection(connectionType);
+  if (!fields.length) {
+    return '<div class="col-12"><p class="text-muted small mb-0">Kies eerst het type aansluiting om de juiste spanningsmetingen te tonen.</p></div>';
+  }
+  return fields.map(([key, label]) => `
+    <div class="col-6 col-md-4">
+      <label class="form-label" for="wf-voltage-${key}">${escapeHtml(label)}</label>
+      <div class="input-group">
+        <input id="wf-voltage-${key}" name="voltage_${key}" data-workflow-voltage-field="${key}" type="number" min="0" step="0.1" class="form-control" value="${escapeHtml(voltage[key] ?? '')}">
+        <span class="input-group-text">V</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function collectWorkflowVoltages(form, connectionType) {
+  const voltage = {};
+  workflowVoltageFieldsForConnection(connectionType).forEach(([key]) => {
+    const value = numberOrNull(valByName(form, `voltage_${key}`));
+    if (value != null) voltage[key] = value;
+  });
+  return voltage;
+}
+
 function ensureWorkflowModal() {
   let el = document.getElementById('spWorkflowModal');
   if (el) return el;
@@ -980,7 +1038,9 @@ async function openWorkflowChecksModal(project) {
   const m = mergeProjectMetadata(project);
   const el = m.electrical || {};
   const c = m.cabinet || {};
-  const connTypes = ['', '1x230', '3x230', '3x400+N'].map(t =>
+  const tech = m.technical || {};
+  const voltage = tech.voltageMeasurements || {};
+  const connTypes = ['', ...WORKFLOW_CONNECTION_TYPES].map(t =>
     `<option value="${t}" ${t === (el.connectionType || '') ? 'selected' : ''}>${t === '' ? '— Niet bepaald —' : t}</option>`
   ).join('');
   const tri = (name, value) => `
@@ -1033,19 +1093,45 @@ async function openWorkflowChecksModal(project) {
           <div class="form-check"><input class="form-check-input" type="radio" name="lineGround" id="wf-lg-over30" value="over30" ${c.lineGroundChecked === 'over30' ? 'checked' : ''}><label class="form-check-label" for="wf-lg-over30">Uitgevoerd — boven 30 V</label></div>
         </div>
       </div>
+      <div class="col-12"><hr class="my-1"></div>
+      <div class="col-12 col-md-4">
+        <label class="form-label" for="wf-earth">Aarding (Ω)</label>
+        <input id="wf-earth" name="earthResistanceOhm" type="number" step="0.01" class="form-control" value="${escapeHtml(tech.earthResistanceOhm ?? '')}">
+      </div>
+      <div class="col-12 col-md-8">
+        <label class="form-label" for="wf-technical-notes">Technische notities</label>
+        <input id="wf-technical-notes" name="technicalNotes" class="form-control" value="${escapeHtml(tech.technicalNotes || '')}" placeholder="bv. aarding OK, opmerking kast…">
+      </div>
+      <div class="col-12">
+        <h6 class="text-muted mb-2">Spanningsmetingen</h6>
+        <div class="row g-2" data-workflow-voltage-fields>${workflowVoltageFieldsHtml(el.connectionType, voltage)}</div>
+      </div>
       <div class="col-12">
         <label class="form-label" for="wf-checks-notes">Voorinstallatie-notities</label>
         <textarea id="wf-checks-notes" name="notes" class="form-control" rows="3" placeholder="bv. extra automaat nodig, kabeltraject via garage…">${escapeHtml(c.preInstallationNotes || '')}</textarea>
       </div>
     </div>`;
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  form.elements.connectionType?.addEventListener('change', () => {
+    const currentVoltage = { ...voltage };
+    form.querySelectorAll('[data-workflow-voltage-field]').forEach(input => {
+      const key = input.getAttribute('data-workflow-voltage-field');
+      const value = numberOrNull(input.value);
+      if (value == null) delete currentVoltage[key];
+      else currentVoltage[key] = value;
+    });
+    const mount = form.querySelector('[data-workflow-voltage-fields]');
+    if (mount) mount.innerHTML = workflowVoltageFieldsHtml(valByName(form, 'connectionType'), currentVoltage);
+  });
   form.onsubmit = async (e) => {
     e.preventDefault();
     const lineGround = valByName(form, 'lineGround') || null;
+    const connectionType = valByName(form, 'connectionType') || null;
+    const earthResistance = numberOrNull(valByName(form, 'earthResistanceOhm'));
     await withSpinner(async () => {
       await updateProjectMetadata(project.id, {
         electrical: {
-          connectionType: valByName(form, 'connectionType') || null,
+          connectionType,
           fuseRatingA: numberOrNull(valByName(form, 'fuseRatingA')),
         },
         cabinet: {
@@ -1058,8 +1144,16 @@ async function openWorkflowChecksModal(project) {
           lineGroundChecked: lineGround,
           preInstallationNotes: valByName(form, 'notes') || null,
         },
+        technical: {
+          ...tech,
+          earthResistanceMeasured: earthResistance != null,
+          earthResistanceOhm: earthResistance,
+          earthResistanceMeasuredDate: earthResistance != null ? new Date().toISOString().slice(0, 10) : (tech.earthResistanceMeasuredDate || null),
+          voltageMeasurements: collectWorkflowVoltages(form, connectionType),
+          technicalNotes: valByName(form, 'technicalNotes') || null,
+        },
       });
-      showToast('Aansluiting en voorinstallatie opgeslagen', 'success');
+      showToast('Aansluiting, voorinstallatie en metingen opgeslagen', 'success');
       modal.hide();
       await _refreshCurrentDrawer();
     });
@@ -1067,40 +1161,81 @@ async function openWorkflowChecksModal(project) {
   modal.show();
 }
 
-async function openWorkflowMeasurementsModal(project) {
+async function openWorkflowSolarModal(project) {
   const modalEl = ensureWorkflowModal();
   const form = modalEl.querySelector('[data-workflow-form]');
   const m = mergeProjectMetadata(project);
-  const tech = m.technical || {};
-  const voltage = tech.voltageMeasurements || {};
-  modalEl.querySelector('[data-workflow-title]').innerHTML = '<i class="fa-solid fa-gauge-high me-2"></i>Metingen';
+  const inverters = Array.isArray(m.solar?.inverters) && m.solar.inverters.length
+    ? m.solar.inverters
+    : [{ powerKw: null, brand: '', model: '', panelCount: null, circuitCount: 2, circuits: [] }];
+  const inverterHtml = inverters.map((inv, idx) => {
+    const circuitCount = Math.max(2, Number(inv.circuitCount) || 0, Array.isArray(inv.circuits) ? inv.circuits.length : 0);
+    const circuits = Array.from({ length: circuitCount }, (_, circuitIdx) => (Array.isArray(inv.circuits) ? inv.circuits[circuitIdx] : null) || {});
+    const circuitRows = circuits.map((circuit, circuitIdx) => `
+      <div class="card bg-light border-0 mt-2">
+        <div class="card-body py-2">
+          <div class="fw-semibold small mb-2">Kring ${circuitIdx + 1}</div>
+          <div class="row g-2">
+            <div class="col-6 col-md-3"><label class="form-label">Panelen</label><input name="inv_${idx}_circuit_${circuitIdx}_panelCount" type="number" min="0" step="1" class="form-control" value="${escapeHtml(circuit.panelCount ?? '')}"></div>
+            <div class="col-6 col-md-3"><label class="form-label">Spanning (V)</label><input name="inv_${idx}_circuit_${circuitIdx}_voltage" type="number" min="0" step="0.1" class="form-control" value="${escapeHtml(circuit.voltage ?? '')}"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Merk panelen</label><input name="inv_${idx}_circuit_${circuitIdx}_panelBrand" class="form-control" maxlength="60" value="${escapeHtml(circuit.panelBrand || '')}"></div>
+            <div class="col-12 col-md-3"><label class="form-label">Type panelen</label><input name="inv_${idx}_circuit_${circuitIdx}_panelModel" class="form-control" maxlength="80" value="${escapeHtml(circuit.panelModel || '')}"></div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+    return `
+      <div class="card mb-3" data-workflow-inverter-index="${idx}">
+        <div class="card-body">
+          <h6 class="mb-3">Omvormer ${idx + 1}</h6>
+          <div class="row g-2">
+            <div class="col-12 col-md-4"><label class="form-label">Vermogen (kW)</label><input name="inv_${idx}_powerKw" type="number" min="0" step="0.1" class="form-control" value="${escapeHtml(inv.powerKw ?? '')}"></div>
+            <div class="col-12 col-md-4"><label class="form-label">Merk omvormer</label><input name="inv_${idx}_brand" class="form-control" maxlength="60" value="${escapeHtml(inv.brand || '')}"></div>
+            <div class="col-12 col-md-4"><label class="form-label">Model omvormer</label><input name="inv_${idx}_model" class="form-control" maxlength="60" value="${escapeHtml(inv.model || '')}"></div>
+            <div class="col-6 col-md-4"><label class="form-label">Totaal panelen</label><input name="inv_${idx}_panelCount" type="number" min="0" step="1" class="form-control" value="${escapeHtml(inv.panelCount ?? '')}"></div>
+            <div class="col-6 col-md-4"><label class="form-label">Aantal kringen</label><input name="inv_${idx}_circuitCount" type="number" min="0" step="1" class="form-control" value="${escapeHtml(inv.circuitCount ?? '')}" placeholder="bv. 2"></div>
+            <div class="col-12 col-md-4"><label class="form-label">Ligging</label><input name="inv_${idx}_orientation" class="form-control" maxlength="40" value="${escapeHtml(inv.orientation || '')}"></div>
+          </div>
+          <div class="mt-3"><div class="small text-muted mb-1">Details per kring</div>${circuitRows}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  modalEl.querySelector('[data-workflow-title]').innerHTML = '<i class="fa-solid fa-solar-panel me-2"></i>Zonnepanelen & omvormer';
   modalEl.querySelector('[data-workflow-body]').innerHTML = `
-    <div class="row g-2">
-      <div class="col-6"><label class="form-label" for="wf-earth">Aarding (Ω)</label><input id="wf-earth" name="earthResistanceOhm" type="number" step="0.01" class="form-control" value="${escapeHtml(tech.earthResistanceOhm ?? '')}"></div>
-      <div class="col-6"><label class="form-label" for="wf-l1pe">L1-PE (V)</label><input id="wf-l1pe" name="l1Pe" type="number" step="0.1" class="form-control" value="${escapeHtml(voltage.l1Pe ?? '')}"></div>
-      <div class="col-6"><label class="form-label" for="wf-l2pe">L2-PE (V)</label><input id="wf-l2pe" name="l2Pe" type="number" step="0.1" class="form-control" value="${escapeHtml(voltage.l2Pe ?? '')}"></div>
-      <div class="col-6"><label class="form-label" for="wf-l3pe">L3-PE (V)</label><input id="wf-l3pe" name="l3Pe" type="number" step="0.1" class="form-control" value="${escapeHtml(voltage.l3Pe ?? '')}"></div>
-    </div>
-    <div class="mt-3"><label class="form-label" for="wf-technical-notes">Technische notities</label><textarea id="wf-technical-notes" name="technicalNotes" class="form-control" rows="3">${escapeHtml(tech.technicalNotes || '')}</textarea></div>`;
+    <p class="small text-muted">Vul het omvormervermogen en de kringen in. Standaard tonen we minstens twee kringrijen zodat je direct panelen, spanning en paneeltype kan noteren.</p>
+    ${inverterHtml}
+  `;
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   form.onsubmit = async (e) => {
     e.preventDefault();
+    const nextInverters = inverters.map((inv, idx) => {
+      const circuitCount = Math.max(0, Math.trunc(numberOrNull(valByName(form, `inv_${idx}_circuitCount`)) || 0));
+      const renderedCount = Math.max(2, circuitCount, Array.isArray(inv.circuits) ? inv.circuits.length : 0);
+      const circuits = [];
+      for (let circuitIdx = 0; circuitIdx < renderedCount; circuitIdx += 1) {
+        const circuit = {
+          panelCount: numberOrNull(valByName(form, `inv_${idx}_circuit_${circuitIdx}_panelCount`)),
+          voltage: numberOrNull(valByName(form, `inv_${idx}_circuit_${circuitIdx}_voltage`)),
+          panelBrand: valByName(form, `inv_${idx}_circuit_${circuitIdx}_panelBrand`) || '',
+          panelModel: valByName(form, `inv_${idx}_circuit_${circuitIdx}_panelModel`) || '',
+        };
+        if (circuitIdx < circuitCount || circuit.panelCount != null || circuit.voltage != null || circuit.panelBrand || circuit.panelModel) circuits.push(circuit);
+      }
+      return {
+        id: inv.id || `inv_${Date.now()}_${idx}`,
+        powerKw: numberOrNull(valByName(form, `inv_${idx}_powerKw`)),
+        brand: valByName(form, `inv_${idx}_brand`) || '',
+        model: valByName(form, `inv_${idx}_model`) || '',
+        panelCount: numberOrNull(valByName(form, `inv_${idx}_panelCount`)),
+        circuitCount: circuitCount || (circuits.length ? circuits.length : null),
+        circuits,
+        orientation: valByName(form, `inv_${idx}_orientation`) || '',
+      };
+    }).filter(inv => inv.powerKw || inv.brand || inv.model || inv.panelCount || inv.circuitCount || inv.circuits.length || inv.orientation);
     await withSpinner(async () => {
-      await updateProjectMetadata(project.id, {
-        technical: {
-          earthResistanceMeasured: numberOrNull(valByName(form, 'earthResistanceOhm')) != null,
-          earthResistanceOhm: numberOrNull(valByName(form, 'earthResistanceOhm')),
-          earthResistanceMeasuredDate: numberOrNull(valByName(form, 'earthResistanceOhm')) != null ? new Date().toISOString().slice(0, 10) : (tech.earthResistanceMeasuredDate || null),
-          voltageMeasurements: {
-            ...voltage,
-            l1Pe: numberOrNull(valByName(form, 'l1Pe')),
-            l2Pe: numberOrNull(valByName(form, 'l2Pe')),
-            l3Pe: numberOrNull(valByName(form, 'l3Pe')),
-          },
-          technicalNotes: valByName(form, 'technicalNotes') || null,
-        },
-      });
-      showToast('Metingen opgeslagen', 'success');
+      await updateProjectMetadata(project.id, { solar: { inverters: nextInverters } });
+      showToast('Zonnepanelen en omvormer opgeslagen', 'success');
       modal.hide();
       await _refreshCurrentDrawer();
     });
@@ -1167,8 +1302,8 @@ function wireProjectWorkflowQuickMenu(project) {
       _drawerPhotoUploader?.startUploadForTag('situation_before', 'gallery');
     } else if (action === 'checks-before') {
       openWorkflowChecksModal(project);
-    } else if (action === 'measurements') {
-      openWorkflowMeasurementsModal(project);
+    } else if (action === 'solar-inverters') {
+      openWorkflowSolarModal(project);
     } else if (action === 'installation-camera') {
       showDrawerTab('#drawerPhotosPane');
       _drawerPhotoUploader?.startUploadForTag('equipment_after', 'camera');

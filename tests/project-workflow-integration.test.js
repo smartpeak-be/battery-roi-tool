@@ -26,8 +26,8 @@ describe('project workflow quick menu', () => {
   it('maakt alle workflowblokjes aanklikbaar met gerichte acties', () => {
     expect(dashboardSource).toContain('data-workflow-action="checks-before"');
     expect(dashboardSource).toContain('openWorkflowChecksModal(project)');
-    expect(dashboardSource).toContain('data-workflow-action="measurements"');
-    expect(dashboardSource).toContain('openWorkflowMeasurementsModal(project)');
+    expect(dashboardSource).toContain('data-workflow-action="solar-inverters"');
+    expect(dashboardSource).toContain('openWorkflowSolarModal(project)');
     expect(dashboardSource).toContain("startUploadForTag('equipment_after', 'camera')");
     expect(dashboardSource).toContain("startUploadForTag('situation_after', 'camera')");
     expect(dashboardSource).toContain("startUploadForTag('situation_after', 'gallery')");
@@ -44,7 +44,10 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('hasRemAutomaat: valByName');
     expect(dashboardSource).toContain('lineGroundChecked: lineGround');
     expect(dashboardSource).toContain('technical: {');
-    expect(dashboardSource).toContain('voltageMeasurements: {');
+    expect(dashboardSource).toContain('voltageMeasurements: collectWorkflowVoltages(form, connectionType)');
+    expect(dashboardSource).toContain('workflowVoltageFieldsHtml(el.connectionType, voltage)');
+    expect(dashboardSource).toContain('solar: { inverters: nextInverters }');
+    expect(dashboardSource).toContain('panelBrand');
     expect(dashboardSource).toContain('inspection: {');
   });
 

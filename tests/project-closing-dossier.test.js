@@ -97,7 +97,17 @@ describe('project closing dossier', () => {
         voltageMeasurements: { l1N: 230, l1Pe: 0.6 },
         technicalNotes: 'Omvormer bereikbaar in technische ruimte.',
       },
-      solar: { inverters: [{ brand: 'Huawei', model: 'SUN2000', powerKw: 5 }] },
+      solar: { inverters: [{
+        brand: 'Huawei',
+        model: 'SUN2000',
+        powerKw: 5,
+        panelCount: 10,
+        circuitCount: 2,
+        circuits: [
+          { panelCount: 5, voltage: 320, panelBrand: 'Jinko', panelModel: 'Tiger Neo' },
+          { panelCount: 5, voltage: 318, panelBrand: 'Jinko', panelModel: 'Tiger Neo' },
+        ],
+      }] },
       site: { houseAgeOver10Years: true },
       lastCalcRun: {
         ...baseProject.lastCalcRun,
@@ -137,6 +147,10 @@ describe('project closing dossier', () => {
     expect(html).toContain('Spanning L1 - N');
     expect(html).toContain('230 V');
     expect(html).toContain('Huawei SUN2000');
+    expect(html).toContain('10 panelen');
+    expect(html).toContain('PV-omvormer 1 · kring 1');
+    expect(html).toContain('320 V');
+    expect(html).toContain('Jinko Tiger Neo');
     expect(html).toContain('Geplaatste onderdelen');
     expect(html).toContain('2x');
     expect(html).toContain('Zendure AB2000S');
