@@ -482,6 +482,7 @@ export function mountProjectDocuments(containerEl, opts = {}) {
   const errEl = containerEl.querySelector('[data-doc-error]');
   let uploadParentId = null;
   let uploadParentTitle = '';
+  let presetUploadMeta = null;
 
   function setError(message) {
     if (!errEl) return;
@@ -520,7 +521,8 @@ export function mountProjectDocuments(containerEl, opts = {}) {
   async function handleFiles(filesLike) {
     const files = Array.from(filesLike || []);
     if (!files.length) return;
-    const meta = await promptMeta(files, uploadParentTitle);
+    const meta = presetUploadMeta || await promptMeta(files, uploadParentTitle);
+    presetUploadMeta = null;
     if (!meta) return;
     const plan = documentUploadPlan(files, { ...meta, parentId: uploadParentId });
     setBusy(true);
@@ -645,6 +647,13 @@ export function mountProjectDocuments(containerEl, opts = {}) {
   refresh();
   return {
     refresh,
+    startUploadWithMeta(meta = {}, parentId = null) {
+      uploadParentId = parentId;
+      uploadParentTitle = '';
+      const defaults = defaultDocumentFlags(meta.documentKind || 'other');
+      presetUploadMeta = { ...defaults, ...meta };
+      fileInput.click();
+    },
     destroy() {},
   };
 }

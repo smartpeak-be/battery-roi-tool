@@ -785,74 +785,333 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-function workflowStatusHtml({ count = 0, required = false } = {}) {
-  if (count > 0) return '<span class="sp-workflow-status text-bg-success"><i class="fa-solid fa-check" aria-hidden="true"></i> Klaar</span>';
+function workflowStatusHtml({ count = 0, done = false, required = false } = {}) {
+  if (done || count > 0) return '<span class="sp-workflow-status text-bg-success"><i class="fa-solid fa-check" aria-hidden="true"></i> Klaar</span>';
   if (required) return '<span class="sp-workflow-status text-bg-warning"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Nodig</span>';
   return '<span class="sp-workflow-status text-bg-secondary"><i class="fa-regular fa-circle" aria-hidden="true"></i> Open</span>';
 }
 
+function workflowDoneState(project) {
+  const p = mergeProjectMetadata(project || {});
+  const workflow = (project && project.workflow) || {};
+  const checks = workflow.checksBefore || {};
+  const measurements = p.technical || {};
+  const voltage = measurements.voltageMeasurements || {};
+  const serials = Array.isArray(p.serialNumbers) ? p.serialNumbers : [];
+  const inspection = p.inspection || {};
+  return {
+    checksBefore: !!(checks.done || checks.gridConnectionChecked || checks.spaceChecked || checks.cableRouteChecked || p.cabinet.lineGroundChecked),
+    measurements: !!(measurements.earthResistanceOhm || measurements.technicalNotes || voltage.l1Pe || voltage.l2Pe || voltage.l3Pe),
+    installation: serials.length > 0,
+    inspection: !!(inspection.company || inspection.reference || inspection.notes || p.planning.inspectionPlannedDate || p.planning.inspectionDoneDate),
+  };
+}
+
+function workflowCardHtml({ id, kicker, title, text, icon, status, actions }) {
+  return `
+    <article class="sp-workflow-card${status.done ? ' is-done' : ''}" data-workflow-block="${escapeHtml(id)}">
+      <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+        <div>
+          <div class="sp-workflow-kicker">${escapeHtml(kicker)}</div>
+          <h6 class="mb-1"><i class="fa-solid ${escapeHtml(icon)} me-1" aria-hidden="true"></i> ${escapeHtml(title)}</h6>
+        </div>
+        <span data-workflow-status="${escapeHtml(id)}">${workflowStatusHtml(status)}</span>
+      </div>
+      <p class="small text-muted mb-3">${escapeHtml(text)}</p>
+      <div class="d-grid gap-2">${actions}</div>
+    </article>
+  `;
+}
+
 function renderProjectWorkflowQuickMenu(project) {
   const projectName = getProjectLabel(project);
+  const done = workflowDoneState(project);
   return `
     <div class="sp-workflow-intro mb-3">
       <div class="fw-semibold">Snelle plaatsingsflow</div>
       <div class="small text-muted">Mobiel menu per afgebakend blok. Start wat je nodig hebt, zonder verplichte wizard.</div>
     </div>
     <div class="sp-workflow-grid" aria-label="Werkflow voor ${escapeHtml(projectName)}">
-      <article class="sp-workflow-card" data-workflow-block="photos-before">
-        <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
-          <div>
-            <div class="sp-workflow-kicker">Vooraf / intake</div>
-            <h6 class="mb-1"><i class="fa-solid fa-camera me-1" aria-hidden="true"></i> Situatiefoto’s vóór</h6>
-          </div>
-          <span data-workflow-status="photos-before">${workflowStatusHtml({ required: true })}</span>
-        </div>
-        <p class="small text-muted mb-3">Trek of upload een reeks foto’s. Ze worden direct opgeslagen als “Situatie vóór installatie”.</p>
-        <div class="d-grid gap-2">
-          <button type="button" class="btn btn-primary" data-workflow-action="photos-before-camera">
-            <i class="fa-solid fa-camera me-1" aria-hidden="true"></i> Foto’s trekken
-          </button>
-          <button type="button" class="btn btn-outline-primary" data-workflow-action="photos-before-gallery">
-            <i class="fa-solid fa-folder-open me-1" aria-hidden="true"></i> Uit galerij
-          </button>
-        </div>
-      </article>
-      ${[
-        ['checks-before', 'Voorinstallatie checks', 'Netaansluiting, ruimte, kabeltraject', 'fa-clipboard-check'],
-        ['measurements', 'Metingen', 'Spanning/stroom en technische waarden', 'fa-gauge-high'],
-        ['installation', 'Installatie', 'Toestellen, bekabeling, serienummers', 'fa-screwdriver-wrench'],
-        ['photos-after', 'Na installatie', 'Eindfoto’s en bewijs proper werk', 'fa-camera-retro'],
-        ['inspection', 'Keuring / oplevering', 'Keuringsstukken en dossier klaarzetten', 'fa-file-circle-check'],
-      ].map(([id, title, text, icon]) => `
-        <article class="sp-workflow-card is-placeholder" data-workflow-block="${escapeHtml(id)}">
-          <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
-            <div>
-              <div class="sp-workflow-kicker">Volgende fase</div>
-              <h6 class="mb-1"><i class="fa-solid ${escapeHtml(icon)} me-1" aria-hidden="true"></i> ${escapeHtml(title)}</h6>
-            </div>
-            ${workflowStatusHtml()}
-          </div>
-          <p class="small text-muted mb-0">${escapeHtml(text)}</p>
-        </article>
-      `).join('')}
+      ${workflowCardHtml({
+        id: 'photos-before',
+        kicker: 'Vooraf / intake',
+        title: 'Situatiefoto’s vóór',
+        text: 'Trek of upload een reeks foto’s. Ze worden direct opgeslagen als “Situatie vóór installatie”.',
+        icon: 'fa-camera',
+        status: { required: true },
+        actions: `
+          <button type="button" class="btn btn-primary" data-workflow-action="photos-before-camera"><i class="fa-solid fa-camera me-1" aria-hidden="true"></i> Foto’s trekken</button>
+          <button type="button" class="btn btn-outline-primary" data-workflow-action="photos-before-gallery"><i class="fa-solid fa-folder-open me-1" aria-hidden="true"></i> Uit galerij</button>
+        `,
+      })}
+      ${workflowCardHtml({
+        id: 'checks-before',
+        kicker: 'Voorinstallatie',
+        title: 'Checks',
+        text: 'Vink netaansluiting, plaatsing en kabeltraject af. Fase-aarde check wordt mee opgeslagen.',
+        icon: 'fa-clipboard-check',
+        status: { done: done.checksBefore },
+        actions: '<button type="button" class="btn btn-outline-primary" data-workflow-action="checks-before"><i class="fa-solid fa-clipboard-check me-1" aria-hidden="true"></i> Checks invullen</button>',
+      })}
+      ${workflowCardHtml({
+        id: 'measurements',
+        kicker: 'Techniek',
+        title: 'Metingen',
+        text: 'Noteer aarding, fase-aarde spanningen en technische opmerkingen.',
+        icon: 'fa-gauge-high',
+        status: { done: done.measurements },
+        actions: '<button type="button" class="btn btn-outline-primary" data-workflow-action="measurements"><i class="fa-solid fa-gauge-high me-1" aria-hidden="true"></i> Metingen invullen</button>',
+      })}
+      ${workflowCardHtml({
+        id: 'installation',
+        kicker: 'Installatie',
+        title: 'Toestellen & serienummers',
+        text: 'Leg toestellen vast en scroll naar de serienummers/OCR-lijst.',
+        icon: 'fa-screwdriver-wrench',
+        status: { done: done.installation },
+        actions: `
+          <button type="button" class="btn btn-outline-primary" data-workflow-action="installation-camera"><i class="fa-solid fa-camera me-1" aria-hidden="true"></i> Toestelfoto’s trekken</button>
+          <button type="button" class="btn btn-outline-secondary" data-workflow-action="installation-serials"><i class="fa-solid fa-barcode me-1" aria-hidden="true"></i> Naar serienummers</button>
+        `,
+      })}
+      ${workflowCardHtml({
+        id: 'photos-after',
+        kicker: 'Na installatie',
+        title: 'Eindfoto’s',
+        text: 'Upload eindfoto’s als bewijs van propere afwerking.',
+        icon: 'fa-camera-retro',
+        status: {},
+        actions: `
+          <button type="button" class="btn btn-outline-primary" data-workflow-action="photos-after-camera"><i class="fa-solid fa-camera me-1" aria-hidden="true"></i> Eindfoto’s trekken</button>
+          <button type="button" class="btn btn-outline-secondary" data-workflow-action="photos-after-gallery"><i class="fa-solid fa-folder-open me-1" aria-hidden="true"></i> Uit galerij</button>
+        `,
+      })}
+      ${workflowCardHtml({
+        id: 'inspection',
+        kicker: 'Keuring / oplevering',
+        title: 'Keuring & dossier',
+        text: 'Upload keuringsstukken of vul keuringsinfo in voor oplevering.',
+        icon: 'fa-file-circle-check',
+        status: { done: done.inspection },
+        actions: `
+          <button type="button" class="btn btn-outline-primary" data-workflow-action="inspection-info"><i class="fa-solid fa-file-circle-check me-1" aria-hidden="true"></i> Keuringsinfo invullen</button>
+          <button type="button" class="btn btn-outline-secondary" data-workflow-action="inspection-docs"><i class="fa-solid fa-upload me-1" aria-hidden="true"></i> Documenten uploaden</button>
+        `,
+      })}
     </div>
   `;
 }
 
 function setWorkflowPhotoCounts(photos) {
-  const beforeCount = (photos || []).filter(p => {
+  const counts = { before: 0, after: 0, equipment: 0, inspection: 0 };
+  (photos || []).forEach(p => {
     const tag = p && p.tag ? String(p.tag) : 'situatie';
-    return tag === 'situatie' || tag === 'situation_before';
-  }).length;
-  const card = document.querySelector('[data-workflow-block="photos-before"]');
-  const status = document.querySelector('[data-workflow-status="photos-before"]');
-  if (card) card.classList.toggle('is-done', beforeCount > 0);
-  if (status) status.innerHTML = workflowStatusHtml({ count: beforeCount, required: true });
+    if (tag === 'situatie' || tag === 'situation_before') counts.before += 1;
+    if (tag === 'situation_after') counts.after += 1;
+    if (tag === 'equipment_after' || tag === 'serial') counts.equipment += 1;
+    if (tag === 'inspection') counts.inspection += 1;
+  });
+  const apply = (block, count, required = false) => {
+    const card = document.querySelector(`[data-workflow-block="${block}"]`);
+    const status = document.querySelector(`[data-workflow-status="${block}"]`);
+    if (card) card.classList.toggle('is-done', count > 0 || card.classList.contains('is-done'));
+    if (status && count > 0) status.innerHTML = workflowStatusHtml({ count, required });
+    else if (status && required) status.innerHTML = workflowStatusHtml({ required });
+  };
+  apply('photos-before', counts.before, true);
+  apply('photos-after', counts.after);
+  apply('installation', counts.equipment);
+  apply('inspection', counts.inspection);
 }
 
 function showDrawerTab(targetSelector) {
   const trigger = document.querySelector(`[data-bs-target="${targetSelector}"]`);
   if (trigger && window.bootstrap) bootstrap.Tab.getOrCreateInstance(trigger).show();
+}
+
+function scrollDrawerSection(selector) {
+  const el = document.querySelector(selector);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function valByName(form, name) {
+  const el = form.elements[name];
+  return el ? String(el.value || '').trim() : '';
+}
+
+function checkedByName(form, name) {
+  const el = form.elements[name];
+  return !!(el && el.checked);
+}
+
+function numberOrNull(value) {
+  const raw = String(value || '').trim().replace(',', '.');
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function ensureWorkflowModal() {
+  let el = document.getElementById('spWorkflowModal');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'spWorkflowModal';
+  el.className = 'modal fade';
+  el.tabIndex = -1;
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form data-workflow-form>
+          <div class="modal-header">
+            <h5 class="modal-title" data-workflow-title>Werkflow</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+          </div>
+          <div class="modal-body" data-workflow-body></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+            <button type="submit" class="btn btn-primary" data-workflow-save>Opslaan</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  return el;
+}
+
+function workflowCheck(name, label, checked = false) {
+  return `
+    <div class="form-check mb-2">
+      <input class="form-check-input" type="checkbox" id="wf-${escapeHtml(name)}" name="${escapeHtml(name)}" ${checked ? 'checked' : ''}>
+      <label class="form-check-label" for="wf-${escapeHtml(name)}">${escapeHtml(label)}</label>
+    </div>`;
+}
+
+async function openWorkflowChecksModal(project) {
+  const modalEl = ensureWorkflowModal();
+  const form = modalEl.querySelector('[data-workflow-form]');
+  const workflow = (project.workflow && project.workflow.checksBefore) || {};
+  const m = mergeProjectMetadata(project);
+  modalEl.querySelector('[data-workflow-title]').innerHTML = '<i class="fa-solid fa-clipboard-check me-2"></i>Voorinstallatie checks';
+  modalEl.querySelector('[data-workflow-body]').innerHTML = `
+    ${workflowCheck('gridConnectionChecked', 'Netaansluiting / tellerkast bekeken', workflow.gridConnectionChecked)}
+    ${workflowCheck('spaceChecked', 'Plaats voor batterij/omvormer gecontroleerd', workflow.spaceChecked)}
+    ${workflowCheck('cableRouteChecked', 'Kabeltraject / boring / afstand bekeken', workflow.cableRouteChecked)}
+    ${workflowCheck('lineGroundChecked', 'Fase ↔ aarde check uitgevoerd', workflow.lineGroundChecked || m.cabinet.lineGroundChecked)}
+    <div class="mt-3">
+      <label class="form-label" for="wf-checks-notes">Notities</label>
+      <textarea id="wf-checks-notes" name="notes" class="form-control" rows="3" placeholder="bv. extra automaat nodig, kabeltraject via garage…">${escapeHtml(workflow.notes || '')}</textarea>
+    </div>`;
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const patch = {
+      workflow: {
+        checksBefore: {
+          gridConnectionChecked: checkedByName(form, 'gridConnectionChecked'),
+          spaceChecked: checkedByName(form, 'spaceChecked'),
+          cableRouteChecked: checkedByName(form, 'cableRouteChecked'),
+          lineGroundChecked: checkedByName(form, 'lineGroundChecked'),
+          done: checkedByName(form, 'gridConnectionChecked') && checkedByName(form, 'spaceChecked') && checkedByName(form, 'cableRouteChecked'),
+          notes: valByName(form, 'notes') || null,
+          updatedBy: currentUserEmail(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        },
+      },
+      cabinet: { lineGroundChecked: checkedByName(form, 'lineGroundChecked') },
+    };
+    await withSpinner(async () => {
+      await updateProjectMetadata(project.id, patch);
+      showToast('Voorinstallatie checks opgeslagen', 'success');
+      modal.hide();
+      await _refreshCurrentDrawer();
+    });
+  };
+  modal.show();
+}
+
+async function openWorkflowMeasurementsModal(project) {
+  const modalEl = ensureWorkflowModal();
+  const form = modalEl.querySelector('[data-workflow-form]');
+  const m = mergeProjectMetadata(project);
+  const tech = m.technical || {};
+  const voltage = tech.voltageMeasurements || {};
+  modalEl.querySelector('[data-workflow-title]').innerHTML = '<i class="fa-solid fa-gauge-high me-2"></i>Metingen';
+  modalEl.querySelector('[data-workflow-body]').innerHTML = `
+    <div class="row g-2">
+      <div class="col-6"><label class="form-label" for="wf-earth">Aarding (Ω)</label><input id="wf-earth" name="earthResistanceOhm" type="number" step="0.01" class="form-control" value="${escapeHtml(tech.earthResistanceOhm ?? '')}"></div>
+      <div class="col-6"><label class="form-label" for="wf-l1pe">L1-PE (V)</label><input id="wf-l1pe" name="l1Pe" type="number" step="0.1" class="form-control" value="${escapeHtml(voltage.l1Pe ?? '')}"></div>
+      <div class="col-6"><label class="form-label" for="wf-l2pe">L2-PE (V)</label><input id="wf-l2pe" name="l2Pe" type="number" step="0.1" class="form-control" value="${escapeHtml(voltage.l2Pe ?? '')}"></div>
+      <div class="col-6"><label class="form-label" for="wf-l3pe">L3-PE (V)</label><input id="wf-l3pe" name="l3Pe" type="number" step="0.1" class="form-control" value="${escapeHtml(voltage.l3Pe ?? '')}"></div>
+    </div>
+    <div class="mt-3"><label class="form-label" for="wf-technical-notes">Technische notities</label><textarea id="wf-technical-notes" name="technicalNotes" class="form-control" rows="3">${escapeHtml(tech.technicalNotes || '')}</textarea></div>`;
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    await withSpinner(async () => {
+      await updateProjectMetadata(project.id, {
+        technical: {
+          earthResistanceMeasured: numberOrNull(valByName(form, 'earthResistanceOhm')) != null,
+          earthResistanceOhm: numberOrNull(valByName(form, 'earthResistanceOhm')),
+          earthResistanceMeasuredDate: numberOrNull(valByName(form, 'earthResistanceOhm')) != null ? new Date().toISOString().slice(0, 10) : (tech.earthResistanceMeasuredDate || null),
+          voltageMeasurements: {
+            ...voltage,
+            l1Pe: numberOrNull(valByName(form, 'l1Pe')),
+            l2Pe: numberOrNull(valByName(form, 'l2Pe')),
+            l3Pe: numberOrNull(valByName(form, 'l3Pe')),
+          },
+          technicalNotes: valByName(form, 'technicalNotes') || null,
+        },
+      });
+      showToast('Metingen opgeslagen', 'success');
+      modal.hide();
+      await _refreshCurrentDrawer();
+    });
+  };
+  modal.show();
+}
+
+async function openWorkflowInspectionModal(project) {
+  const modalEl = ensureWorkflowModal();
+  const form = modalEl.querySelector('[data-workflow-form]');
+  const m = mergeProjectMetadata(project);
+  const inspection = m.inspection || {};
+  modalEl.querySelector('[data-workflow-title]').innerHTML = '<i class="fa-solid fa-file-circle-check me-2"></i>Keuring / oplevering';
+  modalEl.querySelector('[data-workflow-body]').innerHTML = `
+    <div class="mb-3"><label class="form-label" for="wf-inspection-company">Keuringsbedrijf</label><input id="wf-inspection-company" name="company" class="form-control" value="${escapeHtml(inspection.company || '')}"></div>
+    <div class="mb-3"><label class="form-label" for="wf-inspection-reference">Referentie / dossiernr.</label><input id="wf-inspection-reference" name="reference" class="form-control" value="${escapeHtml(inspection.reference || '')}"></div>
+    <div class="row g-2">
+      <div class="col-6"><label class="form-label" for="wf-inspection-planned">Gepland</label><input id="wf-inspection-planned" name="inspectionPlannedDate" type="date" class="form-control" value="${escapeHtml(m.planning.inspectionPlannedDate || '')}"></div>
+      <div class="col-6"><label class="form-label" for="wf-inspection-done">Uitgevoerd</label><input id="wf-inspection-done" name="inspectionDoneDate" type="date" class="form-control" value="${escapeHtml(m.planning.inspectionDoneDate || '')}"></div>
+    </div>
+    <div class="mt-3"><label class="form-label" for="wf-inspection-notes">Notities</label><textarea id="wf-inspection-notes" name="notes" class="form-control" rows="3">${escapeHtml(inspection.notes || '')}</textarea></div>`;
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    await withSpinner(async () => {
+      await updateProjectMetadata(project.id, {
+        inspection: {
+          company: valByName(form, 'company') || null,
+          reference: valByName(form, 'reference') || null,
+          notes: valByName(form, 'notes') || null,
+        },
+        planning: {
+          ...m.planning,
+          inspectionPlannedDate: valByName(form, 'inspectionPlannedDate') || null,
+          inspectionDoneDate: valByName(form, 'inspectionDoneDate') || null,
+        },
+      });
+      showToast('Keuringsinfo opgeslagen', 'success');
+      modal.hide();
+      await _refreshCurrentDrawer();
+    });
+  };
+  modal.show();
+}
+
+function startWorkflowDocumentUpload(meta) {
+  showDrawerTab('#drawerDocumentsPane');
+  setTimeout(() => _drawerDocumentsExplorer?.startUploadWithMeta(meta), 80);
 }
 
 function wireProjectWorkflowQuickMenu(project) {
@@ -869,6 +1128,29 @@ function wireProjectWorkflowQuickMenu(project) {
     } else if (action === 'photos-before-gallery') {
       showDrawerTab('#drawerPhotosPane');
       _drawerPhotoUploader?.startUploadForTag('situation_before', 'gallery');
+    } else if (action === 'checks-before') {
+      openWorkflowChecksModal(project);
+    } else if (action === 'measurements') {
+      openWorkflowMeasurementsModal(project);
+    } else if (action === 'installation-camera') {
+      showDrawerTab('#drawerPhotosPane');
+      _drawerPhotoUploader?.startUploadForTag('equipment_after', 'camera');
+    } else if (action === 'installation-serials') {
+      scrollDrawerSection('#drawerSerialsSection');
+    } else if (action === 'photos-after-camera') {
+      showDrawerTab('#drawerPhotosPane');
+      _drawerPhotoUploader?.startUploadForTag('situation_after', 'camera');
+    } else if (action === 'photos-after-gallery') {
+      showDrawerTab('#drawerPhotosPane');
+      _drawerPhotoUploader?.startUploadForTag('situation_after', 'gallery');
+    } else if (action === 'inspection-info') {
+      openWorkflowInspectionModal(project);
+    } else if (action === 'inspection-docs') {
+      startWorkflowDocumentUpload({
+        title: 'Keuringsdocument',
+        documentKind: 'inspection_support',
+        includeInInspectionPack: true,
+      });
     }
   });
 }

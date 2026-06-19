@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const dashboardSource = readFileSync(new URL('../assets/js/pages/dashboard-app.js', import.meta.url), 'utf8');
 const photoUploaderSource = readFileSync(new URL('../assets/js/photo-uploader.js', import.meta.url), 'utf8');
+const documentSource = readFileSync(new URL('../assets/js/project-documents.js', import.meta.url), 'utf8');
 const cssSource = readFileSync(new URL('../assets/css/smartpeak.css', import.meta.url), 'utf8');
 
 describe('project workflow quick menu', () => {
@@ -22,12 +23,39 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('setWorkflowPhotoCounts(photos)');
   });
 
+  it('maakt alle workflowblokjes aanklikbaar met gerichte acties', () => {
+    expect(dashboardSource).toContain('data-workflow-action="checks-before"');
+    expect(dashboardSource).toContain('openWorkflowChecksModal(project)');
+    expect(dashboardSource).toContain('data-workflow-action="measurements"');
+    expect(dashboardSource).toContain('openWorkflowMeasurementsModal(project)');
+    expect(dashboardSource).toContain("startUploadForTag('equipment_after', 'camera')");
+    expect(dashboardSource).toContain("startUploadForTag('situation_after', 'camera')");
+    expect(dashboardSource).toContain("startUploadForTag('situation_after', 'gallery')");
+    expect(dashboardSource).toContain('openWorkflowInspectionModal(project)');
+    expect(dashboardSource).toContain('startUploadWithMeta');
+  });
+
+  it('slaat workflow formulieren op in projectmetadata', () => {
+    expect(dashboardSource).toContain('workflow: {');
+    expect(dashboardSource).toContain('checksBefore: {');
+    expect(dashboardSource).toContain('cabinet: { lineGroundChecked:');
+    expect(dashboardSource).toContain('technical: {');
+    expect(dashboardSource).toContain('voltageMeasurements: {');
+    expect(dashboardSource).toContain('inspection: {');
+  });
+
   it('laat de photo-uploader een upload rechtstreeks aan een workflow-tag koppelen', () => {
     expect(photoUploaderSource).toContain('defaultTag:');
     expect(photoUploaderSource).toContain('nextUploadTag:');
     expect(photoUploaderSource).toContain('skipTagModalOnce:');
     expect(photoUploaderSource).toContain('function startUploadForTag(tag, source =');
     expect(photoUploaderSource).toContain('return { refresh, destroy, openByPhotoId, startUploadForTag }');
+  });
+
+  it('laat de documentverkenner een workflowupload met vaste metadata starten', () => {
+    expect(documentSource).toContain('startUploadWithMeta(meta = {}, parentId = null)');
+    expect(documentSource).toContain('presetUploadMeta = { ...defaults, ...meta }');
+    expect(documentSource).toContain('const meta = presetUploadMeta || await promptMeta(files, uploadParentTitle)');
   });
 
   it('heeft styling hooks voor de workflow cards en status badges', () => {
