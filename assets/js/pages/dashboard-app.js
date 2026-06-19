@@ -1100,10 +1100,15 @@ async function openWorkflowChecksModal(project) {
   const connTypes = ['', ...WORKFLOW_CONNECTION_TYPES].map(t =>
     `<option value="${t}" ${t === (el.connectionType || '') ? 'selected' : ''}>${t === '' ? '— Niet bepaald —' : t}</option>`
   ).join('');
+  const triValue = (value) => {
+    if (value === true || value === 'true' || value === 'yes') return 'yes';
+    if (value === false || value === 'false' || value === 'no') return 'no';
+    return '';
+  };
   const tri = (name, value) => `
     <div class="btn-group w-100" role="group" aria-label="${escapeHtml(name)}">
       ${[['', 'Onbekend'], ['yes', 'Ja'], ['no', 'Nee']].map(([raw, label]) => `
-        <input type="radio" class="btn-check" name="${escapeHtml(name)}" id="wf-${escapeHtml(name)}-${raw || 'unknown'}" value="${raw}" ${String(value ?? '') === raw ? 'checked' : ''}>
+        <input type="radio" class="btn-check" name="${escapeHtml(name)}" id="wf-${escapeHtml(name)}-${raw || 'unknown'}" value="${raw}" ${triValue(value) === raw ? 'checked' : ''}>
         <label class="btn btn-outline-secondary" for="wf-${escapeHtml(name)}-${raw || 'unknown'}">${escapeHtml(label)}</label>
       `).join('')}
     </div>`;
@@ -1194,10 +1199,10 @@ async function openWorkflowChecksModal(project) {
         cabinet: {
           freeUnits: numberOrNull(valByName(form, 'freeUnits')),
           wiringDiameterMm2: numberOrNull(valByName(form, 'wiringDiameterMm2')),
-          hasRemAutomaat: valByName(form, 'hasRemAutomaat') || null,
-          hasOutletNearFluvius: valByName(form, 'hasOutletNearFluvius') || null,
-          hasWifiNearFluvius: valByName(form, 'hasWifiNearFluvius') || null,
-          hasWifiNearCabinet: valByName(form, 'hasWifiNearCabinet') || null,
+          hasRemAutomaat: triValue(valByName(form, 'hasRemAutomaat')) || null,
+          hasOutletNearFluvius: triValue(valByName(form, 'hasOutletNearFluvius')) || null,
+          hasWifiNearFluvius: triValue(valByName(form, 'hasWifiNearFluvius')) || null,
+          hasWifiNearCabinet: triValue(valByName(form, 'hasWifiNearCabinet')) || null,
           lineGroundChecked: lineGround,
           preInstallationNotes: valByName(form, 'notes') || null,
         },

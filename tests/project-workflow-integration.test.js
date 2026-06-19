@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const dashboardSource = readFileSync(new URL('../assets/js/pages/dashboard-app.js', import.meta.url), 'utf8');
+const projectEditSource = readFileSync(new URL('../assets/js/pages/project-edit-app.js', import.meta.url), 'utf8');
 const photoUploaderSource = readFileSync(new URL('../assets/js/photo-uploader.js', import.meta.url), 'utf8');
 const documentSource = readFileSync(new URL('../assets/js/project-documents.js', import.meta.url), 'utf8');
 const cssSource = readFileSync(new URL('../assets/css/smartpeak.css', import.meta.url), 'utf8');
@@ -45,7 +46,7 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('fuseRatingA: numberOrNull');
     expect(dashboardSource).toContain('freeUnits: numberOrNull');
     expect(dashboardSource).toContain('wiringDiameterMm2: numberOrNull');
-    expect(dashboardSource).toContain('hasRemAutomaat: valByName');
+    expect(dashboardSource).toContain("hasRemAutomaat: triValue(valByName(form, 'hasRemAutomaat'))");
     expect(dashboardSource).toContain('lineGroundChecked: lineGround');
     expect(dashboardSource).toContain('technical: {');
     expect(dashboardSource).toContain('voltageMeasurements: collectWorkflowVoltages(form, connectionType)');
@@ -57,6 +58,16 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('const circuitCount = workflowSolarCircuitCount(inv)');
     expect(dashboardSource).toContain('Array.from({ length: circuitCount }');
     expect(dashboardSource).toContain('inspection: {');
+  });
+
+  it('toont workflow checks en voorinstallatie-notities opnieuw in project bewerken', () => {
+    expect(dashboardSource).toContain('const triValue = (value) =>');
+    expect(dashboardSource).toContain("value === true || value === 'true' || value === 'yes'");
+    expect(projectEditSource).toContain('function normalizeTriState(value)');
+    expect(projectEditSource).toContain("value === true || value === 'true' || value === 'yes'");
+    expect(projectEditSource).toContain('id="fPreInstallationNotes"');
+    expect(projectEditSource).toContain('c.preInstallationNotes ||');
+    expect(projectEditSource).toContain('_project.cabinet.preInstallationNotes = e.target.value || null');
   });
 
   it('laat de photo-uploader een upload rechtstreeks aan een workflow-tag koppelen', () => {

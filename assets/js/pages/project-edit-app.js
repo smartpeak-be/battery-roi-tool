@@ -1080,6 +1080,11 @@ function sectionBlokC() {
             <textarea id="fTechnicalNotes" class="form-control" rows="2" maxlength="1000">${escapeHtml(technical.technicalNotes || '')}</textarea>
           </div>
 
+          <div class="mb-3">
+            <label for="fPreInstallationNotes" class="form-label">Voorinstallatie-notities</label>
+            <textarea id="fPreInstallationNotes" class="form-control" rows="3" maxlength="1500" placeholder="bv. extra automaat nodig, kabeltraject via garage…">${escapeHtml(c.preInstallationNotes || '')}</textarea>
+          </div>
+
           <h6 class="text-muted mb-2">Omvormer(s)</h6>
           <div id="peInverterList">${inverterCards}</div>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="fAddInverter"><i class="fa-solid fa-plus me-1"></i>Omvormer toevoegen</button>
@@ -1155,6 +1160,10 @@ function wireBlokC() {
   document.getElementById('fTechnicalNotes').addEventListener('input', e => {
     _project.technical = _project.technical || {};
     _project.technical.technicalNotes = e.target.value;
+  });
+  document.getElementById('fPreInstallationNotes').addEventListener('input', e => {
+    _project.cabinet = _project.cabinet || {};
+    _project.cabinet.preInstallationNotes = e.target.value || null;
   });
   // Omvormer-lijst — per-entry input handlers
   document.querySelectorAll('[data-inv-field]').forEach(inp => {
@@ -1653,10 +1662,18 @@ let _pendingCsv       = null;
 
 
 // Tri-state radio helper: returns HTML for three labels (Ja/Nee/Onbekend).
-// `name` is unique in the DOM; `value` is the current stored state (null|true|false).
+// Accepts both the project-edit booleans (null|true|false) and workflow values
+// ('yes'|'no') so fields filled from the mobile workflow remain visible here.
+function normalizeTriState(value) {
+  if (value === true || value === 'true' || value === 'yes') return true;
+  if (value === false || value === 'false' || value === 'no') return false;
+  return null;
+}
+
 function triStateHtml(name, value) {
+  const normalized = normalizeTriState(value);
   const mk = (v, label) => {
-    const match = (v === null ? value === null : value === v);
+    const match = (v === null ? normalized === null : normalized === v);
     const strV = v === null ? 'unknown' : String(v);
     const fid = `${name}_${strV}`;
     return `<div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="${name}" value="${strV}" id="${fid}" ${match ? 'checked' : ''} /><label class="form-check-label" for="${fid}">${label}</label></div>`;
@@ -1671,9 +1688,7 @@ function triStateHtml(name, value) {
 }
 
 function parseTriState(strVal) {
-  if (strVal === 'true')  return true;
-  if (strVal === 'false') return false;
-  return null;
+  return normalizeTriState(strVal);
 }
 
 
