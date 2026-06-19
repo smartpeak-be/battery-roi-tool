@@ -15,11 +15,15 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('wireProjectWorkflowQuickMenu(project)');
   });
 
-  it('start situatiefotos voor-installatie als afgebakend blok met vaste fotocategorie', () => {
+  it('laat bij situatiefotos eerst de concrete fotocategorie kiezen', () => {
     expect(dashboardSource).toContain('data-workflow-action="photos-before-camera"');
     expect(dashboardSource).toContain('data-workflow-action="photos-before-gallery"');
-    expect(dashboardSource).toContain("startUploadForTag('situation_before', 'camera')");
-    expect(dashboardSource).toContain("startUploadForTag('situation_before', 'gallery')");
+    expect(dashboardSource).toContain('openWorkflowPhotoTypeModal(\'camera\')');
+    expect(dashboardSource).toContain('openWorkflowPhotoTypeModal(\'gallery\')');
+    expect(dashboardSource).toContain('WORKFLOW_BEFORE_PHOTO_TAGS');
+    expect(dashboardSource).toContain('electrical_cabinet');
+    expect(dashboardSource).toContain('meter_cabinet');
+    expect(dashboardSource).toContain('inverter_before');
     expect(dashboardSource).toContain('setWorkflowPhotoCounts(photos)');
   });
 
@@ -48,6 +52,10 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('workflowVoltageFieldsHtml(el.connectionType, voltage)');
     expect(dashboardSource).toContain('solar: { inverters: nextInverters }');
     expect(dashboardSource).toContain('panelBrand');
+    expect(dashboardSource).toContain('data-workflow-add-inverter');
+    expect(dashboardSource).toContain('data-workflow-remove-inverter');
+    expect(dashboardSource).toContain('const circuitCount = workflowSolarCircuitCount(inv)');
+    expect(dashboardSource).toContain('Array.from({ length: circuitCount }');
     expect(dashboardSource).toContain('inspection: {');
   });
 

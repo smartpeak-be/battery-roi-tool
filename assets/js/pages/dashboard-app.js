@@ -842,6 +842,7 @@ function renderProjectWorkflowQuickMenu(project) {
         actions: `
           <button type="button" class="btn btn-primary" data-workflow-action="photos-before-camera"><i class="fa-solid fa-camera me-1" aria-hidden="true"></i> Foto’s trekken</button>
           <button type="button" class="btn btn-outline-primary" data-workflow-action="photos-before-gallery"><i class="fa-solid fa-folder-open me-1" aria-hidden="true"></i> Uit galerij</button>
+          <div class="form-text w-100">Kies bij upload wat de foto is: situatie, elektrische kast, meterkast of bestaande omvormer.</div>
         `,
       })}
       ${workflowCardHtml({
@@ -1004,6 +1005,62 @@ function collectWorkflowVoltages(form, connectionType) {
   return voltage;
 }
 
+const WORKFLOW_BEFORE_PHOTO_TAGS = [
+  ['situation_before', 'Situatie vóór installatie'],
+  ['electrical_cabinet', 'Elektrische kast'],
+  ['meter_cabinet', 'Meterkast / digitale meter'],
+  ['inverter_before', 'Bestaande omvormer(s)'],
+];
+
+function ensureWorkflowPhotoTypeModal() {
+  let el = document.getElementById('spWorkflowPhotoTypeModal');
+  if (el) return el;
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal fade" id="spWorkflowPhotoTypeModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" data-workflow-photo-type-form>
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="fa-solid fa-camera me-2"></i>Fototype kiezen</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+          </div>
+          <div class="modal-body">
+            <label class="form-label" for="workflowPhotoTag">Wat staat er op deze foto’s?</label>
+            <select id="workflowPhotoTag" name="photoTag" class="form-select"></select>
+            <div class="form-text">Alle geselecteerde foto’s krijgen deze categorie. Je kan dit later nog wijzigen in de fotogalerij.</div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+            <button type="submit" class="btn btn-primary" data-workflow-photo-submit>Verder</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `);
+  return document.getElementById('spWorkflowPhotoTypeModal');
+}
+
+function openWorkflowPhotoTypeModal(source = 'camera') {
+  if (!_drawerPhotoUploader) return;
+  const modalEl = ensureWorkflowPhotoTypeModal();
+  const form = modalEl.querySelector('[data-workflow-photo-type-form]');
+  const select = form.elements.photoTag;
+  select.innerHTML = WORKFLOW_BEFORE_PHOTO_TAGS.map(([value, label]) =>
+    `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`
+  ).join('');
+  const submit = modalEl.querySelector('[data-workflow-photo-submit]');
+  submit.innerHTML = source === 'gallery'
+    ? '<i class="fa-solid fa-folder-open me-1"></i>Foto’s kiezen'
+    : '<i class="fa-solid fa-camera me-1"></i>Camera openen';
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const tag = select.value || 'situation_before';
+    modal.hide();
+    _drawerPhotoUploader.startUploadForTag(tag, source);
+  };
+  modal.show();
+}
+
 function ensureWorkflowModal() {
   let el = document.getElementById('spWorkflowModal');
   if (el) return el;
@@ -1161,78 +1218,122 @@ async function openWorkflowChecksModal(project) {
   modal.show();
 }
 
+function workflowSolarInverterSeed() {
+  return { id: `inv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, powerKw: null, brand: '', model: '', panelCount: null, circuitCount: 1, circuits: [{}], orientation: '' };
+}
+
+function workflowSolarCircuitCount(inv) {
+  const explicit = Math.trunc(Number(inv?.circuitCount) || 0);
+  if (explicit > 0) return explicit;
+  return Array.isArray(inv?.circuits) && inv.circuits.length ? inv.circuits.length : 1;
+}
+
+function workflowSolarInverterHtml(inv, idx) {
+  const circuitCount = workflowSolarCircuitCount(inv);
+  const circuits = Array.from({ length: circuitCount }, (_, circuitIdx) => (Array.isArray(inv.circuits) ? inv.circuits[circuitIdx] : null) || {});
+  const circuitRows = circuits.map((circuit, circuitIdx) => `
+    <div class="card bg-light border-0 mt-2">
+      <div class="card-body py-2">
+        <div class="fw-semibold small mb-2">Kring ${circuitIdx + 1}</div>
+        <div class="row g-2">
+          <div class="col-6 col-md-3"><label class="form-label">Panelen</label><input name="inv_${idx}_circuit_${circuitIdx}_panelCount" type="number" min="0" step="1" class="form-control" value="${escapeHtml(circuit.panelCount ?? '')}"></div>
+          <div class="col-6 col-md-3"><label class="form-label">Spanning (V)</label><input name="inv_${idx}_circuit_${circuitIdx}_voltage" type="number" min="0" step="0.1" class="form-control" value="${escapeHtml(circuit.voltage ?? '')}"></div>
+          <div class="col-12 col-md-3"><label class="form-label">Merk panelen</label><input name="inv_${idx}_circuit_${circuitIdx}_panelBrand" class="form-control" maxlength="60" value="${escapeHtml(circuit.panelBrand || '')}"></div>
+          <div class="col-12 col-md-3"><label class="form-label">Type panelen</label><input name="inv_${idx}_circuit_${circuitIdx}_panelModel" class="form-control" maxlength="80" value="${escapeHtml(circuit.panelModel || '')}"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  return `
+    <div class="card mb-3" data-workflow-inverter-index="${idx}">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <h6 class="mb-0">Omvormer ${idx + 1}</h6>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-workflow-remove-inverter="${idx}"><i class="fa-solid fa-trash me-1"></i>Verwijder</button>
+        </div>
+        <div class="row g-2">
+          <div class="col-12 col-md-4"><label class="form-label">Vermogen (kW)</label><input name="inv_${idx}_powerKw" type="number" min="0" step="0.1" class="form-control" value="${escapeHtml(inv.powerKw ?? '')}"></div>
+          <div class="col-12 col-md-4"><label class="form-label">Merk omvormer</label><input name="inv_${idx}_brand" class="form-control" maxlength="60" value="${escapeHtml(inv.brand || '')}"></div>
+          <div class="col-12 col-md-4"><label class="form-label">Model omvormer</label><input name="inv_${idx}_model" class="form-control" maxlength="60" value="${escapeHtml(inv.model || '')}"></div>
+          <div class="col-6 col-md-4"><label class="form-label">Totaal panelen</label><input name="inv_${idx}_panelCount" type="number" min="0" step="1" class="form-control" value="${escapeHtml(inv.panelCount ?? '')}"></div>
+          <div class="col-6 col-md-4"><label class="form-label">Aantal kringen</label><input name="inv_${idx}_circuitCount" data-workflow-circuit-count="${idx}" type="number" min="1" step="1" class="form-control" value="${escapeHtml(circuitCount)}"></div>
+          <div class="col-12 col-md-4"><label class="form-label">Ligging</label><input name="inv_${idx}_orientation" class="form-control" maxlength="40" value="${escapeHtml(inv.orientation || '')}"></div>
+        </div>
+        <div class="mt-3"><div class="small text-muted mb-1">Details per kring</div>${circuitRows}</div>
+      </div>
+    </div>
+  `;
+}
+
+function collectWorkflowSolarInverters(form, sourceInverters) {
+  return sourceInverters.map((inv, idx) => {
+    const circuitCount = Math.max(1, Math.trunc(numberOrNull(valByName(form, `inv_${idx}_circuitCount`)) || workflowSolarCircuitCount(inv)));
+    const circuits = [];
+    for (let circuitIdx = 0; circuitIdx < circuitCount; circuitIdx += 1) {
+      circuits.push({
+        panelCount: numberOrNull(valByName(form, `inv_${idx}_circuit_${circuitIdx}_panelCount`)),
+        voltage: numberOrNull(valByName(form, `inv_${idx}_circuit_${circuitIdx}_voltage`)),
+        panelBrand: valByName(form, `inv_${idx}_circuit_${circuitIdx}_panelBrand`) || '',
+        panelModel: valByName(form, `inv_${idx}_circuit_${circuitIdx}_panelModel`) || '',
+      });
+    }
+    return {
+      id: inv.id || `inv_${Date.now()}_${idx}`,
+      powerKw: numberOrNull(valByName(form, `inv_${idx}_powerKw`)),
+      brand: valByName(form, `inv_${idx}_brand`) || '',
+      model: valByName(form, `inv_${idx}_model`) || '',
+      panelCount: numberOrNull(valByName(form, `inv_${idx}_panelCount`)),
+      circuitCount,
+      circuits,
+      orientation: valByName(form, `inv_${idx}_orientation`) || '',
+    };
+  }).filter(inv => inv.powerKw || inv.brand || inv.model || inv.panelCount || inv.circuits.some(c => c.panelCount != null || c.voltage != null || c.panelBrand || c.panelModel) || inv.orientation);
+}
+
 async function openWorkflowSolarModal(project) {
   const modalEl = ensureWorkflowModal();
   const form = modalEl.querySelector('[data-workflow-form]');
   const m = mergeProjectMetadata(project);
-  const inverters = Array.isArray(m.solar?.inverters) && m.solar.inverters.length
-    ? m.solar.inverters
-    : [{ powerKw: null, brand: '', model: '', panelCount: null, circuitCount: 2, circuits: [] }];
-  const inverterHtml = inverters.map((inv, idx) => {
-    const circuitCount = Math.max(2, Number(inv.circuitCount) || 0, Array.isArray(inv.circuits) ? inv.circuits.length : 0);
-    const circuits = Array.from({ length: circuitCount }, (_, circuitIdx) => (Array.isArray(inv.circuits) ? inv.circuits[circuitIdx] : null) || {});
-    const circuitRows = circuits.map((circuit, circuitIdx) => `
-      <div class="card bg-light border-0 mt-2">
-        <div class="card-body py-2">
-          <div class="fw-semibold small mb-2">Kring ${circuitIdx + 1}</div>
-          <div class="row g-2">
-            <div class="col-6 col-md-3"><label class="form-label">Panelen</label><input name="inv_${idx}_circuit_${circuitIdx}_panelCount" type="number" min="0" step="1" class="form-control" value="${escapeHtml(circuit.panelCount ?? '')}"></div>
-            <div class="col-6 col-md-3"><label class="form-label">Spanning (V)</label><input name="inv_${idx}_circuit_${circuitIdx}_voltage" type="number" min="0" step="0.1" class="form-control" value="${escapeHtml(circuit.voltage ?? '')}"></div>
-            <div class="col-12 col-md-3"><label class="form-label">Merk panelen</label><input name="inv_${idx}_circuit_${circuitIdx}_panelBrand" class="form-control" maxlength="60" value="${escapeHtml(circuit.panelBrand || '')}"></div>
-            <div class="col-12 col-md-3"><label class="form-label">Type panelen</label><input name="inv_${idx}_circuit_${circuitIdx}_panelModel" class="form-control" maxlength="80" value="${escapeHtml(circuit.panelModel || '')}"></div>
-          </div>
-        </div>
-      </div>
-    `).join('');
-    return `
-      <div class="card mb-3" data-workflow-inverter-index="${idx}">
-        <div class="card-body">
-          <h6 class="mb-3">Omvormer ${idx + 1}</h6>
-          <div class="row g-2">
-            <div class="col-12 col-md-4"><label class="form-label">Vermogen (kW)</label><input name="inv_${idx}_powerKw" type="number" min="0" step="0.1" class="form-control" value="${escapeHtml(inv.powerKw ?? '')}"></div>
-            <div class="col-12 col-md-4"><label class="form-label">Merk omvormer</label><input name="inv_${idx}_brand" class="form-control" maxlength="60" value="${escapeHtml(inv.brand || '')}"></div>
-            <div class="col-12 col-md-4"><label class="form-label">Model omvormer</label><input name="inv_${idx}_model" class="form-control" maxlength="60" value="${escapeHtml(inv.model || '')}"></div>
-            <div class="col-6 col-md-4"><label class="form-label">Totaal panelen</label><input name="inv_${idx}_panelCount" type="number" min="0" step="1" class="form-control" value="${escapeHtml(inv.panelCount ?? '')}"></div>
-            <div class="col-6 col-md-4"><label class="form-label">Aantal kringen</label><input name="inv_${idx}_circuitCount" type="number" min="0" step="1" class="form-control" value="${escapeHtml(inv.circuitCount ?? '')}" placeholder="bv. 2"></div>
-            <div class="col-12 col-md-4"><label class="form-label">Ligging</label><input name="inv_${idx}_orientation" class="form-control" maxlength="40" value="${escapeHtml(inv.orientation || '')}"></div>
-          </div>
-          <div class="mt-3"><div class="small text-muted mb-1">Details per kring</div>${circuitRows}</div>
-        </div>
-      </div>
+  let draftInverters = Array.isArray(m.solar?.inverters) && m.solar.inverters.length
+    ? m.solar.inverters.map(inv => ({ ...inv, circuits: Array.isArray(inv.circuits) ? inv.circuits.map(c => ({ ...c })) : [] }))
+    : [workflowSolarInverterSeed()];
+
+  const renderSolarBody = () => {
+    modalEl.querySelector('[data-workflow-title]').innerHTML = '<i class="fa-solid fa-solar-panel me-2"></i>Zonnepanelen & omvormer';
+    modalEl.querySelector('[data-workflow-body]').innerHTML = `
+      <p class="small text-muted">Voeg één of meerdere omvormers toe. Het aantal kringvelden volgt exact het ingevulde aantal kringen.</p>
+      <div data-workflow-inverters>${draftInverters.map((inv, idx) => workflowSolarInverterHtml(inv, idx)).join('')}</div>
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-workflow-add-inverter><i class="fa-solid fa-plus me-1"></i>Omvormer toevoegen</button>
     `;
-  }).join('');
-  modalEl.querySelector('[data-workflow-title]').innerHTML = '<i class="fa-solid fa-solar-panel me-2"></i>Zonnepanelen & omvormer';
-  modalEl.querySelector('[data-workflow-body]').innerHTML = `
-    <p class="small text-muted">Vul het omvormervermogen en de kringen in. Standaard tonen we minstens twee kringrijen zodat je direct panelen, spanning en paneeltype kan noteren.</p>
-    ${inverterHtml}
-  `;
+    form.querySelectorAll('[data-workflow-circuit-count]').forEach(input => {
+      input.addEventListener('change', () => {
+        draftInverters = collectWorkflowSolarInverters(form, draftInverters);
+        const idx = Number(input.getAttribute('data-workflow-circuit-count'));
+        if (draftInverters[idx]) draftInverters[idx].circuitCount = Math.max(1, Math.trunc(numberOrNull(input.value) || 1));
+        renderSolarBody();
+      });
+    });
+    form.querySelectorAll('[data-workflow-remove-inverter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        draftInverters = collectWorkflowSolarInverters(form, draftInverters);
+        const idx = Number(btn.getAttribute('data-workflow-remove-inverter'));
+        draftInverters.splice(idx, 1);
+        if (draftInverters.length === 0) draftInverters.push(workflowSolarInverterSeed());
+        renderSolarBody();
+      });
+    });
+    form.querySelector('[data-workflow-add-inverter]')?.addEventListener('click', () => {
+      draftInverters = collectWorkflowSolarInverters(form, draftInverters);
+      draftInverters.push(workflowSolarInverterSeed());
+      renderSolarBody();
+    });
+  };
+
+  renderSolarBody();
   const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const nextInverters = inverters.map((inv, idx) => {
-      const circuitCount = Math.max(0, Math.trunc(numberOrNull(valByName(form, `inv_${idx}_circuitCount`)) || 0));
-      const renderedCount = Math.max(2, circuitCount, Array.isArray(inv.circuits) ? inv.circuits.length : 0);
-      const circuits = [];
-      for (let circuitIdx = 0; circuitIdx < renderedCount; circuitIdx += 1) {
-        const circuit = {
-          panelCount: numberOrNull(valByName(form, `inv_${idx}_circuit_${circuitIdx}_panelCount`)),
-          voltage: numberOrNull(valByName(form, `inv_${idx}_circuit_${circuitIdx}_voltage`)),
-          panelBrand: valByName(form, `inv_${idx}_circuit_${circuitIdx}_panelBrand`) || '',
-          panelModel: valByName(form, `inv_${idx}_circuit_${circuitIdx}_panelModel`) || '',
-        };
-        if (circuitIdx < circuitCount || circuit.panelCount != null || circuit.voltage != null || circuit.panelBrand || circuit.panelModel) circuits.push(circuit);
-      }
-      return {
-        id: inv.id || `inv_${Date.now()}_${idx}`,
-        powerKw: numberOrNull(valByName(form, `inv_${idx}_powerKw`)),
-        brand: valByName(form, `inv_${idx}_brand`) || '',
-        model: valByName(form, `inv_${idx}_model`) || '',
-        panelCount: numberOrNull(valByName(form, `inv_${idx}_panelCount`)),
-        circuitCount: circuitCount || (circuits.length ? circuits.length : null),
-        circuits,
-        orientation: valByName(form, `inv_${idx}_orientation`) || '',
-      };
-    }).filter(inv => inv.powerKw || inv.brand || inv.model || inv.panelCount || inv.circuitCount || inv.circuits.length || inv.orientation);
+    const nextInverters = collectWorkflowSolarInverters(form, draftInverters);
     await withSpinner(async () => {
       await updateProjectMetadata(project.id, { solar: { inverters: nextInverters } });
       showToast('Zonnepanelen en omvormer opgeslagen', 'success');
@@ -1296,10 +1397,10 @@ function wireProjectWorkflowQuickMenu(project) {
     const action = actionBtn.getAttribute('data-workflow-action');
     if (action === 'photos-before-camera') {
       showDrawerTab('#drawerPhotosPane');
-      _drawerPhotoUploader?.startUploadForTag('situation_before', 'camera');
+      openWorkflowPhotoTypeModal('camera');
     } else if (action === 'photos-before-gallery') {
       showDrawerTab('#drawerPhotosPane');
-      _drawerPhotoUploader?.startUploadForTag('situation_before', 'gallery');
+      openWorkflowPhotoTypeModal('gallery');
     } else if (action === 'checks-before') {
       openWorkflowChecksModal(project);
     } else if (action === 'solar-inverters') {
