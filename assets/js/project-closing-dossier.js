@@ -158,7 +158,17 @@ function buildTechnicalRows(project) {
   (project?.solar?.inverters || []).forEach((inv, idx) => {
     const label = [inv.brand, inv.model].filter(Boolean).join(' ').trim() || `Omvormer ${idx + 1}`;
     const power = inv.powerKw != null ? ` · ${formatKw(inv.powerKw)}` : '';
-    rows.push([`PV-omvormer ${idx + 1}`, `${label}${power}`]);
+    const panels = inv.panelCount != null ? ` · ${inv.panelCount} panelen` : '';
+    const circuitCount = inv.circuitCount != null ? ` · ${inv.circuitCount} kring(en)` : '';
+    rows.push([`PV-omvormer ${idx + 1}`, `${label}${power}${panels}${circuitCount}`]);
+    (inv.circuits || []).forEach((circuit, circuitIdx) => {
+      const circuitBits = [];
+      if (circuit.panelCount != null && circuit.panelCount !== '') circuitBits.push(`${circuit.panelCount} panelen`);
+      if (circuit.voltage != null && circuit.voltage !== '') circuitBits.push(`${circuit.voltage} V`);
+      const panelType = [circuit.panelBrand, circuit.panelModel].filter(Boolean).join(' ').trim();
+      if (panelType) circuitBits.push(panelType);
+      if (circuitBits.length) rows.push([`PV-omvormer ${idx + 1} · kring ${circuitIdx + 1}`, circuitBits.join(' · ')]);
+    });
   });
   if (t.technicalNotes) rows.push(['Technische opmerkingen', t.technicalNotes]);
   return rows;

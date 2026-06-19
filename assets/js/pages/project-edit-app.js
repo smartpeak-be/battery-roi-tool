@@ -94,6 +94,32 @@ function pruneVoltageMeasurementsForConnection(connectionType) {
   );
 }
 
+function normalizeInverterCircuits(inv) {
+  const count = Math.max(0, Math.trunc(Number(inv.circuitCount) || 0));
+  const existing = Array.isArray(inv.circuits) ? inv.circuits : [];
+  inv.circuits = Array.from({ length: count }, (_, idx) => ({
+    panelCount: existing[idx]?.panelCount ?? null,
+    voltage: existing[idx]?.voltage ?? null,
+    panelBrand: existing[idx]?.panelBrand || '',
+    panelModel: existing[idx]?.panelModel || '',
+  }));
+}
+
+function inverterTemplate(values = {}) {
+  const inv = {
+    id: values.id || genInverterId(),
+    powerKw: values.powerKw ?? null,
+    brand: values.brand || '',
+    model: values.model || '',
+    panelCount: values.panelCount ?? null,
+    circuitCount: values.circuitCount ?? null,
+    circuits: Array.isArray(values.circuits) ? values.circuits : [],
+    orientation: values.orientation || '',
+  };
+  normalizeInverterCircuits(inv);
+  return inv;
+}
+
 function addressGoogleApiKey(settings) {
   return (settings && (
     settings.addressAutocompleteGoogleMapsApiKey
@@ -616,7 +642,7 @@ function wireBlokA() {
       const invs = _project.solar.inverters;
       const v = e.target.value === '' ? null : parseFloat(e.target.value);
       if (invs.length === 0) {
-        invs.push({ id: genInverterId(), powerKw: v, brand: '', model: '', panelCount: null, circuitCount: null, orientation: '' });
+        invs.push(inverterTemplate({ powerKw: v }));
       } else {
         invs[0].powerKw = v;
       }
@@ -902,7 +928,37 @@ function sectionBlokC() {
     `).join('')
     : '<div class="col-12"><p class="text-muted small mb-0">Kies eerst het type aansluiting om de juiste spanningsmetingen te tonen.</p></div>';
 
-  const inverterCards = invs.map((inv, idx) => `
+  invs.forEach(inv => {
+    if (!inv.id) inv.id = genInverterId();
+    normalizeInverterCircuits(inv);
+  });
+  const inverterCards = invs.map((inv, idx) => {
+    const circuitRows = (inv.circuits || []).map((circuit, circuitIdx) => `
+          <div class="card bg-light border-0 mt-2" data-inv-circuit="${inv.id}:${circuitIdx}">
+            <div class="card-body py-2">
+              <div class="fw-semibold small mb-2">Kring ${circuitIdx + 1}</div>
+              <div class="row g-2">
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Panelen in kring</label>
+                  <input type="number" data-circuit-field="panelCount" data-inv-id="${inv.id}" data-circuit-index="${circuitIdx}" class="form-control" min="0" step="1" value="${circuit.panelCount != null ? circuit.panelCount : ''}" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Spanning kring (V)</label>
+                  <input type="number" data-circuit-field="voltage" data-inv-id="${inv.id}" data-circuit-index="${circuitIdx}" class="form-control" min="0" step="0.1" value="${circuit.voltage != null ? circuit.voltage : ''}" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Merk panelen</label>
+                  <input type="text" data-circuit-field="panelBrand" data-inv-id="${inv.id}" data-circuit-index="${circuitIdx}" class="form-control" maxlength="60" value="${escapeHtml(circuit.panelBrand || '')}" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Type panelen</label>
+                  <input type="text" data-circuit-field="panelModel" data-inv-id="${inv.id}" data-circuit-index="${circuitIdx}" class="form-control" maxlength="80" value="${escapeHtml(circuit.panelModel || '')}" />
+                </div>
+              </div>
+            </div>
+          </div>
+    `).join('');
+    return `
     <div class="card mb-2" data-inv-id="${inv.id}">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start mb-2">
@@ -915,19 +971,19 @@ function sectionBlokC() {
             <input type="number" data-inv-field="powerKw" data-inv-id="${inv.id}" class="form-control" min="0" step="0.1" value="${inv.powerKw != null ? inv.powerKw : ''}" required />
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label">Merk</label>
+            <label class="form-label">Merk omvormer</label>
             <input type="text" data-inv-field="brand" data-inv-id="${inv.id}" class="form-control" maxlength="60" value="${escapeHtml(inv.brand || '')}" />
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label">Model</label>
+            <label class="form-label">Model omvormer</label>
             <input type="text" data-inv-field="model" data-inv-id="${inv.id}" class="form-control" maxlength="60" value="${escapeHtml(inv.model || '')}" />
           </div>
           <div class="col-6 col-md-4">
-            <label class="form-label">Panelen</label>
+            <label class="form-label">Totaal panelen</label>
             <input type="number" data-inv-field="panelCount" data-inv-id="${inv.id}" class="form-control" min="0" step="1" value="${inv.panelCount != null ? inv.panelCount : ''}" />
           </div>
           <div class="col-6 col-md-4">
-            <label class="form-label">Kringen</label>
+            <label class="form-label">Aantal kringen</label>
             <input type="number" data-inv-field="circuitCount" data-inv-id="${inv.id}" class="form-control" min="0" step="1" value="${inv.circuitCount != null ? inv.circuitCount : ''}" />
           </div>
           <div class="col-12 col-md-4">
@@ -935,9 +991,11 @@ function sectionBlokC() {
             <input type="text" data-inv-field="orientation" data-inv-id="${inv.id}" class="form-control" maxlength="40" value="${escapeHtml(inv.orientation || '')}" />
           </div>
         </div>
+        ${circuitRows ? `<div class="mt-3"><div class="small text-muted mb-1">Details per kring</div>${circuitRows}</div>` : '<div class="form-text mt-2">Vul “Aantal kringen” in om panelen, kring-spanning en paneeltype per kring te registreren.</div>'}
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   return `
     <div class="card collapsible-card">
@@ -1022,6 +1080,11 @@ function sectionBlokC() {
             <textarea id="fTechnicalNotes" class="form-control" rows="2" maxlength="1000">${escapeHtml(technical.technicalNotes || '')}</textarea>
           </div>
 
+          <div class="mb-3">
+            <label for="fPreInstallationNotes" class="form-label">Voorinstallatie-notities</label>
+            <textarea id="fPreInstallationNotes" class="form-control" rows="3" maxlength="1500" placeholder="bv. extra automaat nodig, kabeltraject via garage…">${escapeHtml(c.preInstallationNotes || '')}</textarea>
+          </div>
+
           <h6 class="text-muted mb-2">Omvormer(s)</h6>
           <div id="peInverterList">${inverterCards}</div>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="fAddInverter"><i class="fa-solid fa-plus me-1"></i>Omvormer toevoegen</button>
@@ -1098,6 +1161,10 @@ function wireBlokC() {
     _project.technical = _project.technical || {};
     _project.technical.technicalNotes = e.target.value;
   });
+  document.getElementById('fPreInstallationNotes').addEventListener('input', e => {
+    _project.cabinet = _project.cabinet || {};
+    _project.cabinet.preInstallationNotes = e.target.value || null;
+  });
   // Omvormer-lijst — per-entry input handlers
   document.querySelectorAll('[data-inv-field]').forEach(inp => {
     inp.addEventListener('input', e => {
@@ -1108,12 +1175,31 @@ function wireBlokC() {
       if (field === 'powerKw' || field === 'panelCount' || field === 'circuitCount') {
         const v = parseFloat(e.target.value);
         inv[field] = isNaN(v) ? null : v;
+        if (field === 'circuitCount') {
+          normalizeInverterCircuits(inv);
+          rerenderBlokC();
+          return;
+        }
       } else {
         inv[field] = e.target.value;
       }
       if (field === 'powerKw') {
         rerenderBlokA();
         updateSaveCalcEnabled();
+      }
+    });
+  });
+  document.querySelectorAll('[data-circuit-field]').forEach(inp => {
+    inp.addEventListener('input', e => {
+      const invId = e.target.getAttribute('data-inv-id');
+      const idx = Number(e.target.getAttribute('data-circuit-index'));
+      const field = e.target.getAttribute('data-circuit-field');
+      const inv = _project.solar.inverters.find(i => i.id === invId);
+      if (!inv || !Array.isArray(inv.circuits) || !inv.circuits[idx]) return;
+      if (field === 'panelCount' || field === 'voltage') {
+        inv.circuits[idx][field] = readOptionalNumber(e.target.value);
+      } else {
+        inv.circuits[idx][field] = e.target.value;
       }
     });
   });
@@ -1132,10 +1218,7 @@ function wireBlokC() {
   // Add-inverter
   document.getElementById('fAddInverter').addEventListener('click', () => {
     _project.solar = _project.solar || { inverters: [] };
-    _project.solar.inverters.push({
-      id: genInverterId(), powerKw: null, brand: '', model: '',
-      panelCount: null, circuitCount: null, orientation: '',
-    });
+    _project.solar.inverters.push(inverterTemplate());
     rerenderBlokC();
     rerenderBlokA();
   });
@@ -1579,10 +1662,18 @@ let _pendingCsv       = null;
 
 
 // Tri-state radio helper: returns HTML for three labels (Ja/Nee/Onbekend).
-// `name` is unique in the DOM; `value` is the current stored state (null|true|false).
+// Accepts both the project-edit booleans (null|true|false) and workflow values
+// ('yes'|'no') so fields filled from the mobile workflow remain visible here.
+function normalizeTriState(value) {
+  if (value === true || value === 'true' || value === 'yes') return true;
+  if (value === false || value === 'false' || value === 'no') return false;
+  return null;
+}
+
 function triStateHtml(name, value) {
+  const normalized = normalizeTriState(value);
   const mk = (v, label) => {
-    const match = (v === null ? value === null : value === v);
+    const match = (v === null ? normalized === null : normalized === v);
     const strV = v === null ? 'unknown' : String(v);
     const fid = `${name}_${strV}`;
     return `<div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="${name}" value="${strV}" id="${fid}" ${match ? 'checked' : ''} /><label class="form-check-label" for="${fid}">${label}</label></div>`;
@@ -1597,9 +1688,7 @@ function triStateHtml(name, value) {
 }
 
 function parseTriState(strVal) {
-  if (strVal === 'true')  return true;
-  if (strVal === 'false') return false;
-  return null;
+  return normalizeTriState(strVal);
 }
 
 
