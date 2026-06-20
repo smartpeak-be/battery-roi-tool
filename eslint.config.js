@@ -83,6 +83,7 @@ const firebaseInitGlobals = {
   createReviewRequestForProject: 'readonly',
   getReviewRequest: 'readonly',
   submitSmartPeakReview: 'readonly',
+  deleteSmartPeakReview: 'readonly',
   updateReviewGoogleClicked: 'readonly',
   listSmartPeakReviews: 'readonly',
   updateSmartPeakReviewStatus: 'readonly',

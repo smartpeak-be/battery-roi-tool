@@ -6,6 +6,30 @@ const container = document.getElementById('reviewContainer');
 let requestId = '';
 let reviewRequest = null;
 
+function submittedReviewStorageKey(id) {
+  return `smartpeak-review-submitted-${id}`;
+}
+
+function rememberSubmittedReview(id, review) {
+  try {
+    window.localStorage.setItem(submittedReviewStorageKey(id), JSON.stringify({
+      id: review.id || '',
+      shortReview: review.shortReview || '',
+    }));
+  } catch (e) {
+    console.warn('Reviewtekst lokaal bewaren mislukt', e);
+  }
+}
+
+function readRememberedSubmittedReview(id) {
+  try {
+    const raw = window.localStorage.getItem(submittedReviewStorageKey(id));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 function getRequestId() {
   const params = new URLSearchParams(window.location.search);
   return params.get('r') || params.get('id') || window.location.hash.replace(/^#/, '');
@@ -153,20 +177,27 @@ function renderForm(req) {
 
 function renderThanks(review) {
   const text = review.shortReview || '';
+  const textHtml = text
+    ? `<div class="sp-google-copy text-start mb-3">${escapeHtml(text)}</div>`
+    : '<p class="text-muted mb-3">We hebben je review goed ontvangen.</p>';
   container.innerHTML = `
     <section class="card shadow-sm border-0">
       <div class="card-body p-4 p-md-5 text-center">
         <div class="display-5 text-success mb-3"><i class="fa-solid fa-circle-check"></i></div>
         <h1 class="h3 fw-bold mb-3">Merci voor je feedback!</h1>
-        <p class="text-muted mb-4">Wil je ons nog extra helpen? Plaats dezelfde tekst dan ook als Google review.</p>
-        <div class="sp-google-copy text-start mb-3">${escapeHtml(text)}</div>
+        <p class="text-muted mb-4">Je review is bewaard. Deze link is nu afgesloten zodat er maar één review per link binnenkomt.</p>
+        ${textHtml}
+        <div class="alert alert-light border text-start mb-3">
+          <strong>Google review komt eraan.</strong><br>
+          De Google review-knop staat voorlopig nog uit terwijl we deze koppeling afwerken.
+        </div>
         <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
-          <button class="btn btn-outline-primary btn-lg" id="copyReviewBtn" type="button"><i class="fa-solid fa-copy me-1"></i> Tekst kopiëren</button>
-          <a class="btn btn-primary btn-lg" id="googleReviewBtn" href="${escapeHtml(review.googleReviewUrl || FALLBACK_GOOGLE_REVIEW_URL)}" target="_blank" rel="noopener"><i class="fa-brands fa-google me-1"></i> Google review openen</a>
+          ${text ? '<button class="btn btn-outline-primary btn-lg" id="copyReviewBtn" type="button"><i class="fa-solid fa-copy me-1"></i> Tekst kopiëren</button>' : ''}
+          <button class="btn btn-primary btn-lg" id="googleReviewBtn" type="button" disabled aria-disabled="true"><i class="fa-brands fa-google me-1"></i> Google review in opbouw</button>
         </div>
       </div>
     </section>`;
-  document.getElementById('copyReviewBtn').addEventListener('click', async () => {
+  document.getElementById('copyReviewBtn')?.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(text);
       showToast('Reviewtekst gekopieerd.', 'success');
@@ -174,12 +205,6 @@ function renderThanks(review) {
       showToast('Kopiëren mislukt. Selecteer de tekst manueel.', 'warning');
     }
   });
-  document.getElementById('googleReviewBtn').addEventListener('click', () => markReviewGoogleClicked(review.id));
-}
-
-async function markReviewGoogleClicked(reviewId) {
-  if (!reviewId || typeof updateReviewGoogleClicked !== 'function') return;
-  try { await updateReviewGoogleClicked(reviewId); } catch (e) { console.warn('Google-click niet opgeslagen', e); }
 }
 
 async function submitForm(event) {
@@ -227,7 +252,9 @@ async function submitForm(event) {
   await withSpinner(async () => {
     try {
       const reviewId = await submitSmartPeakReview(payload);
-      renderThanks({ id: reviewId, ...payload });
+      const submittedReview = { id: reviewId, ...payload };
+      rememberSubmittedReview(requestId, submittedReview);
+      renderThanks(submittedReview);
     } catch (e) {
       showToast('Review bewaren mislukt: ' + (e && e.message ? e.message : e), 'danger');
     }
@@ -244,6 +271,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     reviewRequest = await getReviewRequest(requestId);
     if (!reviewRequest || reviewRequest.status === 'closed') {
       renderError('Deze reviewlink is niet meer actief.');
+      return;
+    }
+    if (reviewRequest.submittedAt || reviewRequest.latestReviewId) {
+      renderThanks(readRememberedSubmittedReview(requestId) || { id: reviewRequest.latestReviewId || '', shortReview: '' });
       return;
     }
     renderForm(reviewRequest);

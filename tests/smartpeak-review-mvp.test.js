@@ -19,7 +19,12 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain('Anoniem');
     expect(js).toContain("? 'SmartPeak klant'");
     expect(js).toContain('Tekst kopiëren');
-    expect(js).toContain('Google review openen');
+    expect(js).toContain('Google review in opbouw');
+    expect(js).toContain('De Google review-knop staat voorlopig nog uit');
+    expect(js).toContain('disabled aria-disabled="true"');
+    expect(js).toContain('reviewRequest.submittedAt || reviewRequest.latestReviewId');
+    expect(js).toContain('rememberSubmittedReview(requestId, submittedReview)');
+    expect(js).toContain('readRememberedSubmittedReview(requestId)');
     expect(js).toContain('placeholder="${escapeHtml(googleText)}" required></textarea>');
     expect(js).toContain('Vertel kort hoe je de samenwerking met SmartPeak hebt ervaren.');
     expect(js).toContain('de installatie, de communicatie en wat je anderen zou meegeven');
@@ -54,6 +59,8 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain('displayName: publicDisplayName');
     expect(js).toContain("ratingCommunication: readRating('ratingCommunication')");
     expect(firebase).toContain('ratingCommunication: Number(data.ratingCommunication) || 0');
+    expect(firebase).toContain('async function deleteSmartPeakReview(reviewId)');
+    expect(firebase).toContain('window.deleteSmartPeakReview = deleteSmartPeakReview;');
   });
 
   it('adds dashboard review link generation and an embeddable carousel widget', () => {
@@ -91,6 +98,8 @@ describe('SmartPeak review MVP', () => {
     expect(rules).toContain('match /reviews/{reviewId}');
     expect(rules).toContain("'ratingCommunication'");
     expect(rules).toContain('data.ratingCommunication is number');
+    expect(rules).toContain('get(reviewRequestPath(data.requestId)).data.submittedAt == null');
+    expect(rules).toContain('resource.data.submittedAt == null');
     expect(rules).toContain('isPublishedWebsiteReview');
   });
 });

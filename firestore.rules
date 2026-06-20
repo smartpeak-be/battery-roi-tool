@@ -211,6 +211,7 @@ service cloud.firestore {
 
     function isPublicReviewRequestSubmissionUpdate() {
       return resource.data.status == 'active'
+        && resource.data.submittedAt == null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['submittedAt', 'latestReviewId', 'updatedAt'])
         && request.resource.data.submittedAt == request.time
         && isShortString(request.resource.data.latestReviewId, 160)
@@ -232,6 +233,7 @@ service cloud.firestore {
         && isShortString(data.requestId, 160)
         && exists(reviewRequestPath(data.requestId))
         && get(reviewRequestPath(data.requestId)).data.status == 'active'
+        && get(reviewRequestPath(data.requestId)).data.submittedAt == null
         && (data.projectId == null || data.projectId is string)
         && isOptionalShortString(data, 'originalProjectName', 160)
         && isOptionalShortString(data, 'originalCustomerName', 160)

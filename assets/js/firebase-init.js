@@ -2169,6 +2169,11 @@ async function submitSmartPeakReview(data) {
   return ref.id;
 }
 
+async function deleteSmartPeakReview(reviewId) {
+  if (!reviewId) throw new Error('Review ontbreekt');
+  await reviewsCol().doc(reviewId).delete();
+}
+
 async function updateReviewGoogleClicked(reviewId) {
   await reviewsCol().doc(reviewId).set({
     googleClicked: true,
@@ -2696,6 +2701,7 @@ window.saveSettings = saveSettings;
 window.createReviewRequestForProject = createReviewRequestForProject;
 window.getReviewRequest = getReviewRequest;
 window.submitSmartPeakReview = submitSmartPeakReview;
+window.deleteSmartPeakReview = deleteSmartPeakReview;
 window.updateReviewGoogleClicked = updateReviewGoogleClicked;
 window.listSmartPeakReviews = listSmartPeakReviews;
 window.updateSmartPeakReviewStatus = updateSmartPeakReviewStatus;
