@@ -134,6 +134,9 @@ function reviewCardHtml(review) {
         <button type="button" class="btn btn-outline-secondary btn-sm" data-review-action="reject" data-review-id="${escapeHtml(review.id)}">
           <i class="fa-solid fa-eye-slash me-1"></i> Niet publiceren
         </button>
+        <button type="button" class="btn btn-outline-danger btn-sm" data-review-action="delete" data-review-id="${escapeHtml(review.id)}">
+          <i class="fa-solid fa-trash-can me-1"></i> Verwijderen
+        </button>
       </div>
     </article>`;
 }
@@ -157,6 +160,16 @@ function reviewRatingsHtml(review) {
 async function handleReviewAction(action, reviewId, btn) {
   const review = _reviews.find(r => r.id === reviewId);
   if (!review) return;
+  if (action === 'delete') {
+    const confirmed = window.confirm('Review definitief verwijderen? Dit kan niet ongedaan gemaakt worden.');
+    if (!confirmed) return;
+    const deleted = await runReviewButtonAction(btn, 'Verwijderen…', 'Review verwijderen…', async () => {
+      await deleteSmartPeakReview(reviewId);
+      await refreshReviews();
+    });
+    if (deleted) showToast('Review verwijderd.', 'success');
+    return;
+  }
   const statusByAction = { publish: 'published', approve: 'approved', reject: 'rejected' };
   const status = statusByAction[action];
   if (!status) return;
@@ -165,18 +178,24 @@ async function handleReviewAction(action, reviewId, btn) {
     extra.publishedAt = firebase.firestore.FieldValue.serverTimestamp();
     extra.publishedLabel = 'Geverifieerde SmartPeak klant';
   }
+  const saved = await runReviewButtonAction(btn, 'Opslaan…', 'Reviewstatus opslaan…', async () => {
+    await updateSmartPeakReviewStatus(reviewId, status, extra);
+    await refreshReviews();
+  });
+  if (saved) showToast(`Review ${STATUS_LABELS[status].toLowerCase()}.`, 'success');
+}
+
+async function runReviewButtonAction(btn, loadingLabel, spinnerMessage, action) {
   const oldHtml = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Opslaan…';
+  btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> ${escapeHtml(loadingLabel)}`;
   try {
-    await withSpinner(async () => {
-      await updateSmartPeakReviewStatus(reviewId, status, extra);
-      await refreshReviews();
-    }, { message: 'Reviewstatus opslaan…' });
-    showToast(`Review ${STATUS_LABELS[status].toLowerCase()}.`, 'success');
+    await withSpinner(action, { message: spinnerMessage });
+    return true;
   } catch (e) {
     console.error(e);
-    showToast(`Review bijwerken mislukt: ${e.message || e}`, 'danger');
+    showToast(`Reviewactie mislukt: ${e.message || e}`, 'danger');
+    return false;
   } finally {
     btn.disabled = false;
     btn.innerHTML = oldHtml;

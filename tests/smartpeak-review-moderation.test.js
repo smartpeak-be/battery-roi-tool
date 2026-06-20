@@ -13,7 +13,7 @@ describe('SmartPeak review moderation', () => {
     expect(html).toContain('reviews-widget.html');
     expect(html).toContain('assets/js/pages/reviews-beheer-app.js');
     expect(js).toContain('listSmartPeakReviews(100)');
-    expect(js).toContain('withSpinner(async () =>');
+    expect(js).toContain('withSpinner(action, { message: spinnerMessage })');
     expect(js).not.toContain('withSpinner(btn, async');
     expect(js).toContain('btn.innerHTML');
     expect(js).toContain('updateSmartPeakReviewStatus(reviewId, status, extra)');
@@ -22,6 +22,10 @@ describe('SmartPeak review moderation', () => {
     expect(js).toContain('Geen website-toestemming');
     expect(js).toContain('reviewRatingsHtml(review)');
     expect(js).toContain('Afwerking en netheid');
+    expect(js).toContain('data-review-action="delete"');
+    expect(js).toContain('Review definitief verwijderen?');
+    expect(js).toContain('deleteSmartPeakReview(reviewId)');
+    expect(js).toContain("showToast('Review verwijderd.', 'success')");
   });
 
   it('styles the embed page and moderation cards in the SmartPeak brand layer', () => {

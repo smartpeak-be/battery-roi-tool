@@ -6,6 +6,30 @@ const container = document.getElementById('reviewContainer');
 let requestId = '';
 let reviewRequest = null;
 
+function submittedReviewStorageKey(id) {
+  return `smartpeak-review-submitted-${id}`;
+}
+
+function rememberSubmittedReview(id, review) {
+  try {
+    window.localStorage.setItem(submittedReviewStorageKey(id), JSON.stringify({
+      id: review.id || '',
+      shortReview: review.shortReview || '',
+    }));
+  } catch (e) {
+    console.warn('Reviewtekst lokaal bewaren mislukt', e);
+  }
+}
+
+function readRememberedSubmittedReview(id) {
+  try {
+    const raw = window.localStorage.getItem(submittedReviewStorageKey(id));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 function getRequestId() {
   const params = new URLSearchParams(window.location.search);
   return params.get('r') || params.get('id') || window.location.hash.replace(/^#/, '');
@@ -44,9 +68,8 @@ function displayNameFromRequest(req) {
   return req.suggestedDisplayName || req.originalCustomerName || req.originalProjectName || '';
 }
 
-function googleTextFallback(req) {
-  const name = req.originalProjectName || req.originalCustomerName || 'onze installatie';
-  return `We zijn tevreden over de samenwerking met SmartPeak voor ${name}. De installatie is vlot verlopen en de communicatie was duidelijk.`;
+function googleTextFallback() {
+  return 'Vertel kort hoe je de samenwerking met SmartPeak hebt ervaren. Je kan bijvoorbeeld iets schrijven over de installatie, de communicatie en wat je anderen zou meegeven.';
 }
 
 function renderForm(req) {
@@ -64,33 +87,42 @@ function renderForm(req) {
       </div>
     </section>
 
-    <form id="reviewForm" class="card shadow-sm border-0 mt-3">
+    <form id="reviewForm" class="sp-review-card card shadow-sm border-0 mt-3">
       <div class="card-body p-4 p-md-5">
         <input type="hidden" name="requestId" value="${escapeHtml(requestId)}">
 
-        <div class="mb-4">
+        <section class="sp-review-section">
           <label for="displayName" class="form-label fw-semibold">Naam die bij de review mag staan</label>
           <input id="displayName" name="displayName" class="form-control form-control-lg" maxlength="120" value="${escapeHtml(displayName)}" autocomplete="name">
-        </div>
+        </section>
 
-        <fieldset class="mb-4">
-          <legend class="form-label fw-semibold mb-2">Hoe mogen we je naam tonen op de website?</legend>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityFull" value="full" checked>
-            <label class="form-check-label" for="nameVisibilityFull">Mijn volledige naam mag bij de review staan.</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityAnonymous" value="anonymous">
-            <label class="form-check-label" for="nameVisibilityAnonymous">Toon mijn review liever anoniem als "SmartPeak klant".</label>
+        <fieldset class="sp-review-section">
+          <legend class="form-label fw-semibold mb-1">Hoe mogen we je review tonen?</legend>
+          <p class="text-muted small mb-3">Je kan je review met je naam laten tonen, of liever anoniem als “SmartPeak klant”. Kies vooral wat voor jou goed voelt.</p>
+          <div class="sp-review-choice-list">
+            <label class="sp-review-choice" for="nameVisibilityFull">
+              <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityFull" value="full" checked>
+              <span>
+                <strong>Met mijn naam</strong>
+                <small>We tonen je volledige naam bij je review op onze website.</small>
+              </span>
+            </label>
+            <label class="sp-review-choice" for="nameVisibilityAnonymous">
+              <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityAnonymous" value="anonymous">
+              <span>
+                <strong>Anoniem</strong>
+                <small>We plaatsen je review als “SmartPeak klant”.</small>
+              </span>
+            </label>
           </div>
         </fieldset>
 
-        <div class="mb-4">
+        <section class="sp-review-section sp-review-section--score">
           <label class="form-label fw-semibold d-block">Algemene score</label>
           ${starInputHtml()}
-        </div>
+        </section>
 
-        <div class="mb-4">
+        <section class="sp-review-section">
           <label class="form-label fw-semibold d-block">Waarvoor geef je ons welke score?</label>
           <div class="row g-3">
             ${extraRatingHtml('ratingCommunication', 'Communicatie')}
@@ -98,18 +130,18 @@ function renderForm(req) {
             ${extraRatingHtml('ratingInstallation', 'Installatie')}
             ${extraRatingHtml('ratingFinish', 'Afwerking en netheid')}
           </div>
-        </div>
+        </section>
 
-        <div class="mb-4">
+        <section class="sp-review-section">
           <label for="shortReview" class="form-label fw-semibold">Als je dit kort zou samenvatten, wat mag er dan als review staan?</label>
           <textarea id="shortReview" name="shortReview" class="form-control" rows="4" maxlength="1200" placeholder="${escapeHtml(googleText)}" required></textarea>
-        </div>
+        </section>
 
-        <div class="mb-4">
+        <section class="sp-review-section">
           <label for="privateFeedback" class="form-label fw-semibold">Extra feedback voor ons <span class="text-muted fw-normal">(optioneel)</span></label>
           <textarea id="privateFeedback" name="privateFeedback" class="form-control" rows="3" maxlength="2000" placeholder="Wat liep goed? Wat kan beter?"></textarea>
           <div class="form-text">Dit is enkel voor ons en komt niet publiek bij je review.</div>
-        </div>
+        </section>
 
         <div class="sp-review-note mb-4">
           <strong>Transparantie is belangrijk voor ons.</strong><br>
@@ -137,7 +169,7 @@ function renderForm(req) {
     if (event.target && event.target.name === 'nameVisibility') {
       const anonymous = form.elements.nameVisibility.value === 'anonymous';
       displayNameInput.disabled = anonymous;
-      displayNameInput.closest('.mb-4')?.classList.toggle('opacity-50', anonymous);
+      displayNameInput.closest('.sp-review-section')?.classList.toggle('opacity-50', anonymous);
     }
   });
   form.addEventListener('submit', submitForm);
@@ -145,20 +177,27 @@ function renderForm(req) {
 
 function renderThanks(review) {
   const text = review.shortReview || '';
+  const textHtml = text
+    ? `<div class="sp-google-copy text-start mb-3">${escapeHtml(text)}</div>`
+    : '<p class="text-muted mb-3">We hebben je review goed ontvangen.</p>';
   container.innerHTML = `
     <section class="card shadow-sm border-0">
       <div class="card-body p-4 p-md-5 text-center">
         <div class="display-5 text-success mb-3"><i class="fa-solid fa-circle-check"></i></div>
         <h1 class="h3 fw-bold mb-3">Merci voor je feedback!</h1>
-        <p class="text-muted mb-4">Wil je ons nog extra helpen? Plaats dezelfde tekst dan ook als Google review.</p>
-        <div class="sp-google-copy text-start mb-3">${escapeHtml(text)}</div>
+        <p class="text-muted mb-4">Je review is bewaard. Deze link is nu afgesloten zodat er maar één review per link binnenkomt.</p>
+        ${textHtml}
+        <div class="alert alert-light border text-start mb-3">
+          <strong>Google review komt eraan.</strong><br>
+          De Google review-knop staat voorlopig nog uit terwijl we deze koppeling afwerken.
+        </div>
         <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
-          <button class="btn btn-outline-primary btn-lg" id="copyReviewBtn" type="button"><i class="fa-solid fa-copy me-1"></i> Tekst kopiëren</button>
-          <a class="btn btn-primary btn-lg" id="googleReviewBtn" href="${escapeHtml(review.googleReviewUrl || FALLBACK_GOOGLE_REVIEW_URL)}" target="_blank" rel="noopener"><i class="fa-brands fa-google me-1"></i> Google review openen</a>
+          ${text ? '<button class="btn btn-outline-primary btn-lg" id="copyReviewBtn" type="button"><i class="fa-solid fa-copy me-1"></i> Tekst kopiëren</button>' : ''}
+          <button class="btn btn-primary btn-lg" id="googleReviewBtn" type="button" disabled aria-disabled="true"><i class="fa-brands fa-google me-1"></i> Google review in opbouw</button>
         </div>
       </div>
     </section>`;
-  document.getElementById('copyReviewBtn').addEventListener('click', async () => {
+  document.getElementById('copyReviewBtn')?.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(text);
       showToast('Reviewtekst gekopieerd.', 'success');
@@ -166,12 +205,6 @@ function renderThanks(review) {
       showToast('Kopiëren mislukt. Selecteer de tekst manueel.', 'warning');
     }
   });
-  document.getElementById('googleReviewBtn').addEventListener('click', () => markReviewGoogleClicked(review.id));
-}
-
-async function markReviewGoogleClicked(reviewId) {
-  if (!reviewId || typeof updateReviewGoogleClicked !== 'function') return;
-  try { await updateReviewGoogleClicked(reviewId); } catch (e) { console.warn('Google-click niet opgeslagen', e); }
 }
 
 async function submitForm(event) {
@@ -219,7 +252,9 @@ async function submitForm(event) {
   await withSpinner(async () => {
     try {
       const reviewId = await submitSmartPeakReview(payload);
-      renderThanks({ id: reviewId, ...payload });
+      const submittedReview = { id: reviewId, ...payload };
+      rememberSubmittedReview(requestId, submittedReview);
+      renderThanks(submittedReview);
     } catch (e) {
       showToast('Review bewaren mislukt: ' + (e && e.message ? e.message : e), 'danger');
     }
@@ -236,6 +271,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     reviewRequest = await getReviewRequest(requestId);
     if (!reviewRequest || reviewRequest.status === 'closed') {
       renderError('Deze reviewlink is niet meer actief.');
+      return;
+    }
+    if (reviewRequest.submittedAt || reviewRequest.latestReviewId) {
+      renderThanks(readRememberedSubmittedReview(requestId) || { id: reviewRequest.latestReviewId || '', shortReview: '' });
       return;
     }
     renderForm(reviewRequest);

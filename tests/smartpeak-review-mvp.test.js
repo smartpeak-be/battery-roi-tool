@@ -7,16 +7,29 @@ describe('SmartPeak review MVP', () => {
   it('adds a public review page with editable display name and Google copy flow', () => {
     const html = read('review.html');
     const js = read('assets/js/pages/review-app.js');
+    const css = read('assets/css/smartpeak.css');
 
     expect(html).toContain('assets/js/pages/review-app.js');
     expect(js).toContain('getReviewRequest(requestId)');
     expect(js).toContain('id="displayName"');
     expect(js).toContain('name="nameVisibility"');
-    expect(js).toContain('Toon mijn review liever anoniem als "SmartPeak klant".');
+    expect(js).toContain('Hoe mogen we je review tonen?');
+    expect(js).toContain('Je kan je review met je naam laten tonen, of liever anoniem als “SmartPeak klant”.');
+    expect(js).toContain('Met mijn naam');
+    expect(js).toContain('Anoniem');
     expect(js).toContain("? 'SmartPeak klant'");
     expect(js).toContain('Tekst kopiëren');
-    expect(js).toContain('Google review openen');
+    expect(js).toContain('Google review in opbouw');
+    expect(js).toContain('De Google review-knop staat voorlopig nog uit');
+    expect(js).toContain('disabled aria-disabled="true"');
+    expect(js).toContain('reviewRequest.submittedAt || reviewRequest.latestReviewId');
+    expect(js).toContain('rememberSubmittedReview(requestId, submittedReview)');
+    expect(js).toContain('readRememberedSubmittedReview(requestId)');
     expect(js).toContain('placeholder="${escapeHtml(googleText)}" required></textarea>');
+    expect(js).toContain('Vertel kort hoe je de samenwerking met SmartPeak hebt ervaren.');
+    expect(js).toContain('de installatie, de communicatie en wat je anderen zou meegeven');
+    expect(js).not.toContain('We zijn tevreden over de samenwerking met SmartPeak');
+    expect(js).not.toContain('Hoe mogen we je naam tonen op de website?');
     expect(js).not.toContain('required>${escapeHtml(googleText)}</textarea>');
     expect(js).toContain('Transparantie is belangrijk voor ons.');
     expect(js).toContain('via telefoon of mail');
@@ -27,6 +40,10 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain("extraRatingHtml('ratingFinish', 'Afwerking en netheid')");
     expect(js).not.toContain('Deze tekst tonen we straks ook met een kopieerknop voor Google.');
     expect(js).toContain('Reviews die we op onze website tonen, publiceren we pas na goedkeuring');
+    expect(js).toContain('sp-review-section');
+    expect(js).toContain('sp-review-choice');
+    expect(css).toContain('.sp-review-card');
+    expect(css).toContain('.sp-review-choice:hover');
   });
 
   it('keeps original project/customer names separate from public display name', () => {
@@ -42,6 +59,8 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain('displayName: publicDisplayName');
     expect(js).toContain("ratingCommunication: readRating('ratingCommunication')");
     expect(firebase).toContain('ratingCommunication: Number(data.ratingCommunication) || 0');
+    expect(firebase).toContain('async function deleteSmartPeakReview(reviewId)');
+    expect(firebase).toContain('window.deleteSmartPeakReview = deleteSmartPeakReview;');
   });
 
   it('adds dashboard review link generation and an embeddable carousel widget', () => {
@@ -66,6 +85,12 @@ describe('SmartPeak review MVP', () => {
     expect(widget).toContain("stringValue: 'published'");
     expect(widget).toContain('sp-review-widget__track');
     expect(widget).toContain('data-sp-review-next');
+    expect(widget).toContain('scoreRows(review)');
+    expect(widget).toContain("['Communicatie', review.ratingCommunication]");
+    expect(widget).toContain("['Planning', review.ratingPlanning]");
+    expect(widget).toContain("['Installatie', review.ratingInstallation]");
+    expect(widget).toContain("['Afwerking', review.ratingFinish]");
+    expect(widget).toContain('sp-review-widget__scores');
     expect(rules).toContain('match /reviewRequests/{requestId}');
     expect(rules).toContain('allow list:   if isSignedIn();');
     expect(rules).toContain('allow create: if isSignedIn() && isValidReviewRequestCreate();');
@@ -73,6 +98,8 @@ describe('SmartPeak review MVP', () => {
     expect(rules).toContain('match /reviews/{reviewId}');
     expect(rules).toContain("'ratingCommunication'");
     expect(rules).toContain('data.ratingCommunication is number');
+    expect(rules).toContain('get(reviewRequestPath(data.requestId)).data.submittedAt == null');
+    expect(rules).toContain('resource.data.submittedAt == null');
     expect(rules).toContain('isPublishedWebsiteReview');
   });
 });
