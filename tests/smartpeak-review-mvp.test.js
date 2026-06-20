@@ -64,6 +64,8 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain("ratingCommunication: readRating('ratingCommunication')");
     expect(firebase).toContain('ratingCommunication: Number(data.ratingCommunication) || 0');
     expect(firebase).toContain('async function deleteSmartPeakReview(reviewId)');
+    expect(firebase).toContain('const review = snap.exists ? snap.data() : null;');
+    expect(firebase).toContain('await reviewRequestsCol().doc(review.requestId).delete();');
     expect(firebase).toContain('window.deleteSmartPeakReview = deleteSmartPeakReview;');
   });
 

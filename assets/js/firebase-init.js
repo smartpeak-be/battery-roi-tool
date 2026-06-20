@@ -2252,7 +2252,16 @@ async function addReviewPhotosToProject(projectId, requestId, reviewId, photos) 
 
 async function deleteSmartPeakReview(reviewId) {
   if (!reviewId) throw new Error('Review ontbreekt');
+  const snap = await reviewsCol().doc(reviewId).get();
+  const review = snap.exists ? snap.data() : null;
   await reviewsCol().doc(reviewId).delete();
+  if (review && review.requestId) {
+    try {
+      await reviewRequestsCol().doc(review.requestId).delete();
+    } catch (e) {
+      console.warn('Reviewlink verwijderen mislukt', e);
+    }
+  }
 }
 
 async function updateReviewGoogleClicked(reviewId) {
