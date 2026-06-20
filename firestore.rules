@@ -195,12 +195,13 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasOnly([
           'projectId', 'originalProjectName', 'originalCustomerName', 'suggestedDisplayName',
-          'googleReviewUrl', 'status', 'createdAt', 'createdBy', 'updatedAt', 'submittedAt'
+          'solutionSummary', 'googleReviewUrl', 'status', 'createdAt', 'createdBy', 'updatedAt', 'submittedAt'
         ])
         && isShortString(data.projectId, 160)
         && isOptionalShortString(data, 'originalProjectName', 160)
         && isOptionalShortString(data, 'originalCustomerName', 160)
         && isOptionalShortString(data, 'suggestedDisplayName', 160)
+        && (!('solutionSummary' in data) || data.solutionSummary is map)
         && isOptionalShortString(data, 'googleReviewUrl', 500)
         && data.status == 'active'
         && data.createdBy == signedInEmail()
@@ -227,7 +228,7 @@ service cloud.firestore {
       return data.keys().hasOnly([
           'requestId', 'projectId', 'originalProjectName', 'originalCustomerName', 'displayName',
           'rating', 'ratingCommunication', 'ratingPlanning', 'ratingInstallation', 'ratingFinish',
-          'shortReview', 'privateFeedback', 'consentWebsite', 'consentSocials',
+          'shortReview', 'privateFeedback', 'solutionSummary', 'reviewPhotos', 'consentWebsite', 'consentSocials',
           'googleReviewUrl', 'googleClicked', 'status', 'createdAt', 'updatedAt'
         ])
         && isShortString(data.requestId, 160)
@@ -245,6 +246,8 @@ service cloud.firestore {
         && data.ratingFinish is number && data.ratingFinish >= 1 && data.ratingFinish <= 5
         && isShortString(data.shortReview, 1200)
         && isOptionalShortString(data, 'privateFeedback', 2000)
+        && (!('solutionSummary' in data) || data.solutionSummary == null || data.solutionSummary is map)
+        && (!('reviewPhotos' in data) || data.reviewPhotos is list && data.reviewPhotos.size() <= 8)
         && data.consentWebsite is bool
         && data.consentSocials is bool
         && isOptionalShortString(data, 'googleReviewUrl', 500)
@@ -252,6 +255,30 @@ service cloud.firestore {
         && data.status == 'submitted'
         && data.createdAt == request.time
         && data.updatedAt == request.time;
+    }
+
+    function isValidPublicReviewProjectPhotoCreate(projectId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'storagePath', 'thumbStoragePath', 'name', 'contentType', 'sizeBytes', 'width', 'height',
+          'tag', 'includeInCloseoutPdf', 'includeInInspectionPack', 'uploadedAt', 'uploadedBy',
+          'sourceReviewRequestId', 'sourceReviewId'
+        ])
+        && isShortString(data.sourceReviewRequestId, 160)
+        && exists(reviewRequestPath(data.sourceReviewRequestId))
+        && get(reviewRequestPath(data.sourceReviewRequestId)).data.projectId == projectId
+        && get(reviewRequestPath(data.sourceReviewRequestId)).data.submittedAt == null
+        && data.storagePath is string && data.storagePath.matches('^review-uploads/' + data.sourceReviewRequestId + '/.*')
+        && data.thumbStoragePath is string && data.thumbStoragePath.matches('^review-uploads/' + data.sourceReviewRequestId + '/.*')
+        && isOptionalShortString(data, 'name', 160)
+        && data.contentType is string && data.contentType.matches('^image/.*')
+        && data.sizeBytes is number && data.sizeBytes > 0 && data.sizeBytes <= 15728640
+        && data.tag == 'situation_after'
+        && data.includeInCloseoutPdf == true
+        && data.includeInInspectionPack == true
+        && data.uploadedAt == request.time
+        && data.uploadedBy == 'review-link'
+        && isShortString(data.sourceReviewId, 160);
     }
 
     // ─── Projects ──────────────────────────────────────────────────
@@ -264,6 +291,7 @@ service cloud.firestore {
 
       match /photos/{photoId} {
         allow read, write: if isWhitelisted();
+        allow create: if isValidPublicReviewProjectPhotoCreate(projectId);
       }
 
       match /documents/{documentId} {

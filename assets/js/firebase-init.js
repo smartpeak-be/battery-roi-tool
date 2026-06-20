@@ -145,6 +145,9 @@ function newEmptyProjectMetadata() {
       entries: [],
     },
     serialNumbers: [],
+    installedSolution: {
+      items: [],
+    },
   };
 }
 
@@ -192,6 +195,7 @@ function mergeProjectMetadata(project) {
     bebatReference: (e && e.bebatReference) || null,
   }));
   merged.manualConfigs = project.manualConfigs || {};
+  merged.installedSolution = project.installedSolution || empty.installedSolution;
   return merged;
 }
 
@@ -2092,6 +2096,16 @@ function publicReviewUrl(reviewRequestId) {
   return `${base}?r=${encodeURIComponent(reviewRequestId)}`;
 }
 
+async function solutionSummaryForProject(project) {
+  try {
+    const mod = await import('./project-solution.js');
+    return mod.calculateSolutionSummary(project && project.installedSolution || {});
+  } catch (e) {
+    console.warn('Oplossing samenvatten mislukt', e);
+    return { inverterPowerKw: 0, inverterPowerW: 0, storageKwh: 0, labels: [], publicLabel: '' };
+  }
+}
+
 async function createReviewRequestForProject(projectId) {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd');
@@ -2107,16 +2121,19 @@ async function createReviewRequestForProject(projectId) {
   } catch (e) {
     console.warn('Bestaande reviewlink controleren mislukt, maak nieuwe link aan', e);
   }
+  const settings = await getSettings();
+  const solutionSummary = await solutionSummaryForProject(project);
   if (existing && !existing.empty) {
     const doc = existing.docs[0];
-    return { id: doc.id, url: publicReviewUrl(doc.id), ...doc.data() };
+    await doc.ref.set({ solutionSummary, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return { id: doc.id, url: publicReviewUrl(doc.id), ...doc.data(), solutionSummary };
   }
-  const settings = await getSettings();
   const ref = await reviewRequestsCol().add({
     projectId,
     originalProjectName: project.projectName || '',
     originalCustomerName: project.customerName || '',
     suggestedDisplayName: project.customerName || project.projectName || '',
+    solutionSummary,
     googleReviewUrl: settings.googleReviewUrl || null,
     status: 'active',
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -2148,6 +2165,8 @@ async function submitSmartPeakReview(data) {
     ratingFinish: Number(data.ratingFinish) || 0,
     shortReview: data.shortReview || '',
     privateFeedback: data.privateFeedback || '',
+    solutionSummary: data.solutionSummary || null,
+    reviewPhotos: Array.isArray(data.reviewPhotos) ? data.reviewPhotos.slice(0, 8) : [],
     consentWebsite: data.consentWebsite === true,
     consentSocials: data.consentSocials === true,
     googleReviewUrl: data.googleReviewUrl || null,
@@ -2157,6 +2176,9 @@ async function submitSmartPeakReview(data) {
     updatedAt: now,
   };
   const ref = await reviewsCol().add(review);
+  if (review.projectId && review.reviewPhotos.length) {
+    await addReviewPhotosToProject(review.projectId, data.requestId, ref.id, review.reviewPhotos);
+  }
   try {
     await reviewRequestsCol().doc(data.requestId).set({
       submittedAt: now,
@@ -2167,6 +2189,65 @@ async function submitSmartPeakReview(data) {
     console.warn('Review request status bijwerken mislukt', e);
   }
   return ref.id;
+}
+
+async function uploadReviewPhotoWithThumb(requestId, file) {
+  if (!requestId) throw new Error('Reviewlink ontbreekt');
+  if (!file || !file.type || !file.type.startsWith('image/')) throw new Error('Alleen afbeeldingen.');
+  const MAX_BYTES = 15 * 1024 * 1024;
+  if (file.size > MAX_BYTES) throw new Error('Foto is te groot (max 15 MB).');
+  const safeName = (file.name || 'review-photo.jpg').replace(/[^\w.-]+/g, '_').slice(0, 80);
+  const safeStripped = safeName.replace(/\.[^.]+$/, '') || 'review-photo';
+  const ts = Date.now();
+  const fullPath = `review-uploads/${requestId}/${ts}_${safeName}`;
+  const thumbPath = `review-uploads/${requestId}/${ts}_${safeStripped}_thumb.jpg`;
+  const thumb = await makeThumbnail(file);
+  const storage = getStorage();
+  try {
+    await Promise.all([
+      storage.ref(fullPath).put(file, { contentType: file.type }),
+      storage.ref(thumbPath).put(thumb.blob, { contentType: 'image/jpeg' }),
+    ]);
+  } catch (e) {
+    try { await storage.ref(fullPath).delete(); } catch (cleanupErr) { console.warn('Review full upload cleanup mislukt', cleanupErr); }
+    try { await storage.ref(thumbPath).delete(); } catch (cleanupErr) { console.warn('Review thumb upload cleanup mislukt', cleanupErr); }
+    throw new Error('Foto uploaden mislukt: ' + (e && e.message ? e.message : e), { cause: e });
+  }
+  return {
+    storagePath: fullPath,
+    thumbStoragePath: thumbPath,
+    name: file.name || safeName,
+    contentType: file.type,
+    sizeBytes: file.size,
+    width: thumb.width,
+    height: thumb.height,
+    tag: 'situation_after',
+  };
+}
+
+async function addReviewPhotosToProject(projectId, requestId, reviewId, photos) {
+  const batch = getDb().batch();
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  photos.slice(0, 8).forEach(photo => {
+    const ref = projectDoc(projectId).collection('photos').doc();
+    batch.set(ref, {
+      storagePath: photo.storagePath || '',
+      thumbStoragePath: photo.thumbStoragePath || '',
+      name: photo.name || 'review-photo',
+      contentType: photo.contentType || 'image/jpeg',
+      sizeBytes: Number(photo.sizeBytes) || 0,
+      width: Number(photo.width) || null,
+      height: Number(photo.height) || null,
+      tag: 'situation_after',
+      includeInCloseoutPdf: true,
+      includeInInspectionPack: true,
+      uploadedAt: now,
+      uploadedBy: 'review-link',
+      sourceReviewRequestId: requestId,
+      sourceReviewId: reviewId,
+    });
+  });
+  await batch.commit();
 }
 
 async function deleteSmartPeakReview(reviewId) {
@@ -2701,6 +2782,7 @@ window.saveSettings = saveSettings;
 window.createReviewRequestForProject = createReviewRequestForProject;
 window.getReviewRequest = getReviewRequest;
 window.submitSmartPeakReview = submitSmartPeakReview;
+window.uploadReviewPhotoWithThumb = uploadReviewPhotoWithThumb;
 window.deleteSmartPeakReview = deleteSmartPeakReview;
 window.updateReviewGoogleClicked = updateReviewGoogleClicked;
 window.listSmartPeakReviews = listSmartPeakReviews;

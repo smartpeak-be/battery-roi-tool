@@ -1,5 +1,12 @@
 import { escapeHtml, showToast, showState, showSpinner, hideSpinner, showConfirm } from '../shared-helpers.js';
 import { extractCsvForStorage } from '../csv.js';
+import {
+  calculateSolutionSummary,
+  emptySolutionItem,
+  itemSnapshotFromProduct,
+  normalizeInstalledSolution,
+  solutionProductOptions,
+} from '../project-solution.js';
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 const URL_PARAMS = new URLSearchParams(window.location.search);
@@ -19,6 +26,7 @@ let _initialHouseAge = null;
 let _serialUnsub = null;
 let _mapsLoaderPromise = null;
 let _suppressAddressSearchInput = false;
+let _solutionProductOptions = [];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function showError(msg) {
@@ -344,6 +352,8 @@ async function bootstrap() {
         ? _project.site.houseAgeOver10Years : null;
       document.getElementById('pageTitle').innerHTML = '<i class="fa-solid fa-pen-to-square text-primary" aria-hidden="true"></i> ' + escapeHtml(getProjectLabel(proj));
     }
+    _project.installedSolution = normalizeInstalledSolution(_project.installedSolution || {});
+    await loadSolutionProductOptions();
     renderSections();
     wireActions();
 
@@ -419,6 +429,11 @@ function renderSections() {
   document.getElementById('blokC-slot').innerHTML = sectionBlokC();
   wireBlokC();
   renderBlokOffertes();
+  const productsSlot = document.getElementById('blokProducts-slot');
+  if (productsSlot) {
+    productsSlot.innerHTML = sectionInstalledSolution();
+    wireInstalledSolution();
+  }
   document.getElementById('blokD-slot').innerHTML = sectionBlokD();
   wireBlokD();
   const opsSlot = document.getElementById('blokOps-slot');
@@ -464,6 +479,146 @@ async function _refreshOffertes() {
     renderBlokOffertes();
   } catch (err) {
     showToast('Kon offertes niet verversen: ' + (err && err.message ? err.message : String(err)), 'danger');
+  }
+}
+
+async function loadSolutionProductOptions() {
+  try {
+    const [categories, products] = await Promise.all([listProductCategories(), listProducts()]);
+    _solutionProductOptions = solutionProductOptions(products, categories);
+  } catch (err) {
+    console.warn('Productkeuzes laden mislukt', err);
+    _solutionProductOptions = [];
+  }
+}
+
+function rerenderInstalledSolution() {
+  const slot = document.getElementById('blokProducts-slot');
+  if (!slot) return;
+  slot.innerHTML = sectionInstalledSolution();
+  wireInstalledSolution();
+}
+
+function sectionInstalledSolution() {
+  const solution = normalizeInstalledSolution(_project.installedSolution || {});
+  _project.installedSolution = solution;
+  const summary = calculateSolutionSummary(solution);
+  const optionsHtml = _solutionProductOptions.map(option => `
+    <option value="${escapeHtml(option.id)}">${escapeHtml(option.label)}</option>
+  `).join('');
+  const rows = solution.items.length ? solution.items.map((item, idx) => solutionItemRow(item, idx, optionsHtml)).join('') : `
+    <div class="alert alert-light border mb-0">Nog geen omvormers of batterijen gekozen.</div>`;
+  return `
+    <div class="card" id="installedSolutionCard">
+      <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+        <h5 class="mb-0"><i class="fa-solid fa-car-battery text-primary me-2"></i>Geplaatste oplossing</h5>
+        <div class="d-flex gap-2 flex-wrap">
+          <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddSolutionProduct"><i class="fa-solid fa-plus me-1"></i>Product</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddSolutionManual"><i class="fa-solid fa-keyboard me-1"></i>Manueel</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">Enkel de gekozen omvormers, batterijen of thuisbatterij-systemen. De review gebruikt automatisch de specs voor totaal omvormvermogen en opslag.</p>
+        <div class="d-grid gap-2" id="installedSolutionRows">${rows}</div>
+        <div class="alert alert-primary-subtle border border-primary-subtle mt-3 mb-0" id="installedSolutionSummary">
+          <strong>Review-samenvatting:</strong> ${summary.publicLabel ? escapeHtml(summary.publicLabel) : 'Nog geen totaal berekend.'}
+        </div>
+      </div>
+    </div>`;
+}
+
+function solutionItemRow(item, idx, optionsHtml) {
+  const isManual = item.source === 'manual';
+  const selectedOptionHtml = isManual ? '' : _solutionProductOptions.map(option => `
+    <option value="${escapeHtml(option.id)}" ${option.id === item.productId ? 'selected' : ''}>${escapeHtml(option.label)}</option>
+  `).join('');
+  const productControl = isManual ? `
+    <select class="form-select" data-solution-field="kind" data-solution-id="${escapeHtml(item.id)}">
+      <option value="system" ${item.kind === 'system' ? 'selected' : ''}>Combinatie/systeem</option>
+      <option value="inverter" ${item.kind === 'inverter' ? 'selected' : ''}>Omvormer</option>
+      <option value="battery" ${item.kind === 'battery' ? 'selected' : ''}>Batterij</option>
+    </select>` : `
+    <select class="form-select" data-solution-field="productId" data-solution-id="${escapeHtml(item.id)}">
+      <option value="">Kies product…</option>
+      ${selectedOptionHtml || optionsHtml}
+    </select>`;
+  return `
+    <div class="border rounded-3 p-3" data-solution-row="${escapeHtml(item.id)}">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-lg-4">
+          <label class="form-label">${isManual ? 'Type' : 'Product'}</label>
+          ${productControl}
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label">Aantal</label>
+          <input type="number" min="0" step="1" class="form-control" data-solution-field="quantity" data-solution-id="${escapeHtml(item.id)}" value="${escapeHtml(item.quantity || 1)}">
+        </div>
+        <div class="col-12 col-lg-3 ${isManual ? '' : 'd-none'}">
+          <label class="form-label">Naam</label>
+          <input type="text" maxlength="120" class="form-control" data-solution-field="label" data-solution-id="${escapeHtml(item.id)}" value="${escapeHtml(item.label || '')}" placeholder="bv. Zendure Hyper 2000">
+        </div>
+        <div class="col-6 col-lg-2 ${isManual ? '' : 'd-none'}">
+          <label class="form-label">Omvormer kW</label>
+          <input type="number" min="0" step="0.001" class="form-control" data-solution-field="inverterPowerKw" data-solution-id="${escapeHtml(item.id)}" value="${item.inverterPowerKw != null ? escapeHtml(item.inverterPowerKw) : ''}">
+        </div>
+        <div class="col-6 col-lg-2 ${isManual ? '' : 'd-none'}">
+          <label class="form-label">Opslag kWh</label>
+          <input type="number" min="0" step="0.01" class="form-control" data-solution-field="capacityKwh" data-solution-id="${escapeHtml(item.id)}" value="${item.capacityKwh != null ? escapeHtml(item.capacityKwh) : ''}">
+        </div>
+        <div class="col-12 col-lg-auto ms-lg-auto">
+          <button type="button" class="btn btn-outline-danger w-100" data-solution-remove="${escapeHtml(item.id)}" aria-label="Rij ${idx + 1} verwijderen"><i class="fa-solid fa-trash-can"></i></button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function wireInstalledSolution() {
+  document.getElementById('btnAddSolutionProduct')?.addEventListener('click', () => {
+    const first = _solutionProductOptions[0];
+    const item = first ? itemSnapshotFromProduct(first, 1) : emptySolutionItem('product');
+    _project.installedSolution = normalizeInstalledSolution(_project.installedSolution || {});
+    _project.installedSolution.items.push(item);
+    rerenderInstalledSolution();
+  });
+  document.getElementById('btnAddSolutionManual')?.addEventListener('click', () => {
+    _project.installedSolution = normalizeInstalledSolution(_project.installedSolution || {});
+    _project.installedSolution.items.push(emptySolutionItem('manual'));
+    rerenderInstalledSolution();
+  });
+  document.querySelectorAll('[data-solution-remove]').forEach(btn => btn.addEventListener('click', () => {
+    const id = btn.dataset.solutionRemove;
+    _project.installedSolution = normalizeInstalledSolution(_project.installedSolution || {});
+    _project.installedSolution.items = _project.installedSolution.items.filter(item => item.id !== id);
+    rerenderInstalledSolution();
+  }));
+  document.querySelectorAll('[data-solution-field]').forEach(input => {
+    input.addEventListener('change', handleSolutionFieldChange);
+    input.addEventListener('input', handleSolutionFieldChange);
+  });
+}
+
+function handleSolutionFieldChange(event) {
+  const field = event.currentTarget.dataset.solutionField;
+  const id = event.currentTarget.dataset.solutionId;
+  _project.installedSolution = normalizeInstalledSolution(_project.installedSolution || {});
+  const item = _project.installedSolution.items.find(row => row.id === id);
+  if (!item) return;
+  const value = event.currentTarget.value;
+  if (field === 'productId') {
+    const option = _solutionProductOptions.find(p => p.id === value);
+    if (option) Object.assign(item, itemSnapshotFromProduct(option, item.quantity || 1), { id: item.id });
+  } else if (field === 'quantity') {
+    item.quantity = Math.max(0, Math.trunc(Number(value) || 0));
+  } else if (['inverterPowerKw', 'capacityKwh'].includes(field)) {
+    item[field] = value === '' ? null : Number(value);
+  } else if (field === 'label' || field === 'kind') {
+    item[field] = value;
+  }
+  if (event.type === 'change' || field === 'productId') rerenderInstalledSolution();
+  else {
+    const summary = calculateSolutionSummary(_project.installedSolution);
+    const el = document.getElementById('installedSolutionSummary');
+    if (el) el.innerHTML = `<strong>Review-samenvatting:</strong> ${summary.publicLabel ? escapeHtml(summary.publicLabel) : 'Nog geen totaal berekend.'}`;
   }
 }
 
@@ -1789,6 +1944,7 @@ function collectFromForm() {
     inspection:    _project.inspection,
     supplier:      _project.supplier,
     calcDefaults:  _project.calcDefaults,
+    installedSolution: normalizeInstalledSolution(_project.installedSolution || {}),
     activities:    (_project.activities || []).map(normalizeProjectActivity),
     tasks:         (_project.tasks || []).map(normalizeProjectTask).filter(t => t.title),
     mailLinks:     _project.mailLinks || [],

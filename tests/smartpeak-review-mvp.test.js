@@ -41,6 +41,10 @@ describe('SmartPeak review MVP', () => {
     expect(js).not.toContain('Deze tekst tonen we straks ook met een kopieerknop voor Google.');
     expect(js).toContain('Reviews die we op onze website tonen, publiceren we pas na goedkeuring');
     expect(js).toContain('sp-review-section');
+    expect(js).toContain('reviewPhotos');
+    expect(js).toContain('uploadReviewPhotoWithThumb(requestId');
+    expect(js).toContain('Gekozen oplossing:');
+    expect(js).toContain('solutionSummary: reviewRequest.solutionSummary || null');
     expect(js).toContain('sp-review-choice');
     expect(css).toContain('.sp-review-card');
     expect(css).toContain('.sp-review-choice:hover');

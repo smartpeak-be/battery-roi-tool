@@ -120,6 +120,8 @@ function reviewCardHtml(review) {
           <span class="badge ${STATUS_BADGES[status] || 'text-bg-light'}">${escapeHtml(STATUS_LABELS[status] || status)}</span>
         </div>
         <blockquote class="sp-review-moderation-quote">${escapeHtml(review.shortReview || '')}</blockquote>
+        ${reviewSolutionHtml(review)}
+        ${reviewPhotosHtml(review)}
         ${reviewRatingsHtml(review)}
         ${review.privateFeedback ? `<div class="alert alert-light border py-2 mb-2"><strong>Privé feedback:</strong><br>${escapeHtml(review.privateFeedback)}</div>` : ''}
         <p class="text-muted small mb-0">Toestemming: ${consent.length ? escapeHtml(consent.join(', ')) : 'geen website/socials toestemming'}</p>
@@ -139,6 +141,21 @@ function reviewCardHtml(review) {
         </button>
       </div>
     </article>`;
+}
+
+function reviewSolutionHtml(review) {
+  const summary = review.solutionSummary || {};
+  const label = summary.publicLabel || [
+    Number(summary.inverterPowerW) > 0 ? `geplaatst omvormvermogen ${Math.round(Number(summary.inverterPowerW))} W` : '',
+    Number(summary.storageKwh) > 0 ? `geplaatste opslag ${Math.round(Number(summary.storageKwh) * 100) / 100} kWh` : '',
+  ].filter(Boolean).join(' · ');
+  return label ? `<p class="badge text-bg-primary-subtle border text-primary-emphasis mb-2"><i class="fa-solid fa-car-battery me-1"></i>${escapeHtml(label)}</p>` : '';
+}
+
+function reviewPhotosHtml(review) {
+  const photos = Array.isArray(review.reviewPhotos) ? review.reviewPhotos : [];
+  if (!photos.length) return '';
+  return `<p class="text-muted small mb-2"><i class="fa-solid fa-camera me-1"></i>${photos.length} eindfoto(s) mee ingestuurd en als afgewerkt getagd bij het project.</p>`;
 }
 
 function reviewRatingsHtml(review) {

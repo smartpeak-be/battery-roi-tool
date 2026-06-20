@@ -17,6 +17,7 @@
     .sp-review-widget__stars{color:#f6a623;letter-spacing:1px;margin-bottom:10px;font-size:1.05rem}
     .sp-review-widget__text{font-size:1rem;line-height:1.55;margin:0 0 16px;white-space:pre-wrap;flex:1}
     .sp-review-widget__scores{display:grid;gap:7px;margin:0 0 16px;padding:12px;border-radius:14px;background:#f7f9fd;border:1px solid #edf1f7}
+    .sp-review-widget__solution{font-size:.86rem;color:#40506a;background:#edf7f2;border:1px solid #ccebdd;border-radius:999px;padding:7px 10px;margin:0 0 12px;display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%}
     .sp-review-widget__score{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.86rem;color:#40506a}
     .sp-review-widget__score-label{font-weight:650}.sp-review-widget__score-stars{color:#f6a623;letter-spacing:.5px;white-space:nowrap;font-size:.82rem}
     .sp-review-widget__name{font-weight:800;margin:0}.sp-review-widget__meta{font-size:.85rem;color:#6b7a99;margin:2px 0 0}
@@ -39,7 +40,13 @@
     if ('doubleValue' in f) return Number(f.doubleValue);
     if ('booleanValue' in f) return Boolean(f.booleanValue);
     if ('timestampValue' in f) return f.timestampValue;
+    if ('mapValue' in f) return mapValue(f.mapValue.fields || {});
+    if ('arrayValue' in f) return (f.arrayValue.values || []).map(value => fieldValue({ value }, 'value'));
     return fallback;
+  }
+
+  function mapValue(fields) {
+    return Object.fromEntries(Object.keys(fields || {}).map(key => [key, fieldValue(fields, key)]));
   }
 
   function esc(value) {
@@ -67,6 +74,15 @@
       .join('');
   }
 
+  function solutionLabel(summary) {
+    if (!summary || typeof summary !== 'object') return '';
+    if (summary.publicLabel) return String(summary.publicLabel);
+    const parts = [];
+    if (Number(summary.inverterPowerW) > 0) parts.push(`geplaatst omvormvermogen ${Math.round(Number(summary.inverterPowerW))} W`);
+    if (Number(summary.storageKwh) > 0) parts.push(`geplaatste opslag ${Math.round(Number(summary.storageKwh) * 100) / 100} kWh`);
+    return parts.join(' · ');
+  }
+
   function render(rows) {
     const reviews = rows
       .map(row => row.document?.fields)
@@ -79,6 +95,7 @@
         ratingInstallation: fieldValue(fields, 'ratingInstallation', 0),
         ratingFinish: fieldValue(fields, 'ratingFinish', 0),
         shortReview: fieldValue(fields, 'shortReview', ''),
+        solutionSummary: fieldValue(fields, 'solutionSummary', null),
         publishedLabel: fieldValue(fields, 'publishedLabel', ''),
         createdAt: fieldValue(fields, 'createdAt', ''),
         publishedAt: fieldValue(fields, 'publishedAt', ''),
@@ -102,6 +119,7 @@
             <article class="sp-review-widget__card">
               <div class="sp-review-widget__stars" aria-label="${esc(r.rating)} op 5">${esc(stars(r.rating))}</div>
               <p class="sp-review-widget__text">“${esc(r.shortReview)}”</p>
+              ${solutionLabel(r.solutionSummary) ? `<p class="sp-review-widget__solution">⚡ ${esc(solutionLabel(r.solutionSummary))}</p>` : ''}
               ${scoreRows(r) ? `<div class="sp-review-widget__scores" aria-label="Deelscores review">${scoreRows(r)}</div>` : ''}
               <p class="sp-review-widget__name">${esc(r.displayName)}</p>
               ${r.publishedLabel ? `<p class="sp-review-widget__meta">${esc(r.publishedLabel)}</p>` : ''}
