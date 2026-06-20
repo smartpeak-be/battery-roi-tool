@@ -7,16 +7,24 @@ describe('SmartPeak review MVP', () => {
   it('adds a public review page with editable display name and Google copy flow', () => {
     const html = read('review.html');
     const js = read('assets/js/pages/review-app.js');
+    const css = read('assets/css/smartpeak.css');
 
     expect(html).toContain('assets/js/pages/review-app.js');
     expect(js).toContain('getReviewRequest(requestId)');
     expect(js).toContain('id="displayName"');
     expect(js).toContain('name="nameVisibility"');
-    expect(js).toContain('Toon mijn review liever anoniem als "SmartPeak klant".');
+    expect(js).toContain('Hoe mogen we je review tonen?');
+    expect(js).toContain('Je kan je review met je naam laten tonen, of liever anoniem als “SmartPeak klant”.');
+    expect(js).toContain('Met mijn naam');
+    expect(js).toContain('Anoniem');
     expect(js).toContain("? 'SmartPeak klant'");
     expect(js).toContain('Tekst kopiëren');
     expect(js).toContain('Google review openen');
     expect(js).toContain('placeholder="${escapeHtml(googleText)}" required></textarea>');
+    expect(js).toContain('Vertel kort hoe je de samenwerking met SmartPeak hebt ervaren.');
+    expect(js).toContain('de installatie, de communicatie en wat je anderen zou meegeven');
+    expect(js).not.toContain('We zijn tevreden over de samenwerking met SmartPeak');
+    expect(js).not.toContain('Hoe mogen we je naam tonen op de website?');
     expect(js).not.toContain('required>${escapeHtml(googleText)}</textarea>');
     expect(js).toContain('Transparantie is belangrijk voor ons.');
     expect(js).toContain('via telefoon of mail');
@@ -27,6 +35,10 @@ describe('SmartPeak review MVP', () => {
     expect(js).toContain("extraRatingHtml('ratingFinish', 'Afwerking en netheid')");
     expect(js).not.toContain('Deze tekst tonen we straks ook met een kopieerknop voor Google.');
     expect(js).toContain('Reviews die we op onze website tonen, publiceren we pas na goedkeuring');
+    expect(js).toContain('sp-review-section');
+    expect(js).toContain('sp-review-choice');
+    expect(css).toContain('.sp-review-card');
+    expect(css).toContain('.sp-review-choice:hover');
   });
 
   it('keeps original project/customer names separate from public display name', () => {

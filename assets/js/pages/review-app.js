@@ -44,9 +44,8 @@ function displayNameFromRequest(req) {
   return req.suggestedDisplayName || req.originalCustomerName || req.originalProjectName || '';
 }
 
-function googleTextFallback(req) {
-  const name = req.originalProjectName || req.originalCustomerName || 'onze installatie';
-  return `We zijn tevreden over de samenwerking met SmartPeak voor ${name}. De installatie is vlot verlopen en de communicatie was duidelijk.`;
+function googleTextFallback() {
+  return 'Vertel kort hoe je de samenwerking met SmartPeak hebt ervaren. Je kan bijvoorbeeld iets schrijven over de installatie, de communicatie en wat je anderen zou meegeven.';
 }
 
 function renderForm(req) {
@@ -64,33 +63,42 @@ function renderForm(req) {
       </div>
     </section>
 
-    <form id="reviewForm" class="card shadow-sm border-0 mt-3">
+    <form id="reviewForm" class="sp-review-card card shadow-sm border-0 mt-3">
       <div class="card-body p-4 p-md-5">
         <input type="hidden" name="requestId" value="${escapeHtml(requestId)}">
 
-        <div class="mb-4">
+        <section class="sp-review-section">
           <label for="displayName" class="form-label fw-semibold">Naam die bij de review mag staan</label>
           <input id="displayName" name="displayName" class="form-control form-control-lg" maxlength="120" value="${escapeHtml(displayName)}" autocomplete="name">
-        </div>
+        </section>
 
-        <fieldset class="mb-4">
-          <legend class="form-label fw-semibold mb-2">Hoe mogen we je naam tonen op de website?</legend>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityFull" value="full" checked>
-            <label class="form-check-label" for="nameVisibilityFull">Mijn volledige naam mag bij de review staan.</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityAnonymous" value="anonymous">
-            <label class="form-check-label" for="nameVisibilityAnonymous">Toon mijn review liever anoniem als "SmartPeak klant".</label>
+        <fieldset class="sp-review-section">
+          <legend class="form-label fw-semibold mb-1">Hoe mogen we je review tonen?</legend>
+          <p class="text-muted small mb-3">Je kan je review met je naam laten tonen, of liever anoniem als “SmartPeak klant”. Kies vooral wat voor jou goed voelt.</p>
+          <div class="sp-review-choice-list">
+            <label class="sp-review-choice" for="nameVisibilityFull">
+              <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityFull" value="full" checked>
+              <span>
+                <strong>Met mijn naam</strong>
+                <small>We tonen je volledige naam bij je review op onze website.</small>
+              </span>
+            </label>
+            <label class="sp-review-choice" for="nameVisibilityAnonymous">
+              <input class="form-check-input" type="radio" name="nameVisibility" id="nameVisibilityAnonymous" value="anonymous">
+              <span>
+                <strong>Anoniem</strong>
+                <small>We plaatsen je review als “SmartPeak klant”.</small>
+              </span>
+            </label>
           </div>
         </fieldset>
 
-        <div class="mb-4">
+        <section class="sp-review-section sp-review-section--score">
           <label class="form-label fw-semibold d-block">Algemene score</label>
           ${starInputHtml()}
-        </div>
+        </section>
 
-        <div class="mb-4">
+        <section class="sp-review-section">
           <label class="form-label fw-semibold d-block">Waarvoor geef je ons welke score?</label>
           <div class="row g-3">
             ${extraRatingHtml('ratingCommunication', 'Communicatie')}
@@ -98,18 +106,18 @@ function renderForm(req) {
             ${extraRatingHtml('ratingInstallation', 'Installatie')}
             ${extraRatingHtml('ratingFinish', 'Afwerking en netheid')}
           </div>
-        </div>
+        </section>
 
-        <div class="mb-4">
+        <section class="sp-review-section">
           <label for="shortReview" class="form-label fw-semibold">Als je dit kort zou samenvatten, wat mag er dan als review staan?</label>
           <textarea id="shortReview" name="shortReview" class="form-control" rows="4" maxlength="1200" placeholder="${escapeHtml(googleText)}" required></textarea>
-        </div>
+        </section>
 
-        <div class="mb-4">
+        <section class="sp-review-section">
           <label for="privateFeedback" class="form-label fw-semibold">Extra feedback voor ons <span class="text-muted fw-normal">(optioneel)</span></label>
           <textarea id="privateFeedback" name="privateFeedback" class="form-control" rows="3" maxlength="2000" placeholder="Wat liep goed? Wat kan beter?"></textarea>
           <div class="form-text">Dit is enkel voor ons en komt niet publiek bij je review.</div>
-        </div>
+        </section>
 
         <div class="sp-review-note mb-4">
           <strong>Transparantie is belangrijk voor ons.</strong><br>
@@ -137,7 +145,7 @@ function renderForm(req) {
     if (event.target && event.target.name === 'nameVisibility') {
       const anonymous = form.elements.nameVisibility.value === 'anonymous';
       displayNameInput.disabled = anonymous;
-      displayNameInput.closest('.mb-4')?.classList.toggle('opacity-50', anonymous);
+      displayNameInput.closest('.sp-review-section')?.classList.toggle('opacity-50', anonymous);
     }
   });
   form.addEventListener('submit', submitForm);

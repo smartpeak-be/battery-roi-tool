@@ -816,10 +816,61 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
 }
 
 /* ── 7b. Review page + widget ───────────────────────────────────────────── */
-.sp-review-page { background: #f4f6fb; }
-.sp-review-shell { max-width: 820px; }
+.sp-review-page {
+  background: radial-gradient(circle at top left, rgba(44, 123, 229, 0.12), transparent 32rem), #f4f6fb;
+}
+.sp-review-shell {
+  max-width: 820px;
+  padding-top: clamp(18px, 4vw, 44px);
+  padding-bottom: clamp(28px, 5vw, 56px);
+}
+.sp-review-hero,
+.sp-review-card {
+  border-radius: 24px;
+}
 .sp-review-hero {
   background: linear-gradient(135deg, #ffffff 0%, #eef6ff 100%);
+  box-shadow: 0 18px 48px rgba(30, 42, 58, 0.10) !important;
+}
+.sp-review-card {
+  box-shadow: 0 18px 48px rgba(30, 42, 58, 0.08) !important;
+}
+.sp-review-section {
+  padding: 0 0 1.35rem;
+  margin-bottom: 1.35rem;
+  border-bottom: 1px solid #edf1f7;
+}
+.sp-review-section:last-of-type { border-bottom: 0; }
+.sp-review-section--score { text-align: center; }
+.sp-review-choice-list {
+  display: grid;
+  gap: 0.75rem;
+}
+.sp-review-choice {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  padding: 0.95rem 1rem;
+  border: 1px solid #dce3f0;
+  border-radius: 16px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.sp-review-choice:hover {
+  border-color: rgba(44, 123, 229, 0.45);
+  box-shadow: 0 12px 30px rgba(30, 42, 58, 0.08);
+  transform: translateY(-1px);
+}
+.sp-review-choice .form-check-input { margin-top: 0.2rem; }
+.sp-review-choice strong,
+.sp-review-choice small {
+  display: block;
+}
+.sp-review-choice small {
+  color: #6b7a99;
+  margin-top: 0.15rem;
+  line-height: 1.35;
 }
 .sp-star-rating {
   display: inline-flex;
