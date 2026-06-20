@@ -52,7 +52,7 @@ function starInputHtml(name = 'rating', label = 'Score') {
   return `
     <div class="sp-star-rating" role="radiogroup" aria-label="${escapeHtml(label)}">
       ${[5, 4, 3, 2, 1].map(value => `
-        <input type="radio" id="${escapeHtml(name)}-${value}" name="${escapeHtml(name)}" value="${value}" ${value === 5 ? 'checked' : ''}>
+        <input type="radio" id="${escapeHtml(name)}-${value}" name="${escapeHtml(name)}" value="${value}">
         <label for="${escapeHtml(name)}-${value}" title="${value} op 5"><i class="fa-solid fa-star"></i></label>
       `).join('')}
     </div>`;
@@ -163,6 +163,10 @@ function renderForm(req) {
           <label for="reviewPhotos" class="form-label fw-semibold">Foto's van het eindresultaat <span class="text-muted fw-normal">(optioneel)</span></label>
           <input id="reviewPhotos" name="reviewPhotos" class="form-control" type="file" accept="image/*" capture="environment" multiple>
           <div class="form-text">Je mag rechtstreeks foto’s nemen of bestaande foto’s opladen. Maximaal 8 foto’s.</div>
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" value="1" id="reviewPhotosPublic" name="reviewPhotosPublic">
+            <label class="form-check-label" for="reviewPhotosPublic">SmartPeak mag deze foto’s ook tonen op de website bij mijn review.</label>
+          </div>
           <div id="reviewPhotoStatus" class="small text-muted mt-2"></div>
         </section>
 
@@ -274,6 +278,7 @@ async function submitForm(event) {
     privateFeedback: String(data.get('privateFeedback') || '').trim(),
     solutionSummary: reviewRequest.solutionSummary || null,
     reviewPhotos: uploadedReviewPhotos,
+    reviewPhotosPublic: data.get('reviewPhotosPublic') === '1',
     consentWebsite: data.get('consentWebsite') === '1',
     consentSocials: data.get('consentSocials') === '1',
     googleReviewUrl: reviewRequest.googleReviewUrl || FALLBACK_GOOGLE_REVIEW_URL,

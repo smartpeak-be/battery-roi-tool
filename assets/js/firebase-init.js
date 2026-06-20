@@ -2167,6 +2167,7 @@ async function submitSmartPeakReview(data) {
     privateFeedback: data.privateFeedback || '',
     solutionSummary: data.solutionSummary || null,
     reviewPhotos: Array.isArray(data.reviewPhotos) ? data.reviewPhotos.slice(0, 8) : [],
+    reviewPhotosPublic: data.reviewPhotosPublic === true,
     consentWebsite: data.consentWebsite === true,
     consentSocials: data.consentSocials === true,
     googleReviewUrl: data.googleReviewUrl || null,
@@ -2177,7 +2178,7 @@ async function submitSmartPeakReview(data) {
   };
   const ref = await reviewsCol().add(review);
   if (review.projectId && review.reviewPhotos.length) {
-    await addReviewPhotosToProject(review.projectId, data.requestId, ref.id, review.reviewPhotos);
+    await addReviewPhotosToProject(review.projectId, data.requestId, ref.id, review.reviewPhotos, review.reviewPhotosPublic);
   }
   try {
     await reviewRequestsCol().doc(data.requestId).set({
@@ -2213,19 +2214,25 @@ async function uploadReviewPhotoWithThumb(requestId, file) {
     try { await storage.ref(thumbPath).delete(); } catch (cleanupErr) { console.warn('Review thumb upload cleanup mislukt', cleanupErr); }
     throw new Error('Foto uploaden mislukt: ' + (e && e.message ? e.message : e), { cause: e });
   }
-  return {
-    storagePath: fullPath,
-    thumbStoragePath: thumbPath,
-    name: file.name || safeName,
-    contentType: file.type,
-    sizeBytes: file.size,
-    width: thumb.width,
-    height: thumb.height,
-    tag: 'situation_after',
-  };
+    const [downloadUrl, thumbUrl] = await Promise.all([
+      storage.ref(fullPath).getDownloadURL().catch(() => null),
+      storage.ref(thumbPath).getDownloadURL().catch(() => null),
+    ]);
+    return {
+      storagePath: fullPath,
+      thumbStoragePath: thumbPath,
+      downloadUrl,
+      thumbUrl,
+      name: file.name || safeName,
+      contentType: file.type,
+      sizeBytes: file.size,
+      width: thumb.width,
+      height: thumb.height,
+      tag: 'review',
+    };
 }
 
-async function addReviewPhotosToProject(projectId, requestId, reviewId, photos) {
+async function addReviewPhotosToProject(projectId, requestId, reviewId, photos, showOnWebsite = false) {
   const batch = getDb().batch();
   const now = firebase.firestore.FieldValue.serverTimestamp();
   photos.slice(0, 8).forEach(photo => {
@@ -2233,14 +2240,17 @@ async function addReviewPhotosToProject(projectId, requestId, reviewId, photos) 
     batch.set(ref, {
       storagePath: photo.storagePath || '',
       thumbStoragePath: photo.thumbStoragePath || '',
+      downloadUrl: photo.downloadUrl || null,
+      thumbUrl: photo.thumbUrl || null,
       name: photo.name || 'review-photo',
       contentType: photo.contentType || 'image/jpeg',
       sizeBytes: Number(photo.sizeBytes) || 0,
       width: Number(photo.width) || null,
       height: Number(photo.height) || null,
-      tag: 'situation_after',
+      tag: 'review',
       includeInCloseoutPdf: true,
-      includeInInspectionPack: true,
+      includeInInspectionPack: false,
+      showOnWebsite,
       uploadedAt: now,
       uploadedBy: 'review-link',
       sourceReviewRequestId: requestId,

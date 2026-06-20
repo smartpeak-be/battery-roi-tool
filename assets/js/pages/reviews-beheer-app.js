@@ -155,7 +155,7 @@ function reviewSolutionHtml(review) {
 function reviewPhotosHtml(review) {
   const photos = Array.isArray(review.reviewPhotos) ? review.reviewPhotos : [];
   if (!photos.length) return '';
-  return `<p class="text-muted small mb-2"><i class="fa-solid fa-camera me-1"></i>${photos.length} eindfoto(s) mee ingestuurd en als afgewerkt getagd bij het project.</p>`;
+  return `<p class="text-muted small mb-2"><i class="fa-solid fa-camera me-1"></i>${photos.length} reviewfoto(s) mee ingestuurd${review.reviewPhotosPublic ? ' — mag op de website getoond worden.' : ' — niet publiek op website.'}</p>`;
 }
 
 function reviewRatingsHtml(review) {

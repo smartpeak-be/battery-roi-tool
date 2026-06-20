@@ -31,11 +31,16 @@ describe('project photo/document taxonomy', () => {
       'meter_cabinet',
       'serial',
       'inspection',
+      'review',
       'other',
     ]);
     expect(defaultPhotoFlags('electrical_cabinet')).toEqual({
       includeInCloseoutPdf: true,
       includeInInspectionPack: true,
+    });
+    expect(defaultPhotoFlags('review')).toEqual({
+      includeInCloseoutPdf: true,
+      includeInInspectionPack: false,
     });
     expect(defaultPhotoFlags('other')).toEqual({
       includeInCloseoutPdf: false,

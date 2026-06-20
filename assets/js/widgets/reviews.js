@@ -14,6 +14,7 @@
     .sp-review-widget__nav:hover{background:#f0f4fb}.sp-review-widget__nav:focus-visible{outline:2px solid #2c7be5;outline-offset:2px}
     .sp-review-widget__track{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(270px,1fr);gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 2px 14px;scroll-behavior:smooth;scrollbar-width:thin}
     .sp-review-widget__card{scroll-snap-align:start;background:#fff;border:1px solid #dce3f0;border-radius:20px;padding:20px;box-shadow:0 16px 42px rgba(30,42,58,.10);min-height:210px;display:flex;flex-direction:column}
+    .sp-review-widget__photo{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:14px;margin:0 0 14px;border:1px solid #edf1f7;background:#f7f9fd}
     .sp-review-widget__stars{color:#f6a623;letter-spacing:1px;margin-bottom:10px;font-size:1.05rem}
     .sp-review-widget__text{font-size:1rem;line-height:1.55;margin:0 0 16px;white-space:pre-wrap;flex:1}
     .sp-review-widget__scores{display:grid;gap:7px;margin:0 0 16px;padding:12px;border-radius:14px;background:#f7f9fd;border:1px solid #edf1f7}
@@ -83,6 +84,12 @@
     return parts.join(' · ');
   }
 
+  function reviewPhotoUrl(review) {
+    if (!review.reviewPhotosPublic || !Array.isArray(review.reviewPhotos)) return '';
+    const photo = review.reviewPhotos.find(p => p && (p.thumbUrl || p.downloadUrl));
+    return photo ? (photo.thumbUrl || photo.downloadUrl || '') : '';
+  }
+
   function render(rows) {
     const reviews = rows
       .map(row => row.document?.fields)
@@ -96,6 +103,8 @@
         ratingFinish: fieldValue(fields, 'ratingFinish', 0),
         shortReview: fieldValue(fields, 'shortReview', ''),
         solutionSummary: fieldValue(fields, 'solutionSummary', null),
+        reviewPhotos: fieldValue(fields, 'reviewPhotos', []),
+        reviewPhotosPublic: fieldValue(fields, 'reviewPhotosPublic', false),
         publishedLabel: fieldValue(fields, 'publishedLabel', ''),
         createdAt: fieldValue(fields, 'createdAt', ''),
         publishedAt: fieldValue(fields, 'publishedAt', ''),
@@ -117,6 +126,7 @@
         <div class="sp-review-widget__track" tabindex="0">
           ${reviews.map(r => `
             <article class="sp-review-widget__card">
+              ${reviewPhotoUrl(r) ? `<img class="sp-review-widget__photo" src="${esc(reviewPhotoUrl(r))}" alt="Foto van SmartPeak installatie" loading="lazy">` : ''}
               <div class="sp-review-widget__stars" aria-label="${esc(r.rating)} op 5">${esc(stars(r.rating))}</div>
               <p class="sp-review-widget__text">“${esc(r.shortReview)}”</p>
               ${solutionLabel(r.solutionSummary) ? `<p class="sp-review-widget__solution">⚡ ${esc(solutionLabel(r.solutionSummary))}</p>` : ''}

@@ -228,7 +228,7 @@ service cloud.firestore {
       return data.keys().hasOnly([
           'requestId', 'projectId', 'originalProjectName', 'originalCustomerName', 'displayName',
           'rating', 'ratingCommunication', 'ratingPlanning', 'ratingInstallation', 'ratingFinish',
-          'shortReview', 'privateFeedback', 'solutionSummary', 'reviewPhotos', 'consentWebsite', 'consentSocials',
+          'shortReview', 'privateFeedback', 'solutionSummary', 'reviewPhotos', 'reviewPhotosPublic', 'consentWebsite', 'consentSocials',
           'googleReviewUrl', 'googleClicked', 'status', 'createdAt', 'updatedAt'
         ])
         && isShortString(data.requestId, 160)
@@ -248,6 +248,7 @@ service cloud.firestore {
         && isOptionalShortString(data, 'privateFeedback', 2000)
         && (!('solutionSummary' in data) || data.solutionSummary == null || data.solutionSummary is map)
         && (!('reviewPhotos' in data) || data.reviewPhotos is list && data.reviewPhotos.size() <= 8)
+        && (!('reviewPhotosPublic' in data) || data.reviewPhotosPublic is bool)
         && data.consentWebsite is bool
         && data.consentSocials is bool
         && isOptionalShortString(data, 'googleReviewUrl', 500)
@@ -260,8 +261,8 @@ service cloud.firestore {
     function isValidPublicReviewProjectPhotoCreate(projectId) {
       let data = request.resource.data;
       return data.keys().hasOnly([
-          'storagePath', 'thumbStoragePath', 'name', 'contentType', 'sizeBytes', 'width', 'height',
-          'tag', 'includeInCloseoutPdf', 'includeInInspectionPack', 'uploadedAt', 'uploadedBy',
+          'storagePath', 'thumbStoragePath', 'downloadUrl', 'thumbUrl', 'name', 'contentType', 'sizeBytes', 'width', 'height',
+          'tag', 'includeInCloseoutPdf', 'includeInInspectionPack', 'showOnWebsite', 'uploadedAt', 'uploadedBy',
           'sourceReviewRequestId', 'sourceReviewId'
         ])
         && isShortString(data.sourceReviewRequestId, 160)
@@ -270,12 +271,15 @@ service cloud.firestore {
         && get(reviewRequestPath(data.sourceReviewRequestId)).data.submittedAt == null
         && data.storagePath is string && data.storagePath.matches('^review-uploads/' + data.sourceReviewRequestId + '/.*')
         && data.thumbStoragePath is string && data.thumbStoragePath.matches('^review-uploads/' + data.sourceReviewRequestId + '/.*')
+        && isOptionalShortString(data, 'downloadUrl', 2000)
+        && isOptionalShortString(data, 'thumbUrl', 2000)
         && isOptionalShortString(data, 'name', 160)
         && data.contentType is string && data.contentType.matches('^image/.*')
         && data.sizeBytes is number && data.sizeBytes > 0 && data.sizeBytes <= 15728640
-        && data.tag == 'situation_after'
+        && data.tag == 'review'
         && data.includeInCloseoutPdf == true
-        && data.includeInInspectionPack == true
+        && data.includeInInspectionPack == false
+        && data.showOnWebsite is bool
         && data.uploadedAt == request.time
         && data.uploadedBy == 'review-link'
         && isShortString(data.sourceReviewId, 160);
