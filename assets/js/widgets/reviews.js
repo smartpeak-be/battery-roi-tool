@@ -16,6 +16,9 @@
     .sp-review-widget__card{scroll-snap-align:start;background:#fff;border:1px solid #dce3f0;border-radius:20px;padding:20px;box-shadow:0 16px 42px rgba(30,42,58,.10);min-height:210px;display:flex;flex-direction:column}
     .sp-review-widget__stars{color:#f6a623;letter-spacing:1px;margin-bottom:10px;font-size:1.05rem}
     .sp-review-widget__text{font-size:1rem;line-height:1.55;margin:0 0 16px;white-space:pre-wrap;flex:1}
+    .sp-review-widget__scores{display:grid;gap:7px;margin:0 0 16px;padding:12px;border-radius:14px;background:#f7f9fd;border:1px solid #edf1f7}
+    .sp-review-widget__score{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.86rem;color:#40506a}
+    .sp-review-widget__score-label{font-weight:650}.sp-review-widget__score-stars{color:#f6a623;letter-spacing:.5px;white-space:nowrap;font-size:.82rem}
     .sp-review-widget__name{font-weight:800;margin:0}.sp-review-widget__meta{font-size:.85rem;color:#6b7a99;margin:2px 0 0}
     .sp-review-widget__empty{color:#6b7a99;background:#fff;border:1px dashed #dce3f0;border-radius:16px;padding:18px}
     @media(min-width:900px){.sp-review-widget__track{grid-auto-columns:calc((100% - 32px)/3)}}`;
@@ -48,6 +51,22 @@
     return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
   }
 
+  function scoreRows(review) {
+    return [
+      ['Communicatie', review.ratingCommunication],
+      ['Planning', review.ratingPlanning],
+      ['Installatie', review.ratingInstallation],
+      ['Afwerking', review.ratingFinish],
+    ]
+      .filter(([, value]) => Number(value) >= 1)
+      .map(([label, value]) => `
+        <div class="sp-review-widget__score">
+          <span class="sp-review-widget__score-label">${esc(label)}</span>
+          <span class="sp-review-widget__score-stars" aria-label="${esc(value)} op 5">${esc(stars(value))}</span>
+        </div>`)
+      .join('');
+  }
+
   function render(rows) {
     const reviews = rows
       .map(row => row.document?.fields)
@@ -55,6 +74,10 @@
       .map(fields => ({
         displayName: fieldValue(fields, 'displayName', 'SmartPeak klant'),
         rating: fieldValue(fields, 'rating', 5),
+        ratingCommunication: fieldValue(fields, 'ratingCommunication', 0),
+        ratingPlanning: fieldValue(fields, 'ratingPlanning', 0),
+        ratingInstallation: fieldValue(fields, 'ratingInstallation', 0),
+        ratingFinish: fieldValue(fields, 'ratingFinish', 0),
         shortReview: fieldValue(fields, 'shortReview', ''),
         publishedLabel: fieldValue(fields, 'publishedLabel', ''),
         createdAt: fieldValue(fields, 'createdAt', ''),
@@ -79,6 +102,7 @@
             <article class="sp-review-widget__card">
               <div class="sp-review-widget__stars" aria-label="${esc(r.rating)} op 5">${esc(stars(r.rating))}</div>
               <p class="sp-review-widget__text">“${esc(r.shortReview)}”</p>
+              ${scoreRows(r) ? `<div class="sp-review-widget__scores" aria-label="Deelscores review">${scoreRows(r)}</div>` : ''}
               <p class="sp-review-widget__name">${esc(r.displayName)}</p>
               ${r.publishedLabel ? `<p class="sp-review-widget__meta">${esc(r.publishedLabel)}</p>` : ''}
             </article>`).join('')}

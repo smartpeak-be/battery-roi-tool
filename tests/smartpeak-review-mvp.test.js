@@ -78,6 +78,12 @@ describe('SmartPeak review MVP', () => {
     expect(widget).toContain("stringValue: 'published'");
     expect(widget).toContain('sp-review-widget__track');
     expect(widget).toContain('data-sp-review-next');
+    expect(widget).toContain('scoreRows(review)');
+    expect(widget).toContain("['Communicatie', review.ratingCommunication]");
+    expect(widget).toContain("['Planning', review.ratingPlanning]");
+    expect(widget).toContain("['Installatie', review.ratingInstallation]");
+    expect(widget).toContain("['Afwerking', review.ratingFinish]");
+    expect(widget).toContain('sp-review-widget__scores');
     expect(rules).toContain('match /reviewRequests/{requestId}');
     expect(rules).toContain('allow list:   if isSignedIn();');
     expect(rules).toContain('allow create: if isSignedIn() && isValidReviewRequestCreate();');
