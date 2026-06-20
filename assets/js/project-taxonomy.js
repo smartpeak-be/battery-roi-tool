@@ -68,6 +68,14 @@ export const PHOTO_TAGS = [
     sortOrder: 80,
   },
   {
+    value: 'review',
+    label: 'Reviewfoto klant',
+    icon: 'fa-star',
+    includeInCloseoutPdf: true,
+    includeInInspectionPack: false,
+    sortOrder: 85,
+  },
+  {
     value: 'other',
     label: 'Overig',
     icon: 'fa-image',

@@ -1,10 +1,12 @@
 import { escapeHtml, showToast, withSpinner } from '../shared-helpers.js';
+import { solutionSummaryLabel } from '../project-solution.js';
 
 const FALLBACK_GOOGLE_REVIEW_URL = 'https://www.google.com/search?q=SmartPeak+review';
 const container = document.getElementById('reviewContainer');
 
 let requestId = '';
 let reviewRequest = null;
+let uploadedReviewPhotos = [];
 
 function submittedReviewStorageKey(id) {
   return `smartpeak-review-submitted-${id}`;
@@ -50,7 +52,7 @@ function starInputHtml(name = 'rating', label = 'Score') {
   return `
     <div class="sp-star-rating" role="radiogroup" aria-label="${escapeHtml(label)}">
       ${[5, 4, 3, 2, 1].map(value => `
-        <input type="radio" id="${escapeHtml(name)}-${value}" name="${escapeHtml(name)}" value="${value}" ${value === 5 ? 'checked' : ''}>
+        <input type="radio" id="${escapeHtml(name)}-${value}" name="${escapeHtml(name)}" value="${value}">
         <label for="${escapeHtml(name)}-${value}" title="${value} op 5"><i class="fa-solid fa-star"></i></label>
       `).join('')}
     </div>`;
@@ -72,6 +74,18 @@ function googleTextFallback() {
   return 'Vertel kort hoe je de samenwerking met SmartPeak hebt ervaren. Je kan bijvoorbeeld iets schrijven over de installatie, de communicatie en wat je anderen zou meegeven.';
 }
 
+function solutionSummaryHtml(req) {
+  const label = solutionSummaryLabel(req.solutionSummary || {});
+  if (!label) return '';
+  return `
+    <section class="sp-review-section">
+      <div class="alert alert-primary-subtle border border-primary-subtle mb-0">
+        <i class="fa-solid fa-car-battery me-1"></i>
+        <strong>Gekozen oplossing:</strong> ${escapeHtml(label)}
+      </div>
+    </section>`;
+}
+
 function renderForm(req) {
   const displayName = displayNameFromRequest(req);
   const googleText = googleTextFallback(req);
@@ -90,6 +104,8 @@ function renderForm(req) {
     <form id="reviewForm" class="sp-review-card card shadow-sm border-0 mt-3">
       <div class="card-body p-4 p-md-5">
         <input type="hidden" name="requestId" value="${escapeHtml(requestId)}">
+
+        ${solutionSummaryHtml(req)}
 
         <section class="sp-review-section">
           <label for="displayName" class="form-label fw-semibold">Naam die bij de review mag staan</label>
@@ -143,6 +159,17 @@ function renderForm(req) {
           <div class="form-text">Dit is enkel voor ons en komt niet publiek bij je review.</div>
         </section>
 
+        <section class="sp-review-section">
+          <label for="reviewPhotos" class="form-label fw-semibold">Foto's van het eindresultaat <span class="text-muted fw-normal">(optioneel)</span></label>
+          <input id="reviewPhotos" name="reviewPhotos" class="form-control" type="file" accept="image/*" capture="environment" multiple>
+          <div class="form-text">Je mag rechtstreeks foto’s nemen of bestaande foto’s opladen. Maximaal 8 foto’s.</div>
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" value="1" id="reviewPhotosPublic" name="reviewPhotosPublic">
+            <label class="form-check-label" for="reviewPhotosPublic">SmartPeak mag deze foto’s ook tonen op de website bij mijn review.</label>
+          </div>
+          <div id="reviewPhotoStatus" class="small text-muted mt-2"></div>
+        </section>
+
         <div class="sp-review-note mb-4">
           <strong>Transparantie is belangrijk voor ons.</strong><br>
           We streven ernaar dat elke klant tevreden is wanneer we een installatie afronden. Is er volgens jou toch nog iets niet helemaal in orde, of kunnen we nog iets voor je betekenen? Laat het ons dan gerust eerst weten via telefoon of mail, voor je je review definitief op punt zet. Zo kunnen we het nog bekijken en waar nodig rechtzetten. Een eerlijke review mag uiteraard altijd, ook als er verbeterpunten zijn. Reviews die we op onze website tonen, publiceren we pas na goedkeuring en met respectvolle formulering.
@@ -172,7 +199,26 @@ function renderForm(req) {
       displayNameInput.closest('.sp-review-section')?.classList.toggle('opacity-50', anonymous);
     }
   });
+  document.getElementById('reviewPhotos')?.addEventListener('change', uploadSelectedReviewPhotos);
   form.addEventListener('submit', submitForm);
+}
+
+async function uploadSelectedReviewPhotos(event) {
+  const files = Array.from(event.target.files || []).slice(0, 8);
+  const status = document.getElementById('reviewPhotoStatus');
+  uploadedReviewPhotos = [];
+  if (!files.length) {
+    if (status) status.textContent = '';
+    return;
+  }
+  await withSpinner(async () => {
+    for (let i = 0; i < files.length; i++) {
+      if (status) status.textContent = `Foto ${i + 1}/${files.length} uploaden…`;
+      const meta = await window.uploadReviewPhotoWithThumb(requestId, files[i]);
+      uploadedReviewPhotos.push(meta);
+    }
+  }, { message: 'Foto’s uploaden…' });
+  if (status) status.textContent = `${uploadedReviewPhotos.length} foto(s) klaar om mee te sturen.`;
 }
 
 function renderThanks(review) {
@@ -230,6 +276,9 @@ async function submitForm(event) {
     ratingFinish: readRating('ratingFinish'),
     shortReview: String(data.get('shortReview') || '').trim(),
     privateFeedback: String(data.get('privateFeedback') || '').trim(),
+    solutionSummary: reviewRequest.solutionSummary || null,
+    reviewPhotos: uploadedReviewPhotos,
+    reviewPhotosPublic: data.get('reviewPhotosPublic') === '1',
     consentWebsite: data.get('consentWebsite') === '1',
     consentSocials: data.get('consentSocials') === '1',
     googleReviewUrl: reviewRequest.googleReviewUrl || FALLBACK_GOOGLE_REVIEW_URL,

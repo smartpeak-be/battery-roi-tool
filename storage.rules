@@ -11,6 +11,18 @@ service firebase.storage {
                    && request.auth.token.email in ['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be'];
     }
 
+    // Review link uploads: public customers may upload final-result photos.
+    // Metadata is stored in Firestore review/project photo docs; only SmartPeak reads bytes.
+    match /review-uploads/{requestId}/{fileName} {
+      allow read: if request.auth != null
+                  && request.auth.token.email in ['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be'];
+      allow create: if request.resource != null
+                    && request.resource.size > 0
+                    && request.resource.size <= 15 * 1024 * 1024
+                    && request.resource.contentType.matches('image/.*');
+      allow update, delete: if false;
+    }
+
     // Products: photos + datasheets
     match /products/{productId}/{allPaths=**} {
       allow read:  if request.auth != null;
