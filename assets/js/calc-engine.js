@@ -241,44 +241,69 @@ export function buildAllDaysFromDailyCompact(dc) {
 // ─── CORE CALCULATION ──────────────────────────────────────────────────────────
 
 // Calculate a single scenario for one config + threshold.
+// Real battery simulation: tracks battery state day-by-day to account for carry-over,
+// capacity limits, and actual usable energy. This ensures recovery% never exceeds 100%.
 // windowDays: array of per-day objects with { date, afname, injectie, ... }.
 // opts: { threshold, installPrice, batCap, eff, useCap, scaleFactor, effectivePrice, totalAfname, totalInjectie, pvInverter, batteryInverter }.
 export function calcScenario(windowDays, opts) {
   const { threshold, installPrice, batCap, eff, useCap, scaleFactor, effectivePrice, totalAfname, totalInjectie } = opts;
 
-  let qualifyingDays = 0, partialDays = 0, chargedFull = 0, chargedPartial = 0;
+  // Real battery simulation with state tracking
+  let batteryState = 0; // kWh in battery at start of day
+  let totalUsedFromBattery = 0;
+  let qualifyingDays = 0, partialDays = 0;
+
   for (const d of windowDays) {
-    // eslint-disable-next-line no-useless-assignment -- dayCharged=0 is the default for clarity
-    let isFull = false, dayCharged = 0;
+    let injectableToday = 0;
+    let isFull = false;
+
+    // How much can we charge today?
     if (d.injectie >= threshold) {
       isFull = true;
-      dayCharged = batCap * eff;
+      injectableToday = threshold; // full charge triggered
     } else if (d.injectie > 0) {
-      dayCharged = (d.injectie / threshold) * batCap * eff;
+      isFull = false;
+      injectableToday = d.injectie;
     } else {
+      // No injection, can't charge
+      batteryState = 0; // battery drains to zero if no solar
       continue;
     }
-    const dayUsable = useCap ? Math.min(dayCharged, d.afname) : dayCharged;
-    if (isFull) { qualifyingDays++; chargedFull    += dayUsable; }
-    else        { partialDays++;    chargedPartial += dayUsable; }
+
+    // How much charge can we store after losses?
+    const chargeAfterLosses = injectableToday * eff;
+
+    // Update battery state: add new charge, cap at max capacity
+    batteryState = Math.min(batteryState + chargeAfterLosses, batCap);
+
+    // How much can we use from battery today? Limited by:
+    // 1. What we have in battery
+    // 2. What we need today (afname)
+    const usedFromBatteryToday = Math.min(batteryState, d.afname);
+
+    // Update battery state: subtract what we used
+    batteryState -= usedFromBatteryToday;
+
+    // Track totals
+    totalUsedFromBattery += usedFromBatteryToday;
+    if (isFull) qualifyingDays++;
+    else partialDays++;
   }
-  const annualChargedFull    = chargedFull    * scaleFactor;
-  const annualChargedPartial = chargedPartial * scaleFactor;
-  const annualCharged        = (chargedFull + chargedPartial) * scaleFactor;
-  const annualSaving         = annualCharged  * effectivePrice;
-  const annualSavingFull     = annualChargedFull    * effectivePrice;
-  const annualSavingPartial  = annualChargedPartial * effectivePrice;
-  const payback              = installPrice > 0 ? installPrice / annualSaving : Infinity;
-  const recoveryPctFull    = (chargedFull    / (totalAfname    || 1)) * 100 * scaleFactor;
-  const recoveryPctPartial = (chargedPartial / (totalAfname    || 1)) * 100 * scaleFactor;
-  const injPctFull         = (chargedFull    / eff / (totalInjectie || 1)) * 100 * scaleFactor;
-  const injPctPartial      = (chargedPartial / eff / (totalInjectie || 1)) * 100 * scaleFactor;
+
+  const annualCharged        = totalUsedFromBattery * scaleFactor;
+  const annualSaving         = annualCharged * effectivePrice;
+  const payback              = installPrice > 0 ? annualSaving > 0 ? installPrice / annualSaving : Infinity : Infinity;
+
+  // Recovery percentage can never exceed 100% with proper simulation
+  const recoveryPct = (totalUsedFromBattery / (totalAfname || 1)) * 100 * scaleFactor;
+
   return {
-    qualifyingDays, partialDays, chargedFull, chargedPartial,
-    annualChargedFull, annualChargedPartial, annualCharged,
-    annualSavingFull, annualSavingPartial, annualSaving,
-    payback, recoveryPctFull, recoveryPctPartial,
-    injPctFull, injPctPartial, threshold
+    qualifyingDays, partialDays, chargedFull: totalUsedFromBattery, chargedPartial: 0,
+    annualChargedFull: annualCharged, annualChargedPartial: 0, annualCharged,
+    annualSavingFull: annualSaving, annualSavingPartial: 0, annualSaving,
+    payback, recoveryPctFull: Math.min(recoveryPct, 100), recoveryPctPartial: 0,
+    injPctFull: (totalUsedFromBattery / eff / (totalInjectie || 1)) * 100 * scaleFactor,
+    injPctPartial: 0, threshold
   };
 }
 
@@ -316,39 +341,55 @@ export function computePerYearStats(allDays, pvInv, selectedConfigs, lastDate, p
       ? (sums.afnamedag / sums.afname) * priceDay + (sums.afnamenacht / sums.afname) * priceNight
       : priceDay;
 
-    const scenarios = selectedConfigs.map(cfg => {
-      const pvGtBat     = pvInv > cfg.batInv;
-      const thresholdWC = pvGtBat ? cfg.batCap * (pvInv / cfg.batInv) : cfg.batCap;
-      const thresholdOpt= cfg.batCap;
-      function calc(threshold, useCap) {
-        let qualifyingDays = 0, partialDays = 0, chargedFull = 0, chargedPartial = 0;
-        for (const d of days) {
-          // eslint-disable-next-line no-useless-assignment
-          let isFull = false, dayCharged = 0;
-          if (d.injectie >= threshold) { isFull = true; dayCharged = cfg.batCap * cfg.eff; }
-          else if (d.injectie > 0)     { dayCharged = (d.injectie / threshold) * cfg.batCap * cfg.eff; }
-          else { continue; }
-          const dayUsable = useCap ? Math.min(dayCharged, d.afname) : dayCharged;
-          if (isFull) { qualifyingDays++; chargedFull    += dayUsable; }
-          else        { partialDays++;    chargedPartial += dayUsable; }
-        }
-        const annualSavingFull    = chargedFull    * effectivePrice;
-        const annualSavingPartial = chargedPartial * effectivePrice;
-        const annualSaving        = annualSavingFull + annualSavingPartial;
-        const payback             = cfg.price > 0 ? cfg.price / annualSaving : Infinity;
-        const recoveryPctFull     = (chargedFull    / (sums.afname    || 1)) * 100;
-        const recoveryPctPartial  = (chargedPartial / (sums.afname    || 1)) * 100;
-        const injPctFull          = (chargedFull    / cfg.eff / (sums.injectie || 1)) * 100;
-        const injPctPartial       = (chargedPartial / cfg.eff / (sums.injectie || 1)) * 100;
-        return {
-          qualifyingDays, partialDays, chargedFull, chargedPartial,
-          annualSavingFull, annualSavingPartial, annualSaving, payback,
-          recoveryPctFull, recoveryPctPartial, injPctFull, injPctPartial,
-          threshold,
-        };
-      }
-      return { scenWC: calc(thresholdWC, true), scenOpt: calc(thresholdOpt, false) };
-    });
+     const scenarios = selectedConfigs.map(cfg => {
+       const pvGtBat     = pvInv > cfg.batInv;
+       const thresholdWC = pvGtBat ? cfg.batCap * (pvInv / cfg.batInv) : cfg.batCap;
+       const thresholdOpt= cfg.batCap;
+       function calc(threshold, useCap) {
+         // Real battery simulation with state tracking
+         let batteryState = 0;
+         let totalUsedFromBattery = 0;
+         let qualifyingDays = 0, partialDays = 0;
+
+         for (const d of days) {
+           let injectableToday = 0;
+           let isFull = false;
+
+           if (d.injectie >= threshold) {
+             isFull = true;
+             injectableToday = threshold;
+           } else if (d.injectie > 0) {
+             injectableToday = d.injectie;
+           } else {
+             batteryState = 0;
+             continue;
+           }
+
+           const chargeAfterLosses = injectableToday * cfg.eff;
+           batteryState = Math.min(batteryState + chargeAfterLosses, cfg.batCap);
+           const usedFromBatteryToday = Math.min(batteryState, d.afname);
+           batteryState -= usedFromBatteryToday;
+           totalUsedFromBattery += usedFromBatteryToday;
+
+           if (isFull) qualifyingDays++;
+           else partialDays++;
+         }
+
+         const annualSaving        = totalUsedFromBattery * effectivePrice;
+         const payback             = cfg.price > 0 && annualSaving > 0 ? cfg.price / annualSaving : Infinity;
+         const recoveryPct         = Math.min((totalUsedFromBattery / (sums.afname || 1)) * 100, 100);
+         const injPct              = (totalUsedFromBattery / cfg.eff / (sums.injectie || 1)) * 100;
+
+         return {
+           qualifyingDays, partialDays, chargedFull: totalUsedFromBattery, chargedPartial: 0,
+           annualSavingFull: annualSaving, annualSavingPartial: 0, annualSaving, payback,
+           recoveryPctFull: recoveryPct, recoveryPctPartial: 0,
+           injPctFull: injPct, injPctPartial: 0,
+           threshold,
+         };
+       }
+       return { scenWC: calc(thresholdWC, true), scenOpt: calc(thresholdOpt, false) };
+     });
 
     perYear.push({ windowStart: winStart, windowEnd: winEnd, ...sums, effectivePrice, scenarios });
   }
