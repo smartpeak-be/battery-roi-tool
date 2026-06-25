@@ -257,8 +257,11 @@ export function buildAllDaysFromDailyCompact(dc) {
 export function calcScenario(windowDays, opts) {
   const { threshold, installPrice, batCap, eff, scaleFactor, effectivePrice, totalAfname, totalInjectie } = opts;
 
-  let batteryState = 0; // kWh currently stored in battery
-  let totalUsedFromBattery = 0;
+  // Keep separate pools so UI can show meaningful full vs partial contribution.
+  let batteryFull = 0;
+  let batteryPartial = 0;
+  let usedFull = 0;
+  let usedPartial = 0;
   let qualifyingDays = 0, partialDays = 0;
 
   for (const d of windowDays) {
@@ -275,35 +278,64 @@ export function calcScenario(windowDays, opts) {
     // d.injectie === 0 → no solar, chargeToday stays 0
 
     if (chargeToday > 0) {
-      batteryState = Math.min(batteryState + chargeToday, batCap);
+      if (isFull) batteryFull += chargeToday;
+      else batteryPartial += chargeToday;
+      // Spill newest energy first when battery is above capacity.
+      let overflow = Math.max(0, batteryFull + batteryPartial - batCap);
+      if (overflow > 0) {
+        if (isFull) {
+          const spill = Math.min(overflow, batteryFull);
+          batteryFull -= spill;
+          overflow -= spill;
+          if (overflow > 0) batteryPartial = Math.max(0, batteryPartial - overflow);
+        } else {
+          const spill = Math.min(overflow, batteryPartial);
+          batteryPartial -= spill;
+          overflow -= spill;
+          if (overflow > 0) batteryFull = Math.max(0, batteryFull - overflow);
+        }
+      }
       if (isFull) qualifyingDays++;
       else partialDays++;
     }
 
     // ── Step 2: discharge to cover grid consumption ────────────────────────
     // This happens EVERY day — battery retains charge across cloudy/winter days.
+    const batteryState = batteryFull + batteryPartial;
     if (batteryState > 0 && d.afname > 0) {
       const used = Math.min(batteryState, d.afname);
-      batteryState -= used;
-      totalUsedFromBattery += used;
+      // Discharge proportionally from both pools to keep the split stable.
+      const usedFromFull = used * (batteryFull / batteryState);
+      const usedFromPartial = used - usedFromFull;
+      batteryFull = Math.max(0, batteryFull - usedFromFull);
+      batteryPartial = Math.max(0, batteryPartial - usedFromPartial);
+      usedFull += usedFromFull;
+      usedPartial += usedFromPartial;
     }
   }
 
-  const annualCharged = totalUsedFromBattery * scaleFactor;
-  const annualSaving  = annualCharged * effectivePrice;
+  const totalUsedFromBattery = usedFull + usedPartial;
+  const annualChargedFull = usedFull * scaleFactor;
+  const annualChargedPartial = usedPartial * scaleFactor;
+  const annualCharged = annualChargedFull + annualChargedPartial;
+  const annualSavingFull = annualChargedFull * effectivePrice;
+  const annualSavingPartial = annualChargedPartial * effectivePrice;
+  const annualSaving  = annualSavingFull + annualSavingPartial;
   const payback       = installPrice > 0 && annualSaving > 0 ? installPrice / annualSaving : Infinity;
   // recoveryPct cannot exceed 100% because totalUsedFromBattery <= totalAfname by construction
-  const recoveryPct   = Math.min((totalUsedFromBattery / (totalAfname || 1)) * 100 * scaleFactor, 100);
+  const recoveryPctFull = (usedFull / (totalAfname || 1)) * 100 * scaleFactor;
+  const recoveryPctPartial = (usedPartial / (totalAfname || 1)) * 100 * scaleFactor;
 
   return {
     qualifyingDays, partialDays,
-    chargedFull: totalUsedFromBattery, chargedPartial: 0,
-    annualChargedFull: annualCharged, annualChargedPartial: 0, annualCharged,
-    annualSavingFull: annualSaving, annualSavingPartial: 0, annualSaving,
+    chargedFull: usedFull, chargedPartial: usedPartial,
+    annualChargedFull, annualChargedPartial, annualCharged,
+    annualSavingFull, annualSavingPartial, annualSaving,
     payback,
-    recoveryPctFull: recoveryPct, recoveryPctPartial: 0,
-    injPctFull: (totalUsedFromBattery / eff / (totalInjectie || 1)) * 100 * scaleFactor,
-    injPctPartial: 0,
+    recoveryPctFull: Math.min(recoveryPctFull, 100),
+    recoveryPctPartial: Math.max(0, Math.min(recoveryPctPartial, 100 - Math.min(recoveryPctFull, 100))),
+    injPctFull: (usedFull / eff / (totalInjectie || 1)) * 100 * scaleFactor,
+    injPctPartial: (usedPartial / eff / (totalInjectie || 1)) * 100 * scaleFactor,
     threshold,
   };
 }
@@ -354,8 +386,10 @@ export function computePerYearStats(allDays, pvInv, selectedConfigs, lastDate, p
        function calc(threshold, eff, useCap) {
           // Same two-step simulation as calcScenario: charge then discharge every day.
           // Battery retains state across zero-injection days.
-          let batteryState = 0;
-          let totalUsedFromBattery = 0;
+          let batteryFull = 0;
+          let batteryPartial = 0;
+          let usedFull = 0;
+          let usedPartial = 0;
           let qualifyingDays = 0, partialDays = 0;
 
           for (const d of days) {
@@ -371,29 +405,57 @@ export function computePerYearStats(allDays, pvInv, selectedConfigs, lastDate, p
             }
 
             if (chargeToday > 0) {
-              batteryState = Math.min(batteryState + chargeToday, cfg.batCap);
+              if (isFull) batteryFull += chargeToday;
+              else batteryPartial += chargeToday;
+              let overflow = Math.max(0, batteryFull + batteryPartial - cfg.batCap);
+              if (overflow > 0) {
+                if (isFull) {
+                  const spill = Math.min(overflow, batteryFull);
+                  batteryFull -= spill;
+                  overflow -= spill;
+                  if (overflow > 0) batteryPartial = Math.max(0, batteryPartial - overflow);
+                } else {
+                  const spill = Math.min(overflow, batteryPartial);
+                  batteryPartial -= spill;
+                  overflow -= spill;
+                  if (overflow > 0) batteryFull = Math.max(0, batteryFull - overflow);
+                }
+              }
               if (isFull) qualifyingDays++;
               else partialDays++;
             }
 
             // Step 2: discharge to cover afname (every day, including zero-injection days)
+            const batteryState = batteryFull + batteryPartial;
             if (batteryState > 0 && d.afname > 0) {
               const used = Math.min(batteryState, d.afname);
-              batteryState -= used;
-              totalUsedFromBattery += used;
+              const usedFromFull = used * (batteryFull / batteryState);
+              const usedFromPartial = used - usedFromFull;
+              batteryFull = Math.max(0, batteryFull - usedFromFull);
+              batteryPartial = Math.max(0, batteryPartial - usedFromPartial);
+              usedFull += usedFromFull;
+              usedPartial += usedFromPartial;
             }
           }
 
+          const totalUsedFromBattery = usedFull + usedPartial;
           const annualSaving = totalUsedFromBattery * effectivePrice;
           const payback      = cfg.price > 0 && annualSaving > 0 ? cfg.price / annualSaving : Infinity;
-          const recoveryPct  = Math.min((totalUsedFromBattery / (sums.afname || 1)) * 100, 100);
-          const injPct       = (totalUsedFromBattery / eff / (sums.injectie || 1)) * 100;
+          const recoveryPctFull  = (usedFull / (sums.afname || 1)) * 100;
+          const recoveryPctPartial = (usedPartial / (sums.afname || 1)) * 100;
+          const injPctFull       = (usedFull / eff / (sums.injectie || 1)) * 100;
+          const injPctPartial    = (usedPartial / eff / (sums.injectie || 1)) * 100;
 
           return {
-            qualifyingDays, partialDays, chargedFull: totalUsedFromBattery, chargedPartial: 0,
-            annualSavingFull: annualSaving, annualSavingPartial: 0, annualSaving, payback,
-            recoveryPctFull: recoveryPct, recoveryPctPartial: 0,
-            injPctFull: injPct, injPctPartial: 0,
+            qualifyingDays, partialDays, chargedFull: usedFull, chargedPartial: usedPartial,
+            annualSavingFull: usedFull * effectivePrice,
+            annualSavingPartial: usedPartial * effectivePrice,
+            annualSaving,
+            payback,
+            recoveryPctFull: Math.min(recoveryPctFull, 100),
+            recoveryPctPartial: Math.max(0, Math.min(recoveryPctPartial, 100 - Math.min(recoveryPctFull, 100))),
+            injPctFull,
+            injPctPartial,
             threshold,
           };
         }
