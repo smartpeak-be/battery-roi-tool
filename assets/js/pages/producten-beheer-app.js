@@ -13,6 +13,10 @@ import {
   MATERIAL_CATEGORY_SLUG,
   MISC_CATEGORY_SLUG,
   normalizeProductConfigCustomerType,
+  productCalculationReadiness,
+  productCalculationReadinessTitle,
+  productConfigCalculationReadiness,
+  productConfigCalculationReadinessTitle,
   productLabel,
   productMap,
   quoteGroupsProfitExVat,
@@ -443,11 +447,15 @@ function renderProductList() {
     const cat = _categories.find(c => c.id === p.categoryId);
     const catName = cat?.name || '';
     const label = productLabel(p, categoriesById);
+    const readiness = productCalculationReadiness(p, categoriesById);
+    const calcBadge = readiness.relevant
+      ? `<span class="badge ${readiness.blockingMissing.length ? 'text-bg-warning' : 'text-bg-success'} ms-2" title="${escapeAttr(productCalculationReadinessTitle(p, categoriesById))}">${readiness.blockingMissing.length ? 'Berekening mist info' : 'Berekening ok'}</span>`
+      : '';
     return `
       <div class="card mb-2 product-card sp-product-card ${inactiveClass} ${activeClass}" style="--sp-cat-color:${escapeAttr(categoryColor(cat))}" data-id="${escapeAttr(p.id)}">
         <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
           <div class="flex-grow-1">
-            <strong>${escapeHtml(label)}</strong>${badge}
+            <strong>${escapeHtml(label)}</strong>${badge}${calcBadge}
             <div class="text-muted small">${cat ? categoryDotHtml(cat, 'sp-category-dot-xs') : ''}${escapeHtml(catName)}${p.description ? ' · ' + escapeHtml(p.description) : ''}</div>
           </div>
           <div class="text-end text-nowrap">
@@ -1031,8 +1039,13 @@ function renderSpecFields(container, categoryId, existingSpecs) {
   let html = '<div class="row g-2">';
   fields.forEach(f => {
     const val = specs[f.key];
+    const isCalcCritical = ['capacityKwh', 'inverterPowerKw'].includes(f.key);
+    const isCalcDefaulted = f.key === 'efficiency';
+    const calcHint = isCalcCritical
+      ? '<span class="badge text-bg-info ms-1" title="Cruciaal voor de calculator">calculator</span>'
+      : (isCalcDefaulted ? '<span class="badge text-bg-light text-muted border ms-1" title="Gebruikt voor de calculator; zonder waarde valt de calculator terug op 90% rendement">calculator optioneel</span>' : '');
     html += '<div class="col-6 col-md-4">';
-    html += `<label class="form-label small mb-1">${escapeHtml(f.label)}${f.unit ? ' <span class="text-muted">(' + escapeHtml(f.unit) + ')</span>' : ''}</label>`;
+    html += `<label class="form-label small mb-1">${escapeHtml(f.label)}${f.unit ? ' <span class="text-muted">(' + escapeHtml(f.unit) + ')</span>' : ''}${calcHint}</label>`;
 
     if (f.type === 'number') {
       html += `<input type="number" class="form-control form-control-sm spec-field" data-spec-key="${escapeAttr(f.key)}" step="any" value="${val != null ? escapeAttr(val) : ''}">`;
@@ -1251,11 +1264,16 @@ function renderConfigList() {
     const customerBadge = customerType === 'b2b'
       ? '<span class="badge text-bg-warning ms-2">B2B</span>'
       : '<span class="badge text-bg-success ms-2">B2C</span>';
+    const readiness = productConfigCalculationReadiness(cfg, productsById, categoriesById);
+    const readinessTitle = productConfigCalculationReadinessTitle(cfg, productsById, categoriesById);
+    const readinessBadge = readiness.eligible
+      ? `<span class="badge text-bg-success ms-2" title="${escapeAttr(readinessTitle)}">In calculator</span>`
+      : `<span class="badge text-bg-danger ms-2" title="${escapeAttr(readinessTitle)}">Niet in calculator</span>`;
     return `
       <div class="border rounded p-2 mb-2 config-row" data-config-id="${escapeAttr(cfg.id)}">
         <div class="d-flex gap-2 align-items-start">
           <div class="flex-grow-1">
-            <strong>${escapeHtml(cfg.name || '(zonder naam)')}</strong>${customerBadge}${inactive}
+            <strong>${escapeHtml(cfg.name || '(zonder naam)')}</strong>${customerBadge}${inactive}${readinessBadge}
             <div class="text-muted small">${escapeHtml(desc)}</div>
           </div>
           <div class="text-end text-nowrap">
@@ -1445,10 +1463,18 @@ function updateConfigPreview() {
   const subtotal = configSubtotalExVat(data.items, productsById, categoriesById);
   const kg = configBatteryWeightKg(data.items, productsById, categoriesById);
   const bebat = bebatTotalInclVat(kg, currentBebatPricePerKg());
+  const readiness = productConfigCalculationReadiness(data, productsById, categoriesById);
+  const readinessHtml = readiness.eligible
+    ? '<div class="alert alert-success py-2 small mb-3">Deze samenstelling wordt getoond in de calculator-dropdown.</div>'
+    : `<div class="alert alert-warning py-2 small mb-3"><strong>Niet in calculator-dropdown</strong><ul class="mb-0 ps-3">${readiness.reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div>`;
+  const warningHtml = readiness.warnings.length
+    ? `<div class="alert alert-light border py-2 small mb-3"><strong>Opmerking</strong><ul class="mb-0 ps-3">${readiness.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul></div>`
+    : '';
   el.innerHTML = `
     <h6>Preview</h6>
     <div class="small text-muted mb-2">Doelgroep</div>
     <div class="mb-2"><span class="badge ${data.customerType === 'b2b' ? 'text-bg-warning' : 'text-bg-success'}">${data.customerType.toUpperCase()}</span></div>
+    ${readinessHtml}${warningHtml}
     <div class="small text-muted mb-2">Omschrijving</div>
     <div class="mb-3">${escapeHtml(desc)}</div>
     <dl class="row small mb-0">

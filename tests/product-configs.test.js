@@ -12,6 +12,8 @@ import {
   addAmountsToVatGroups,
   applyDiscountToVatGroups,
   productPurchaseCostExVat,
+  productCalculationReadiness,
+  productConfigCalculationReadiness,
   quoteGroupsProfitExVat,
   quoteGroupSubtotalExVat,
 } from '../assets/js/product-configs.js';
@@ -234,5 +236,62 @@ describe('product config helpers', () => {
 
   it('calculates Bebat including fixed 21% VAT', () => {
     expect(bebatTotalInclVat(60, 0.5)).toBeCloseTo(36.3);
+  });
+
+  it('reports calculation readiness for product configs with readable field names', () => {
+    const manualSystem = {
+      id: 'manual-system',
+      categoryId: 'cat-system',
+      brand: '.',
+      model: '.',
+      description: 'Manueel nul product',
+      specs: { selfHeating: false },
+    };
+    const productsById = productMap([...products, manualSystem]);
+    const readiness = productConfigCalculationReadiness({
+      id: 'blank',
+      name: '0_BLANCO_MANUEEL',
+      customerType: 'b2c',
+      isActive: true,
+      items: [
+        { productId: 'install', qty: 1 },
+        { productId: 'manual-system', qty: 1 },
+      ],
+    }, productsById, cMap);
+
+    expect(readiness.eligible).toBe(false);
+    expect(readiness.reasons).toContain('Manueel nul product: Nuttige capaciteit ontbreekt');
+    expect(readiness.reasons).toContain('Manueel nul product: Nominaal AC-vermogen ontbreekt');
+    expect(readiness.reasons).toContain('Geen totale nuttige batterijcapaciteit gevonden');
+    expect(readiness.reasons).toContain('Geen totaal nominaal AC-vermogen gevonden');
+  });
+
+  it('marks calculation-critical product fields and treats efficiency as advisory', () => {
+    const battery = {
+      id: 'partial-battery',
+      categoryId: 'cat-bat',
+      brand: 'Zendure',
+      model: 'AB3000X',
+      specs: { capacityKwh: 2.88 },
+    };
+    const readiness = productCalculationReadiness(battery, cMap);
+
+    expect(readiness.relevant).toBe(true);
+    expect(readiness.blockingMissing).toEqual([]);
+    expect(readiness.advisoryMissing).toEqual(['efficiency']);
+    expect(readiness.messages).toContain('Rendement ontbreekt; calculator gebruikt 90% standaardrendement');
+  });
+
+  it('reports B2B configs as hidden from the default calculator dropdown', () => {
+    const readiness = productConfigCalculationReadiness({
+      id: 'b2b',
+      name: 'ZMIX3000_B2B',
+      customerType: 'b2b',
+      isActive: true,
+      items: [{ productId: 'acplus', qty: 1 }],
+    }, pMap, cMap);
+
+    expect(readiness.eligible).toBe(false);
+    expect(readiness.reasons).toContain('B2B-samenstelling: calculator toont momenteel alleen B2C');
   });
 });

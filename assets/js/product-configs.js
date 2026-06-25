@@ -7,6 +7,13 @@ export const BATTERY_CATEGORY_SLUGS = new Set(['batterijen', 'thuisbatterij-syst
 export const INVERTER_CATEGORY_SLUG = 'omvormers';
 export const PRODUCT_CONFIG_CUSTOMER_TYPES = new Set(['b2c', 'b2b']);
 export const DEFAULT_PRODUCT_CONFIG_CUSTOMER_TYPE = 'b2c';
+export const CALC_RELEVANT_CATEGORY_SLUGS = new Set(['batterijen', 'omvormers', 'thuisbatterij-systemen']);
+
+export const CALC_FIELD_LABELS = {
+  capacityKwh: 'Nuttige capaciteit',
+  inverterPowerKw: 'Nominaal AC-vermogen',
+  efficiency: 'Rendement',
+};
 
 export function normalizeProductConfigCustomerType(value, config = {}) {
   const raw = String(value || '').trim().toLowerCase();
@@ -21,6 +28,16 @@ export function normalizeProductConfigCustomerType(value, config = {}) {
     : DEFAULT_PRODUCT_CONFIG_CUSTOMER_TYPE;
 }
 
+function positiveNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0;
+}
+
+function categorySlugForProduct(product, categoriesById = {}) {
+  const cat = product && categoriesById && categoriesById[product.categoryId];
+  return String(product?.categorySlug || cat?.slug || '').toLowerCase();
+}
+
 export function productLabel(product, categoriesById = {}) {
   if (!product) return '';
   const cat = categoriesById && categoriesById[product.categoryId];
@@ -33,9 +50,109 @@ export function productLabel(product, categoriesById = {}) {
       || product.description
       || '(product zonder omschrijving)';
   }
-  return [product.brand, product.model].filter(Boolean).join(' ').trim()
+  const name = [product.brand, product.model]
+    .map(part => String(part || '').trim())
+    .filter(part => part && part !== '.')
+    .join(' ');
+  return name
     || product.description
     || '(product zonder naam)';
+}
+
+export function productCalculationReadiness(product, categoriesById = {}) {
+  const slug = categorySlugForProduct(product, categoriesById);
+  if (!CALC_RELEVANT_CATEGORY_SLUGS.has(slug)) {
+    return { relevant: false, blockingMissing: [], advisoryMissing: [], messages: [] };
+  }
+
+  const required = [];
+  if (slug === 'batterijen' || slug === 'thuisbatterij-systemen') required.push('capacityKwh');
+  if (slug === 'omvormers' || slug === 'thuisbatterij-systemen') required.push('inverterPowerKw');
+
+  const specs = product?.specs || {};
+  const blockingMissing = required.filter(key => !positiveNumber(specs[key]));
+  const advisoryMissing = positiveNumber(specs.efficiency) || positiveNumber(specs.eff) ? [] : ['efficiency'];
+  const messages = [
+    ...blockingMissing.map(key => `${CALC_FIELD_LABELS[key]} ontbreekt`),
+    ...advisoryMissing.map(key => `${CALC_FIELD_LABELS[key]} ontbreekt; calculator gebruikt 90% standaardrendement`),
+  ];
+
+  return { relevant: true, blockingMissing, advisoryMissing, messages };
+}
+
+export function productCalculationReadinessTitle(product, categoriesById = {}) {
+  const readiness = productCalculationReadiness(product, categoriesById);
+  if (!readiness.relevant) return '';
+  if (!readiness.messages.length) return 'Volledig voor berekening';
+  return readiness.messages.join('\n');
+}
+
+export function productConfigCalculationReadiness(config, productsById = {}, categoriesById = {}, options = {}) {
+  const includeCustomerTypes = options.includeCustomerTypes || ['b2c'];
+  const reasons = [];
+  const warnings = [];
+  if (!config) return { eligible: false, reasons: ['Samenstelling ontbreekt'], warnings };
+  if (config.isActive === false) reasons.push('Samenstelling is inactief');
+
+  const customerType = normalizeProductConfigCustomerType(config.customerType, config);
+  if (!includeCustomerTypes.includes('all') && !includeCustomerTypes.includes(customerType)) {
+    reasons.push(customerType === 'b2b'
+      ? 'B2B-samenstelling: calculator toont momenteel alleen B2C'
+      : `Doelgroep ${customerType.toUpperCase()} wordt niet getoond in deze calculator`);
+  }
+
+  let capacityKwh = 0;
+  let inverterPowerKw = 0;
+  let hasRelevantProduct = false;
+  let hasEfficiency = false;
+  const validItems = normalizeConfigItems(config.items);
+
+  if (!validItems.length) reasons.push('Geen producten in de samenstelling');
+
+  validItems.forEach(item => {
+    const product = productsById[item.productId];
+    if (!product) {
+      reasons.push('Een gekozen product bestaat niet meer');
+      return;
+    }
+    const slug = categorySlugForProduct(product, categoriesById);
+    const specs = product.specs || {};
+    if (CALC_RELEVANT_CATEGORY_SLUGS.has(slug)) hasRelevantProduct = true;
+    if (BATTERY_CATEGORY_SLUGS.has(slug) && positiveNumber(specs.capacityKwh)) capacityKwh += Number(specs.capacityKwh) * item.qty;
+    if ((BATTERY_CATEGORY_SLUGS.has(slug) || slug === INVERTER_CATEGORY_SLUG) && positiveNumber(specs.inverterPowerKw)) {
+      inverterPowerKw += Number(specs.inverterPowerKw) * item.qty;
+    }
+    if (positiveNumber(specs.efficiency) || positiveNumber(specs.eff)) hasEfficiency = true;
+
+    const productReady = productCalculationReadiness(product, categoriesById);
+    if (productReady.blockingMissing.length) {
+      const label = productLabel(product, categoriesById);
+      productReady.blockingMissing.forEach(key => reasons.push(`${label}: ${CALC_FIELD_LABELS[key]} ontbreekt`));
+    }
+  });
+
+  if (!hasRelevantProduct) reasons.push('Geen batterij, omvormer of thuisbatterij-systeem in de samenstelling');
+  if (!(capacityKwh > 0)) reasons.push('Geen totale nuttige batterijcapaciteit gevonden');
+  if (!(inverterPowerKw > 0)) reasons.push('Geen totaal nominaal AC-vermogen gevonden');
+  if (hasRelevantProduct && !hasEfficiency) warnings.push('Geen rendement ingevuld; calculator gebruikt 90% standaardrendement');
+
+  return {
+    eligible: reasons.length === 0,
+    reasons: [...new Set(reasons)],
+    warnings: [...new Set(warnings)],
+    capacityKwh,
+    inverterPowerKw,
+    customerType,
+  };
+}
+
+export function productConfigCalculationReadinessTitle(config, productsById = {}, categoriesById = {}, options = {}) {
+  const readiness = productConfigCalculationReadiness(config, productsById, categoriesById, options);
+  if (readiness.eligible && !readiness.warnings.length) return 'Wordt getoond in de calculator-dropdown';
+  const lines = [];
+  if (readiness.reasons.length) lines.push('Niet in calculator:', ...readiness.reasons.map(r => `• ${r}`));
+  if (readiness.warnings.length) lines.push('Opmerking:', ...readiness.warnings.map(w => `• ${w}`));
+  return lines.join('\n');
 }
 
 export function productMap(products) {

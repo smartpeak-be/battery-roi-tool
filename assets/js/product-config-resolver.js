@@ -5,6 +5,7 @@ import {
   configSubtotalExVat,
   generatedConfigDescription,
   normalizeProductConfigCustomerType,
+  productConfigCalculationReadiness,
   productMap,
 } from './product-configs.js';
 
@@ -113,6 +114,8 @@ export function productConfigToCalcConfig(config, products, categories, options 
 
   const productsById = productMap(products || []);
   const categoriesById = categoryMap(categories || []);
+  const readiness = productConfigCalculationReadiness(config, productsById, categoriesById, options);
+  if (!readiness.eligible) return null;
   const items = (config.items || [])
     .map(item => ({ productId: item?.productId ? String(item.productId) : '', qty: normalizeQty(item?.qty) }))
     .filter(item => item.productId && item.qty > 0 && productsById[item.productId]);
