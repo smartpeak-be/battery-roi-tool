@@ -5,6 +5,21 @@ export const MATERIAL_CATEGORY_SLUG = 'materiaal';
 export const MISC_CATEGORY_SLUG = 'diversen';
 export const BATTERY_CATEGORY_SLUGS = new Set(['batterijen', 'thuisbatterij-systemen']);
 export const INVERTER_CATEGORY_SLUG = 'omvormers';
+export const PRODUCT_CONFIG_CUSTOMER_TYPES = new Set(['b2c', 'b2b']);
+export const DEFAULT_PRODUCT_CONFIG_CUSTOMER_TYPE = 'b2c';
+
+export function normalizeProductConfigCustomerType(value, config = {}) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (PRODUCT_CONFIG_CUSTOMER_TYPES.has(raw)) return raw;
+
+  const searchable = [config.name, config.description]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return /(^|[^a-z0-9])b2b([^a-z0-9]|$)/i.test(searchable)
+    ? 'b2b'
+    : DEFAULT_PRODUCT_CONFIG_CUSTOMER_TYPE;
+}
 
 export function productLabel(product, categoriesById = {}) {
   if (!product) return '';

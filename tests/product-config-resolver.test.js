@@ -140,4 +140,26 @@ describe('productConfigToCalcConfig', () => {
 
     expect(all.map(c => c.type)).toEqual(['PC_cfg-1']);
   });
+
+  it('treats product configurations as B2C by default and excludes B2B from calculator choices', () => {
+    const all = productConfigsToCalcConfigs([
+      { ...config, id: 'default-b2c', name: 'Zendure standaard' },
+      { ...config, id: 'explicit-b2c', name: 'Zendure particulier', customerType: 'b2c' },
+      { ...config, id: 'explicit-b2b', name: 'Zendure zakelijk', customerType: 'b2b' },
+      { ...config, id: 'name-b2b', name: 'Zendure B2B pakket' },
+    ], products, categories);
+
+    expect(all.map(c => c.type)).toEqual(['PC_default-b2c', 'PC_explicit-b2c']);
+    expect(all.every(c => c.customerType === 'b2c')).toBe(true);
+  });
+
+  it('can explicitly resolve B2B product configurations for future B2B views', () => {
+    const all = productConfigsToCalcConfigs([
+      { ...config, id: 'default-b2c', name: 'Zendure standaard' },
+      { ...config, id: 'name-b2b', name: 'Zendure B2B pakket' },
+    ], products, categories, { includeCustomerTypes: ['b2b'] });
+
+    expect(all.map(c => c.type)).toEqual(['PC_name-b2b']);
+    expect(all[0].customerType).toBe('b2b');
+  });
 });

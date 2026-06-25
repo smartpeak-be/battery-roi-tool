@@ -2542,11 +2542,19 @@ async function updateProduct(id, data) {
 
 // ─── PRODUCT CONFIGS ─────────────────────────────────────────────────────────
 
+function _normalizeProductConfigCustomerType(value, data = {}) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'b2b' || raw === 'b2c') return raw;
+  const searchable = [data.name, data.description].filter(Boolean).join(' ').toLowerCase();
+  return /(^|[^a-z0-9])b2b([^a-z0-9]|$)/i.test(searchable) ? 'b2b' : 'b2c';
+}
+
 function _normalizeProductConfigData(data) {
   const items = Array.isArray(data.items) ? data.items : [];
   return {
     name:        data.name || '',
     description: data.description || '',
+    customerType: _normalizeProductConfigCustomerType(data.customerType, data),
     items:       items
       .map(item => ({
         productId: item && item.productId ? String(item.productId) : '',

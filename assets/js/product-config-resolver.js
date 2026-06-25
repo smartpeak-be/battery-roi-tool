@@ -4,6 +4,7 @@ import {
   categoryMap,
   configSubtotalExVat,
   generatedConfigDescription,
+  normalizeProductConfigCustomerType,
   productMap,
 } from './product-configs.js';
 
@@ -103,8 +104,12 @@ export function productConfigIdFromType(type) {
   return isProductConfigType(type) ? type.slice(PRODUCT_CONFIG_TYPE_PREFIX.length) : '';
 }
 
-export function productConfigToCalcConfig(config, products, categories) {
+export function productConfigToCalcConfig(config, products, categories, options = {}) {
   if (!config || config.isActive === false) return null;
+
+  const customerType = normalizeProductConfigCustomerType(config.customerType, config);
+  const includeCustomerTypes = options.includeCustomerTypes || ['b2c'];
+  if (!includeCustomerTypes.includes('all') && !includeCustomerTypes.includes(customerType)) return null;
 
   const productsById = productMap(products || []);
   const categoriesById = categoryMap(categories || []);
@@ -135,14 +140,15 @@ export function productConfigToCalcConfig(config, products, categories) {
       '21_yes': subtotalExVat * 1.21,
     },
     source: 'productConfig',
+    customerType,
     productConfigId: config.id,
     productConfigName: config.name || '',
     items,
   };
 }
 
-export function productConfigsToCalcConfigs(configs, products, categories) {
+export function productConfigsToCalcConfigs(configs, products, categories, options = {}) {
   return (configs || [])
-    .map(config => productConfigToCalcConfig(config, products, categories))
+    .map(config => productConfigToCalcConfig(config, products, categories, options))
     .filter(Boolean);
 }
