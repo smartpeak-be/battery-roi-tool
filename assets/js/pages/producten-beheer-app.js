@@ -12,6 +12,7 @@ import {
   applyDiscountToVatGroups,
   MATERIAL_CATEGORY_SLUG,
   MISC_CATEGORY_SLUG,
+  normalizeProductConfigCustomerType,
   productLabel,
   productMap,
   quoteGroupsProfitExVat,
@@ -1246,11 +1247,15 @@ function renderConfigList() {
     const desc = generatedConfigDescription(cfg.items, productsById, categoriesById) || cfg.description || 'Geen producten';
     const subtotal = configSubtotalExVat(cfg.items, productsById, categoriesById);
     const inactive = cfg.isActive === false ? '<span class="badge text-bg-secondary ms-2">Inactief</span>' : '';
+    const customerType = normalizeProductConfigCustomerType(cfg.customerType, cfg);
+    const customerBadge = customerType === 'b2b'
+      ? '<span class="badge text-bg-warning ms-2">B2B</span>'
+      : '<span class="badge text-bg-success ms-2">B2C</span>';
     return `
       <div class="border rounded p-2 mb-2 config-row" data-config-id="${escapeAttr(cfg.id)}">
         <div class="d-flex gap-2 align-items-start">
           <div class="flex-grow-1">
-            <strong>${escapeHtml(cfg.name || '(zonder naam)')}</strong>${inactive}
+            <strong>${escapeHtml(cfg.name || '(zonder naam)')}</strong>${customerBadge}${inactive}
             <div class="text-muted small">${escapeHtml(desc)}</div>
           </div>
           <div class="text-end text-nowrap">
@@ -1295,6 +1300,7 @@ function duplicateConfigDraft(cfg) {
   return {
     name: `${cfg.name || 'Configuratie'} (kopie)`,
     description: cfg.description || '',
+    customerType: normalizeProductConfigCustomerType(cfg.customerType, cfg),
     sortOrder: cfg.sortOrder ?? 0,
     isActive: cfg.isActive !== false,
     items: (cfg.items || []).map(item => ({
@@ -1361,6 +1367,13 @@ function buildConfigFormHtml(cfg) {
         <label class="form-label">Naam <span class="text-danger">*</span></label>
         <input type="text" class="form-control" id="configName" value="${escapeAttr(cfg?.name || '')}" placeholder="bv. Zendure AC+ 1 hub + 3 batterijen">
       </div>
+      <div class="col-md-2">
+        <label class="form-label">Doelgroep</label>
+        <select class="form-select" id="configCustomerType">
+          <option value="b2c" ${normalizeProductConfigCustomerType(cfg?.customerType, cfg) === 'b2c' ? 'selected' : ''}>B2C</option>
+          <option value="b2b" ${normalizeProductConfigCustomerType(cfg?.customerType, cfg) === 'b2b' ? 'selected' : ''}>B2B</option>
+        </select>
+      </div>
       <div class="col-md-3">
         <label class="form-label">Sortering</label>
         <input type="number" class="form-control" id="configSortOrder" value="${escapeAttr(cfg?.sortOrder ?? 0)}">
@@ -1416,6 +1429,7 @@ function readConfigForm() {
   return {
     name: document.getElementById('configName').value.trim(),
     description: document.getElementById('configDescription').value.trim(),
+    customerType: normalizeProductConfigCustomerType(document.getElementById('configCustomerType').value),
     sortOrder: parseInt(document.getElementById('configSortOrder').value, 10) || 0,
     isActive: document.getElementById('configIsActive').checked,
     items,
@@ -1433,6 +1447,8 @@ function updateConfigPreview() {
   const bebat = bebatTotalInclVat(kg, currentBebatPricePerKg());
   el.innerHTML = `
     <h6>Preview</h6>
+    <div class="small text-muted mb-2">Doelgroep</div>
+    <div class="mb-2"><span class="badge ${data.customerType === 'b2b' ? 'text-bg-warning' : 'text-bg-success'}">${data.customerType.toUpperCase()}</span></div>
     <div class="small text-muted mb-2">Omschrijving</div>
     <div class="mb-3">${escapeHtml(desc)}</div>
     <dl class="row small mb-0">
