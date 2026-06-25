@@ -241,44 +241,70 @@ export function buildAllDaysFromDailyCompact(dc) {
 // ─── CORE CALCULATION ──────────────────────────────────────────────────────────
 
 // Calculate a single scenario for one config + threshold.
+//
+// Physical battery simulation — two-step per day:
+//   1. CHARGE: if there is solar injection today, charge the battery proportionally
+//      up to threshold (= proxy for inverter capacity). If injection >= threshold
+//      the battery is assumed to fill fully. Charge is capped at batCap.
+//   2. DISCHARGE: every day (including zero-injection / winter days!) the battery
+//      can supply energy to cover afname. The battery retains its charge across
+//      days — it does NOT reset to 0 on cloudy/dark days.
+//
+// This guarantees recoveryPct <= 100% because sum(used) <= sum(afname) by definition.
+//
 // windowDays: array of per-day objects with { date, afname, injectie, ... }.
-// opts: { threshold, installPrice, batCap, eff, useCap, scaleFactor, effectivePrice, totalAfname, totalInjectie, pvInverter, batteryInverter }.
+// opts: { threshold, installPrice, batCap, eff, scaleFactor, effectivePrice, totalAfname, totalInjectie }.
 export function calcScenario(windowDays, opts) {
-  const { threshold, installPrice, batCap, eff, useCap, scaleFactor, effectivePrice, totalAfname, totalInjectie } = opts;
+  const { threshold, installPrice, batCap, eff, scaleFactor, effectivePrice, totalAfname, totalInjectie } = opts;
 
-  let qualifyingDays = 0, partialDays = 0, chargedFull = 0, chargedPartial = 0;
+  let batteryState = 0; // kWh currently stored in battery
+  let totalUsedFromBattery = 0;
+  let qualifyingDays = 0, partialDays = 0;
+
   for (const d of windowDays) {
-    // eslint-disable-next-line no-useless-assignment -- dayCharged=0 is the default for clarity
-    let isFull = false, dayCharged = 0;
+    // ── Step 1: charge from solar ──────────────────────────────────────────
+    let chargeToday = 0;
+    let isFull = false;
+
     if (d.injectie >= threshold) {
       isFull = true;
-      dayCharged = batCap * eff;
+      chargeToday = batCap * eff;                              // full: threshold met
     } else if (d.injectie > 0) {
-      dayCharged = (d.injectie / threshold) * batCap * eff;
-    } else {
-      continue;
+      chargeToday = (d.injectie / threshold) * batCap * eff;  // partial: proportional
     }
-    const dayUsable = useCap ? Math.min(dayCharged, d.afname) : dayCharged;
-    if (isFull) { qualifyingDays++; chargedFull    += dayUsable; }
-    else        { partialDays++;    chargedPartial += dayUsable; }
+    // d.injectie === 0 → no solar, chargeToday stays 0
+
+    if (chargeToday > 0) {
+      batteryState = Math.min(batteryState + chargeToday, batCap);
+      if (isFull) qualifyingDays++;
+      else partialDays++;
+    }
+
+    // ── Step 2: discharge to cover grid consumption ────────────────────────
+    // This happens EVERY day — battery retains charge across cloudy/winter days.
+    if (batteryState > 0 && d.afname > 0) {
+      const used = Math.min(batteryState, d.afname);
+      batteryState -= used;
+      totalUsedFromBattery += used;
+    }
   }
-  const annualChargedFull    = chargedFull    * scaleFactor;
-  const annualChargedPartial = chargedPartial * scaleFactor;
-  const annualCharged        = (chargedFull + chargedPartial) * scaleFactor;
-  const annualSaving         = annualCharged  * effectivePrice;
-  const annualSavingFull     = annualChargedFull    * effectivePrice;
-  const annualSavingPartial  = annualChargedPartial * effectivePrice;
-  const payback              = installPrice > 0 ? installPrice / annualSaving : Infinity;
-  const recoveryPctFull    = (chargedFull    / (totalAfname    || 1)) * 100 * scaleFactor;
-  const recoveryPctPartial = (chargedPartial / (totalAfname    || 1)) * 100 * scaleFactor;
-  const injPctFull         = (chargedFull    / eff / (totalInjectie || 1)) * 100 * scaleFactor;
-  const injPctPartial      = (chargedPartial / eff / (totalInjectie || 1)) * 100 * scaleFactor;
+
+  const annualCharged = totalUsedFromBattery * scaleFactor;
+  const annualSaving  = annualCharged * effectivePrice;
+  const payback       = installPrice > 0 && annualSaving > 0 ? installPrice / annualSaving : Infinity;
+  // recoveryPct cannot exceed 100% because totalUsedFromBattery <= totalAfname by construction
+  const recoveryPct   = Math.min((totalUsedFromBattery / (totalAfname || 1)) * 100 * scaleFactor, 100);
+
   return {
-    qualifyingDays, partialDays, chargedFull, chargedPartial,
-    annualChargedFull, annualChargedPartial, annualCharged,
-    annualSavingFull, annualSavingPartial, annualSaving,
-    payback, recoveryPctFull, recoveryPctPartial,
-    injPctFull, injPctPartial, threshold
+    qualifyingDays, partialDays,
+    chargedFull: totalUsedFromBattery, chargedPartial: 0,
+    annualChargedFull: annualCharged, annualChargedPartial: 0, annualCharged,
+    annualSavingFull: annualSaving, annualSavingPartial: 0, annualSaving,
+    payback,
+    recoveryPctFull: recoveryPct, recoveryPctPartial: 0,
+    injPctFull: (totalUsedFromBattery / eff / (totalInjectie || 1)) * 100 * scaleFactor,
+    injPctPartial: 0,
+    threshold,
   };
 }
 
@@ -316,39 +342,63 @@ export function computePerYearStats(allDays, pvInv, selectedConfigs, lastDate, p
       ? (sums.afnamedag / sums.afname) * priceDay + (sums.afnamenacht / sums.afname) * priceNight
       : priceDay;
 
-    const scenarios = selectedConfigs.map(cfg => {
-      const pvGtBat     = pvInv > cfg.batInv;
-      const thresholdWC = pvGtBat ? cfg.batCap * (pvInv / cfg.batInv) : cfg.batCap;
-      const thresholdOpt= cfg.batCap;
-      function calc(threshold, useCap) {
-        let qualifyingDays = 0, partialDays = 0, chargedFull = 0, chargedPartial = 0;
-        for (const d of days) {
-          // eslint-disable-next-line no-useless-assignment
-          let isFull = false, dayCharged = 0;
-          if (d.injectie >= threshold) { isFull = true; dayCharged = cfg.batCap * cfg.eff; }
-          else if (d.injectie > 0)     { dayCharged = (d.injectie / threshold) * cfg.batCap * cfg.eff; }
-          else { continue; }
-          const dayUsable = useCap ? Math.min(dayCharged, d.afname) : dayCharged;
-          if (isFull) { qualifyingDays++; chargedFull    += dayUsable; }
-          else        { partialDays++;    chargedPartial += dayUsable; }
+     const scenarios = selectedConfigs.map(cfg => {
+       const pvGtBat     = pvInv > cfg.batInv;
+       // Worst Case: higher threshold + lower efficiency to account for real-world degradation
+       // If PV > Battery inverter: use scaled up threshold (less full charge days)
+       // If equal or lower: use higher threshold (70% of capacity) for more conservative estimate
+       const thresholdWC = pvGtBat ? cfg.batCap * (pvInv / cfg.batInv) : cfg.batCap * 1.25;
+       const thresholdOpt= cfg.batCap;
+       const effWC       = cfg.eff * 0.85; // Worst case: 15% worse efficiency (losses, degradation)
+       const effOpt      = cfg.eff;
+       function calc(threshold, eff, useCap) {
+          // Same two-step simulation as calcScenario: charge then discharge every day.
+          // Battery retains state across zero-injection days.
+          let batteryState = 0;
+          let totalUsedFromBattery = 0;
+          let qualifyingDays = 0, partialDays = 0;
+
+          for (const d of days) {
+            // Step 1: charge from solar
+            let chargeToday = 0;
+            let isFull = false;
+
+            if (d.injectie >= threshold) {
+              isFull = true;
+              chargeToday = cfg.batCap * eff;
+            } else if (d.injectie > 0) {
+              chargeToday = (d.injectie / threshold) * cfg.batCap * eff;
+            }
+
+            if (chargeToday > 0) {
+              batteryState = Math.min(batteryState + chargeToday, cfg.batCap);
+              if (isFull) qualifyingDays++;
+              else partialDays++;
+            }
+
+            // Step 2: discharge to cover afname (every day, including zero-injection days)
+            if (batteryState > 0 && d.afname > 0) {
+              const used = Math.min(batteryState, d.afname);
+              batteryState -= used;
+              totalUsedFromBattery += used;
+            }
+          }
+
+          const annualSaving = totalUsedFromBattery * effectivePrice;
+          const payback      = cfg.price > 0 && annualSaving > 0 ? cfg.price / annualSaving : Infinity;
+          const recoveryPct  = Math.min((totalUsedFromBattery / (sums.afname || 1)) * 100, 100);
+          const injPct       = (totalUsedFromBattery / eff / (sums.injectie || 1)) * 100;
+
+          return {
+            qualifyingDays, partialDays, chargedFull: totalUsedFromBattery, chargedPartial: 0,
+            annualSavingFull: annualSaving, annualSavingPartial: 0, annualSaving, payback,
+            recoveryPctFull: recoveryPct, recoveryPctPartial: 0,
+            injPctFull: injPct, injPctPartial: 0,
+            threshold,
+          };
         }
-        const annualSavingFull    = chargedFull    * effectivePrice;
-        const annualSavingPartial = chargedPartial * effectivePrice;
-        const annualSaving        = annualSavingFull + annualSavingPartial;
-        const payback             = cfg.price > 0 ? cfg.price / annualSaving : Infinity;
-        const recoveryPctFull     = (chargedFull    / (sums.afname    || 1)) * 100;
-        const recoveryPctPartial  = (chargedPartial / (sums.afname    || 1)) * 100;
-        const injPctFull          = (chargedFull    / cfg.eff / (sums.injectie || 1)) * 100;
-        const injPctPartial       = (chargedPartial / cfg.eff / (sums.injectie || 1)) * 100;
-        return {
-          qualifyingDays, partialDays, chargedFull, chargedPartial,
-          annualSavingFull, annualSavingPartial, annualSaving, payback,
-          recoveryPctFull, recoveryPctPartial, injPctFull, injPctPartial,
-          threshold,
-        };
-      }
-      return { scenWC: calc(thresholdWC, true), scenOpt: calc(thresholdOpt, false) };
-    });
+        return { scenWC: calc(thresholdWC, effWC, true), scenOpt: calc(thresholdOpt, effOpt, false) };
+     });
 
     perYear.push({ windowStart: winStart, windowEnd: winEnd, ...sums, effectivePrice, scenarios });
   }
@@ -455,35 +505,38 @@ export function processDataPure(input, pvInv, selectedConfigs, priceDay, priceNi
     if (!cfg.batCap || cfg.batCap <= 0 || !cfg.batInv || cfg.batInv <= 0 || !cfg.eff || cfg.eff <= 0) {
       return null;
     }
-    const pvGtBat    = pvInv > cfg.batInv;
-    const thresholdWC  = pvGtBat ? cfg.batCap * (pvInv / cfg.batInv) : cfg.batCap;
-    const thresholdOpt = cfg.batCap;
-    const scenWC  = calcScenario(windowDays, {
-      threshold: thresholdWC,
-      installPrice: cfg.price,
-      batCap: cfg.batCap,
-      eff: cfg.eff,
-      useCap: true,
-      scaleFactor,
-      effectivePrice,
-      totalAfname,
-      totalInjectie,
-      pvInverter: pvInv,
-      batteryInverter: cfg.batInv,
-    });
-    const scenOpt = calcScenario(windowDays, {
-      threshold: thresholdOpt,
-      installPrice: cfg.price,
-      batCap: cfg.batCap,
-      eff: cfg.eff,
-      useCap: false,
-      scaleFactor,
-      effectivePrice,
-      totalAfname,
-      totalInjectie,
-      pvInverter: pvInv,
-      batteryInverter: cfg.batInv,
-    });
+     const pvGtBat    = pvInv > cfg.batInv;
+     // Worst Case: higher threshold + lower efficiency for conservative estimate
+     const thresholdWC  = pvGtBat ? cfg.batCap * (pvInv / cfg.batInv) : cfg.batCap * 1.25;
+     const thresholdOpt = cfg.batCap;
+     const effWC = cfg.eff * 0.85; // 15% worse efficiency (losses, degradation)
+     const effOpt = cfg.eff;
+     const scenWC  = calcScenario(windowDays, {
+       threshold: thresholdWC,
+       installPrice: cfg.price,
+       batCap: cfg.batCap,
+       eff: effWC,
+       useCap: true,
+       scaleFactor,
+       effectivePrice,
+       totalAfname,
+       totalInjectie,
+       pvInverter: pvInv,
+       batteryInverter: cfg.batInv,
+     });
+     const scenOpt = calcScenario(windowDays, {
+       threshold: thresholdOpt,
+       installPrice: cfg.price,
+       batCap: cfg.batCap,
+       eff: effOpt,
+       useCap: false,
+       scaleFactor,
+       effectivePrice,
+       totalAfname,
+       totalInjectie,
+       pvInverter: pvInv,
+       batteryInverter: cfg.batInv,
+     });
     return { cfg, pvGtBat, thresholdWC, thresholdOpt, scenWC, scenOpt };
   }).filter(Boolean);
 
