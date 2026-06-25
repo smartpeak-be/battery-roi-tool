@@ -1676,15 +1676,28 @@ function wireBlokD() {
             if (last) last.querySelector('input').focus();
           }, 0);
         } else {
-          try {
-            const entry = await addProjectSerial(PROJECT_ID, val);
-            _project.serialNumbers = _project.serialNumbers || [];
-            _project.serialNumbers.push(entry);
-            rerenderBlokD();
-            rerenderOps();
-          } catch (err) {
-            showToast('Serienummer toevoegen mislukt: ' + (err && err.message ? err.message : String(err)), 'danger');
-          }
+          // Existing-project mode writes async. Debounce the trailing row so the
+          // normal input event and the later blur/change event do not both call
+          // addProjectSerial for the same manually entered serial.
+          clearTimeout(_newSerialAddTimer);
+          _newSerialAddTimer = setTimeout(async () => {
+            if (row.dataset.serialAdding === 'true') return;
+            const latestValue = (e.target.value || '').trim();
+            if (!latestValue) return;
+            row.dataset.serialAdding = 'true';
+            e.target.readOnly = true;
+            try {
+              const entry = await addProjectSerial(PROJECT_ID, latestValue);
+              _project.serialNumbers = _project.serialNumbers || [];
+              _project.serialNumbers.push(entry);
+              rerenderBlokD();
+              rerenderOps();
+            } catch (err) {
+              row.dataset.serialAdding = 'false';
+              e.target.readOnly = false;
+              showToast('Serienummer toevoegen mislukt: ' + (err && err.message ? err.message : String(err)), 'danger');
+            }
+          }, 350);
         }
       } else if (id !== '_new') {
         const entry = (_project.serialNumbers || []).find(x => x.id === id);
@@ -1810,10 +1823,11 @@ function rerenderBlokD(opts = {}) {
   _restoreSerialInputs(snapshot);
 }
 
-let _blokDUploader    = null;
-let _serialSaveTimer  = null;
-let _serialSavePatch  = null;
-let _pendingCsv       = null;
+let _blokDUploader      = null;
+let _serialSaveTimer    = null;
+let _serialSavePatch    = null;
+let _newSerialAddTimer  = null;
+let _pendingCsv         = null;
 
 
 // Tri-state radio helper: returns HTML for three labels (Ja/Nee/Onbekend).

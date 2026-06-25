@@ -13,6 +13,10 @@ import {
   MATERIAL_CATEGORY_SLUG,
   MISC_CATEGORY_SLUG,
   normalizeProductConfigCustomerType,
+  productCalculationReadiness,
+  productCalculationReadinessTitle,
+  productConfigCalculationReadiness,
+  productConfigCalculationReadinessTitle,
   productLabel,
   productMap,
   quoteGroupsProfitExVat,
@@ -314,7 +318,7 @@ const BRAND_OPTIONS = {
   'Installatie': ['Huawei', 'BYD', 'Dyness', 'Sigenergy', 'Enphase', 'Tesla', 'Sonnen', 'LG', 'Solarwatt', 'Pylontech', 'Alpha ESS', 'SAJ', 'Sungrow', 'Sessy'],
 };
 const ALL_BRANDS = Object.values(BRAND_OPTIONS).flat();
-const ZENDURE_STATIC_PRODUCT_MEDIA = {
+const STATIC_PRODUCT_MEDIA = {
   acplus: {
     photos: [
       'assets/products/zendure-ac-plus/zendure-acplus-1.png',
@@ -333,9 +337,67 @@ const ZENDURE_STATIC_PRODUCT_MEDIA = {
     photos: [
       'assets/products/zendure-ac-plus/zendure-acplus-ab3000l.jpg',
     ],
+    datasheets: [
+      {
+        name: 'AB3000L — Handleiding',
+        url:  'https://cdn.shopify.com/s/files/1/0722/0956/3903/files/ZDB2503_AB3000L_6_20260104_removed_removed.pdf?v=1770795311',
+      },
+      {
+        name: 'AB3000L — Handleiding EN/FR',
+        url:  'https://cdn.shopify.com/s/files/1/0720/4379/0616/files/AB3000L_User_Manual_20260422_EN_FR.pdf?v=1779959908',
+      },
+    ],
+  },
+  dynessDl5: {
+    photos: ['https://www.dyness.com/Public/Uploads/uploadfile/images/20250428/DL5.0cprojpg.jpg'],
     datasheets: [{
-      name: 'AB3000L — Handleiding',
-      url:  'https://cdn.shopify.com/s/files/1/0722/0956/3903/files/ZDB2503_AB3000L_6_20260104_removed_removed.pdf?v=1770795311',
+      name: 'Dyness DL5.0C Pro — Datasheet',
+      url:  'https://www.dyness.com/Public/Uploads/uploadfile/files/20250901/DL5.0CProDatasheetEN20250702.pdf',
+    }],
+  },
+  dynessPowerBrick: {
+    photos: ['https://www.dyness.com/Public/Uploads/uploadfile/images/20241211/powerbrickbanner.jpg'],
+    datasheets: [{
+      name: 'Dyness PowerBrick — Datasheet',
+      url:  'https://www.dyness.com/Public/Uploads/uploadfile/files/20250901/PowerBrickdatasheetEN20250701-201.pdf',
+    }],
+  },
+  dynessPowerboxG2: {
+    photos: ['https://www.dyness.com/Public/Uploads/uploadfile/images/20250605/powerboxG2hei.jpg'],
+    datasheets: [
+      {
+        name: 'Dyness Powerbox G2 — Datasheet',
+        url:  'https://www.dyness.com/Public/Uploads/uploadfile/files/20250901/PowerboxG2DatasheetEN20250627.pdf',
+      },
+      {
+        name: 'Dyness Powerbox G2 — User manual',
+        url:  'https://nastechsolar.com/content/STORAGE/DYNESS/PRODUCT%20CATALOGUE/Dyness%20Powerbox%20G2%20User%20Manual.pdf',
+      },
+    ],
+  },
+  huaweiLunaS1: {
+    datasheets: [
+      {
+        name: 'Huawei LUNA2000-S1 — Officiële specs',
+        url:  'https://solar.huawei.com/en/products/LUNA2000-7-14-21-S1/specs/',
+      },
+      {
+        name: 'Huawei LUNA2000-S1 — Datasheet PDF',
+        url:  'https://solar.huawei.com/admin/asset/v1/pro/view/36414e3c762a4e508d6fde579866c4c0.pdf',
+      },
+      {
+        name: 'Huawei LUNA2000-S1 — Technical specifications',
+        url:  'https://support.huawei.com/enterprise/en/doc/EDOC1100339927/812a69f6/technical-specifications',
+      },
+    ],
+  },
+  sigenergyStor: {
+    photos: [
+      'https://wwwstatic.sigenergy.com/upload/2026-06-03/1780466922268_f5aaf949-2f73-4d39-be6a-a5c9351173d1.webp',
+    ],
+    datasheets: [{
+      name: 'Sigenergy SigenStor — Download center',
+      url:  'https://www.sigenergy.com/en/support/download-center.html',
     }],
   },
 };
@@ -366,15 +428,20 @@ function isBrandlessCategorySlug(slug) {
   return slug === 'service' || slug === 'materiaal' || slug === 'diversen';
 }
 
-function staticZendureMediaKey(product) {
+function staticProductMediaKey(product) {
   const haystack = [product?.brand, product?.model, product?.description].filter(Boolean).join(' ').toLowerCase();
   if (haystack.includes('ab3000l')) return 'ab3000l';
   if (haystack.includes('ac+') || haystack.includes('ac plus') || haystack.includes('2400 ac')) return 'acplus';
+  if (haystack.includes('dl5.0c')) return 'dynessDl5';
+  if (haystack.includes('powerbrick')) return 'dynessPowerBrick';
+  if (haystack.includes('powerbox g2')) return 'dynessPowerboxG2';
+  if (haystack.includes('luna2000')) return 'huaweiLunaS1';
+  if (haystack.includes('sigen')) return 'sigenergyStor';
   return null;
 }
 
 function staticProductPhotos(product) {
-  const media = ZENDURE_STATIC_PRODUCT_MEDIA[staticZendureMediaKey(product)];
+  const media = STATIC_PRODUCT_MEDIA[staticProductMediaKey(product)];
   return (media?.photos || []).map((url, idx) => ({
     id:          `static-${idx}`,
     name:        url.split('/').pop() || 'Productfoto',
@@ -385,7 +452,7 @@ function staticProductPhotos(product) {
 }
 
 function staticProductDatasheets(product) {
-  const media = ZENDURE_STATIC_PRODUCT_MEDIA[staticZendureMediaKey(product)];
+  const media = STATIC_PRODUCT_MEDIA[staticProductMediaKey(product)];
   return (media?.datasheets || []).map((doc, idx) => ({
     id:          `static-${idx}`,
     name:        doc.name,
@@ -443,11 +510,15 @@ function renderProductList() {
     const cat = _categories.find(c => c.id === p.categoryId);
     const catName = cat?.name || '';
     const label = productLabel(p, categoriesById);
+    const readiness = productCalculationReadiness(p, categoriesById);
+    const calcBadge = readiness.relevant
+      ? `<span class="badge ${readiness.blockingMissing.length ? 'text-bg-warning' : 'text-bg-success'} ms-2" title="${escapeAttr(productCalculationReadinessTitle(p, categoriesById))}">${readiness.blockingMissing.length ? 'Berekening mist info' : 'Berekening ok'}</span>`
+      : '';
     return `
       <div class="card mb-2 product-card sp-product-card ${inactiveClass} ${activeClass}" style="--sp-cat-color:${escapeAttr(categoryColor(cat))}" data-id="${escapeAttr(p.id)}">
         <div class="card-body py-2 px-3 d-flex align-items-center gap-2">
           <div class="flex-grow-1">
-            <strong>${escapeHtml(label)}</strong>${badge}
+            <strong>${escapeHtml(label)}</strong>${badge}${calcBadge}
             <div class="text-muted small">${cat ? categoryDotHtml(cat, 'sp-category-dot-xs') : ''}${escapeHtml(catName)}${p.description ? ' · ' + escapeHtml(p.description) : ''}</div>
           </div>
           <div class="text-end text-nowrap">
@@ -1031,8 +1102,13 @@ function renderSpecFields(container, categoryId, existingSpecs) {
   let html = '<div class="row g-2">';
   fields.forEach(f => {
     const val = specs[f.key];
+    const isCalcCritical = ['capacityKwh', 'inverterPowerKw'].includes(f.key);
+    const isCalcDefaulted = f.key === 'efficiency';
+    const calcHint = isCalcCritical
+      ? '<span class="badge text-bg-info ms-1" title="Cruciaal voor de calculator">calculator</span>'
+      : (isCalcDefaulted ? '<span class="badge text-bg-light text-muted border ms-1" title="Gebruikt voor de calculator; zonder waarde valt de calculator terug op 90% rendement">calculator optioneel</span>' : '');
     html += '<div class="col-6 col-md-4">';
-    html += `<label class="form-label small mb-1">${escapeHtml(f.label)}${f.unit ? ' <span class="text-muted">(' + escapeHtml(f.unit) + ')</span>' : ''}</label>`;
+    html += `<label class="form-label small mb-1">${escapeHtml(f.label)}${f.unit ? ' <span class="text-muted">(' + escapeHtml(f.unit) + ')</span>' : ''}${calcHint}</label>`;
 
     if (f.type === 'number') {
       html += `<input type="number" class="form-control form-control-sm spec-field" data-spec-key="${escapeAttr(f.key)}" step="any" value="${val != null ? escapeAttr(val) : ''}">`;
@@ -1251,11 +1327,16 @@ function renderConfigList() {
     const customerBadge = customerType === 'b2b'
       ? '<span class="badge text-bg-warning ms-2">B2B</span>'
       : '<span class="badge text-bg-success ms-2">B2C</span>';
+    const readiness = productConfigCalculationReadiness(cfg, productsById, categoriesById);
+    const readinessTitle = productConfigCalculationReadinessTitle(cfg, productsById, categoriesById);
+    const readinessBadge = readiness.eligible
+      ? `<span class="badge text-bg-success ms-2" title="${escapeAttr(readinessTitle)}">In calculator</span>`
+      : `<span class="badge text-bg-danger ms-2" title="${escapeAttr(readinessTitle)}">Niet in calculator</span>`;
     return `
       <div class="border rounded p-2 mb-2 config-row" data-config-id="${escapeAttr(cfg.id)}">
         <div class="d-flex gap-2 align-items-start">
           <div class="flex-grow-1">
-            <strong>${escapeHtml(cfg.name || '(zonder naam)')}</strong>${customerBadge}${inactive}
+            <strong>${escapeHtml(cfg.name || '(zonder naam)')}</strong>${customerBadge}${inactive}${readinessBadge}
             <div class="text-muted small">${escapeHtml(desc)}</div>
           </div>
           <div class="text-end text-nowrap">
@@ -1445,10 +1526,18 @@ function updateConfigPreview() {
   const subtotal = configSubtotalExVat(data.items, productsById, categoriesById);
   const kg = configBatteryWeightKg(data.items, productsById, categoriesById);
   const bebat = bebatTotalInclVat(kg, currentBebatPricePerKg());
+  const readiness = productConfigCalculationReadiness(data, productsById, categoriesById);
+  const readinessHtml = readiness.eligible
+    ? '<div class="alert alert-success py-2 small mb-3">Deze samenstelling wordt getoond in de calculator-dropdown.</div>'
+    : `<div class="alert alert-warning py-2 small mb-3"><strong>Niet in calculator-dropdown</strong><ul class="mb-0 ps-3">${readiness.reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div>`;
+  const warningHtml = readiness.warnings.length
+    ? `<div class="alert alert-light border py-2 small mb-3"><strong>Opmerking</strong><ul class="mb-0 ps-3">${readiness.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul></div>`
+    : '';
   el.innerHTML = `
     <h6>Preview</h6>
     <div class="small text-muted mb-2">Doelgroep</div>
     <div class="mb-2"><span class="badge ${data.customerType === 'b2b' ? 'text-bg-warning' : 'text-bg-success'}">${data.customerType.toUpperCase()}</span></div>
+    ${readinessHtml}${warningHtml}
     <div class="small text-muted mb-2">Omschrijving</div>
     <div class="mb-3">${escapeHtml(desc)}</div>
     <dl class="row small mb-0">

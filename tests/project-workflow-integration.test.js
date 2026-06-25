@@ -74,6 +74,15 @@ describe('project workflow quick menu', () => {
     expect(projectEditSource).toContain('_project.cabinet.preInstallationNotes = e.target.value || null');
   });
 
+  it('voorkomt dubbele serienummers wanneer input en blur/change dezelfde nieuwe rij afvuren', () => {
+    expect(projectEditSource).toContain('let _newSerialAddTimer');
+    expect(projectEditSource).toContain('clearTimeout(_newSerialAddTimer);');
+    expect(projectEditSource).toContain('_newSerialAddTimer = setTimeout(async () => {');
+    expect(projectEditSource).toContain("if (row.dataset.serialAdding === 'true') return;");
+    expect(projectEditSource).toContain("const latestValue = (e.target.value || '').trim();");
+    expect(projectEditSource).toContain('const entry = await addProjectSerial(PROJECT_ID, latestValue);');
+  });
+
   it('laat de photo-uploader een upload rechtstreeks aan een workflow-tag koppelen', () => {
     expect(photoUploaderSource).toContain('defaultTag:');
     expect(photoUploaderSource).toContain('nextUploadTag:');
