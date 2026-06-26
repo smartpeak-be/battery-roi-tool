@@ -168,8 +168,8 @@ function wireOffertesClicks(containerEl, getProjectFn, onChange) {
         const context = quoteTools.buildQuoteContextFromProjectConfig(project, type, {
           vat: (typeof effectiveBtwFor === 'function') ? effectiveBtwFor(project) : 21,
         });
-        if (!context.configId) {
-          throw new Error('Deze configuratie kan nog niet automatisch naar de offerte-preview worden doorgestuurd.');
+        if (!context.configId && (!Array.isArray(context.extraProducts) || context.extraProducts.length === 0)) {
+          throw new Error('Deze configuratie bevat geen productlijnen voor de offerte-preview.');
         }
         window.SmartPeakQuotePreview.openQuoteModal(context, {
           onBillitPdfAttached: () => onChange && onChange(),

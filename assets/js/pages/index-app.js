@@ -1,7 +1,6 @@
 import { extractCsvForStorage } from '../csv.js';
 import {
   formatDate, fmt2, fmtEur, renderWithAvg,
-  parseSheetConfigs,
   buildAllDaysFromDailyCompact,
   processDataPure,
   validateCalcInputs,
@@ -265,6 +264,7 @@ let _sheetCategories = [];
 let _settings = {};
 let _inspectionProduct = null;
 let _compositionLinesByType = {};
+let _customCompositions = {};
 
 // Manual configs — keyed by type ('MANUAL_<timestamp>'). Same resolved shape as sheet configs.
 let _manualConfigs = {};
@@ -279,35 +279,117 @@ function currentBebatPricePerKg() {
   return 2.89;
 }
 
-// Build all `<option>` HTML for a single picker. `otherSelected` is the list of
-// types already picked in the OTHER pickers — those are rendered as disabled.
-// `currentValue` is this picker's own current value; it stays selectable so the
-// user can change or clear it.
-function _buildConfigOptionsHtml(currentValue, otherSelected, isFirst) {
-  const priceKey = _getPriceKey();
-  const placeholder = isFirst
-    ? '<option value="">— Kies een configuratie —</option>'
-    : '<option value="">— Geen extra configuratie —</option>';
-  const opts = (_sheetConfigs || []).map(c => {
-    const disabled = otherSelected.includes(c.type) && c.type !== currentValue ? 'disabled' : '';
-    const selected = c.type === currentValue ? 'selected' : '';
-    const sourceLabel = c.source === 'productConfig' ? 'Samenstelling' : 'Sheet';
-    return `<option value="${c.type}" ${disabled} ${selected}>${sourceLabel}: ${c.type} — ${c.omschrijving} | ${fmt2(c.batCap)} kWh, ${fmt2(c.batInv)} kW | ${fmtEur(c.prices[priceKey])}</option>`;
-  }).join('');
-  return placeholder + opts;
+function _customCompositionType() {
+  return `CUSTOM_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-// Read the currently-selected config types, in DOM order, lege filterend weg.
+function _compositionNameFromLines(lines) {
+  const names = (lines || [])
+    .filter(ln => ln && ln.kind === 'product' && ln.productId)
+    .slice(0, 3)
+    .map(ln => {
+      const product = (_sheetProducts || []).find(p => p.id === ln.productId);
+      const label = _productLabel(product);
+      return ln.qty && ln.qty !== 1 ? `${ln.qty}x ${label}` : label;
+    });
+  return names.length ? names.join(' + ') : 'Lege samenstelling';
+}
+
+function _baseConfigForCustomComposition(comp) {
+  return {
+    type: comp.type,
+    source: 'customComposition',
+    productConfigId: '',
+    productConfigName: comp.sourceName || '',
+    omschrijving: comp.name || _compositionNameFromLines(_compositionLinesByType[comp.type] || []),
+    batCap: 0,
+    batInv: 0,
+    eff: 0.90,
+    prices: { '6_no': 0, '6_yes': 0, '21_no': 0, '21_yes': 0 },
+    items: [],
+  };
+}
+
+function _createCustomComposition({ name = '', sourceName = '', baseProductConfigId = '', lines = [] } = {}) {
+  const type = _customCompositionType();
+  const serialized = serializeCompositionLines(lines, {
+    inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+  });
+  _customCompositions[type] = {
+    type,
+    name: name || _compositionNameFromLines(serialized),
+    sourceName,
+    baseProductConfigId,
+  };
+  _compositionLinesByType[type] = serialized;
+  renderConfigPickers();
+  _openComposerModal(type);
+}
+
+function _productLinesForConfig(cfg) {
+  return (cfg && Array.isArray(cfg.items) ? cfg.items : [])
+    .map(item => ({
+      id: _genMeerkostId(),
+      kind: 'product',
+      productId: item.productId,
+      qty: item.qty,
+      vat: parseFloat(document.getElementById('btwSelect')?.value) || 21,
+    }))
+    .filter(line => line.productId && line.qty > 0);
+}
+
+function _startEmptyComposition() {
+  _createCustomComposition({ name: 'Nieuwe samenstelling', lines: [] });
+}
+
+function _startFromSelectedComposition() {
+  const select = document.getElementById('baseCompositionSelect');
+  const type = select && select.value;
+  const cfg = (_sheetConfigs || []).find(c => c.type === type && c.source === 'productConfig');
+  if (!cfg) {
+    alert('Kies eerst een bestaande samenstelling.');
+    return;
+  }
+  _createCustomComposition({
+    name: cfg.omschrijving || cfg.productConfigName || 'Samenstelling',
+    sourceName: cfg.productConfigName || cfg.omschrijving || '',
+    baseProductConfigId: cfg.productConfigId || '',
+    lines: _productLinesForConfig(cfg),
+  });
+}
+
+function _filteredBaseConfigs() {
+  const q = (document.getElementById('compositionSearch')?.value || '').trim().toLowerCase();
+  return (_sheetConfigs || []).filter(c => {
+    if (c.source !== 'productConfig') return false;
+    if (!q) return true;
+    return [c.type, c.omschrijving, c.productConfigName]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(q);
+  });
+}
+
+function _renderBaseCompositionOptions(selected = '') {
+  const opts = _filteredBaseConfigs().map(c => `
+    <option value="${escapeHtml(c.type)}" ${c.type === selected ? 'selected' : ''}>
+      ${escapeHtml(c.omschrijving || c.productConfigName || c.type)} · ${fmt2(c.batCap)} kWh · ${fmt2(c.batInv)} kW
+    </option>`).join('');
+  const select = document.getElementById('baseCompositionSelect');
+  if (select) select.innerHTML = `<option value="">— Zoek/kies bestaande samenstelling —</option>${opts}`;
+}
+
+// Read the selected custom compositions, in DOM order.
 function readSelectedConfigs() {
-  return [...document.querySelectorAll('#configPickerList .config-select')]
-    .map(s => s.value)
-    .filter(v => v);
+  return [...document.querySelectorAll('#configPickerList .custom-composition-card')]
+    .map(el => el.dataset.configType)
+    .filter(Boolean);
 }
 
-// Read ALL selected configs: sheet picker selections + manual configs.
+// Read ALL selected configs: custom compositions + legacy/manual fallback.
 // Returns array of resolved config objects ready for processDataPure.
 function readAllSelectedConfigObjects() {
-  const priceKey = _getPriceKey();
   const btwPercent = parseFloat(document.getElementById('btwSelect').value) || 21;
   const lineMap = _readMeerkostLinesFromDom();
   const btwFactor = 1 + btwPercent / 100;
@@ -325,47 +407,32 @@ function readAllSelectedConfigObjects() {
 
   function resolveCompositionLinesFor(type) {
     const keuringChoice = document.getElementById('keuringSelect').value;
-    const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
     const manualLines = serializeCompositionLines(_compositionLinesByType[type] || [], {
       inspectionProductId: _inspectionProduct && _inspectionProduct.id,
     });
     return ensureInspectionLine(manualLines, _inspectionProduct, keuringChoice, btwPercent);
   }
 
-  // Sheet configs from dropdowns
-  const sheetTypes = readSelectedConfigs();
-  const sheetResolved = sheetTypes
+  const customResolved = readSelectedConfigs()
     .map(type => {
-      const c = _sheetConfigs.find(x => x.type === type);
-      if (!c) return null;
-      if (c.source === 'productConfig') {
-        return resolveCompositionToCalculatorConfig(c, {
-          type,
-          baseProductConfigId: c.productConfigId,
-          lines: resolveCompositionLinesFor(type),
-        }, _sheetProducts, {
-          btwPercent,
-          categories: _sheetCategories,
-          bebatPricePerKg: currentBebatPricePerKg(),
-        });
-      }
-      const basePrice = c.prices[priceKey];
-      const lines = resolveLines(lineMap[type]);
-      const meerkostTotalInclBtw = lines.reduce((s, l) => s + l.amountInclBtw, 0);
-      return {
-        type: c.type, omschrijving: c.omschrijving, batCap: c.batCap, batInv: c.batInv, eff: c.eff,
-        basePrice,
-        price: basePrice + meerkostTotalInclBtw,
-        meerkostLines: lines,
-        meerkostTotalInclBtw,
-      };
+      const comp = _customCompositions[type];
+      if (!comp) return null;
+      return resolveCompositionToCalculatorConfig(_baseConfigForCustomComposition(comp), {
+        type,
+        baseProductConfigId: comp.baseProductConfigId || '',
+        lines: resolveCompositionLinesFor(type),
+      }, _sheetProducts, {
+        btwPercent,
+        categories: _sheetCategories,
+        bebatPricePerKg: currentBebatPricePerKg(),
+      });
     })
     .filter(Boolean);
 
-  // Manual configs (basePrice is the manual all-in price)
+  // Keep old manually-entered configs readable for existing saved links, but the normal UI no longer creates them.
   const manualResolved = Object.values(_manualConfigs).map(mc => {
     const lines = resolveLines(lineMap[mc.type]);
-    const meerkostTotalInclBtw = lines.reduce((s, l) => s + l.amountInclBtw, 0);
+    const meerkostTotalInclBtw = lines.reduce((sum, line) => sum + line.amountInclBtw, 0);
     return {
       type: mc.type,
       omschrijving: `${mc.merk} ${mc.omschrijving}`,
@@ -378,14 +445,10 @@ function readAllSelectedConfigObjects() {
     };
   });
 
-  return [...sheetResolved, ...manualResolved];
+  return [...customResolved, ...manualResolved];
 }
 
-// Returns { [configType]: MeerkostLine[] } from DOM. Looks at both
-// sheet-config picker rows (#configPickerList) and manual-config cards
-// (#manualConfigCards). Empty rows (no description + zero amount) are
-// dropped at serialize-time, not here — this stays a faithful DOM read
-// so live-editing keeps stable ids.
+// Returns { [configType]: MeerkostLine[] } from legacy manual-config cards.
 function _readMeerkostLinesFromDom() {
   const out = {};
   function harvest(scope, typeAttr) {
@@ -402,64 +465,92 @@ function _readMeerkostLinesFromDom() {
       out[type] = lines;
     });
   }
-  const pickerList = document.getElementById('configPickerList');
-  if (pickerList) harvest(pickerList, 'data-config-type');
   const manualList = document.getElementById('manualConfigCards');
   if (manualList) harvest(manualList, 'data-config-type');
   return out;
 }
 
-// Render N+1 sheet-config pickers. `meerkostLines` is an optional
-// { [type]: MeerkostLine[] } map used to seed the disclosure on restore.
-// Live DOM lines are preserved across re-renders via _readMeerkostLinesFromDom().
-function renderConfigPickers(selectedTypes, meerkostLines, compositionLines) {
+function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositionLines = {}) {
+  selectedTypes.filter(Boolean).forEach(type => {
+    if (_customCompositions[type]) return;
+    if (type.startsWith('CUSTOM_')) {
+      _customCompositions[type] = { type, name: 'Samenstelling uit opgeslagen berekening', baseProductConfigId: '' };
+      return;
+    }
+    const cfg = (_sheetConfigs || []).find(c => c.type === type && c.source === 'productConfig');
+    if (!cfg) return;
+    const extraLines = Array.isArray(compositionLines[type]) ? compositionLines[type] : [];
+    const customType = _customCompositionType();
+    const lines = serializeCompositionLines([..._productLinesForConfig(cfg), ...extraLines], {
+      inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+    });
+    _customCompositions[customType] = {
+      type: customType,
+      name: cfg.omschrijving || cfg.productConfigName || 'Samenstelling',
+      sourceName: cfg.productConfigName || '',
+      baseProductConfigId: cfg.productConfigId || '',
+    };
+    _compositionLinesByType[customType] = lines;
+  });
+}
+
+function _customCompositionCardHtml(comp) {
+  const lines = serializeCompositionLines(_compositionLinesByType[comp.type] || [], {
+    inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+  });
+  const productCount = lines.filter(ln => ln.kind === 'product').length;
+  const manualCount = lines.filter(ln => ln.kind === 'manual').length;
+  const discountCount = lines.filter(ln => ln.kind === 'discount').length;
+  const bits = [];
+  if (productCount) bits.push(`${productCount} product${productCount === 1 ? '' : 'en'}`);
+  if (manualCount) bits.push(`${manualCount} manueel`);
+  if (discountCount) bits.push(`${discountCount} korting${discountCount === 1 ? '' : 'en'}`);
+  const summary = bits.length ? bits.join(' · ') : 'nog leeg';
+  return `
+    <div class="custom-composition-card" data-config-type="${escapeHtml(comp.type)}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px;background:var(--card-bg);">
+      <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+        <div>
+          <strong>${escapeHtml(comp.name || 'Samenstelling')}</strong>
+          ${comp.sourceName ? `<span class="meerkost-summary-sum">gestart van ${escapeHtml(comp.sourceName)}</span>` : '<span class="meerkost-summary-sum">from scratch</span>'}<br>
+          <span class="meerkost-summary-sum">${escapeHtml(summary)}</span>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-secondary composer-open-btn" data-composer-type="${escapeHtml(comp.type)}"><i class="fa-solid fa-sliders" aria-hidden="true"></i> Samenstelling aanpassen</button>
+          <button type="button" class="btn btn-secondary custom-composition-delete" data-config-type="${escapeHtml(comp.type)}" title="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Render the custom composition starter + selected cards.
+function renderConfigPickers(selectedTypes = null, _meerkostLines = null, compositionLines = null) {
   const list = document.getElementById('configPickerList');
   if (!list) return;
-  const currentLines = { ..._readMeerkostLinesFromDom(), ...(meerkostLines || {}) };
   if (compositionLines && typeof compositionLines === 'object') {
     _compositionLinesByType = { ..._compositionLinesByType, ...compositionLines };
   }
-  const chosen = (selectedTypes || []).filter(v => v);
-  list.innerHTML = '';
-  for (let i = 0; i <= chosen.length; i++) {
-    const currentValue = chosen[i] || '';
-    const others = chosen.filter((_, j) => j !== i);
-    const row = document.createElement('div');
-    row.className = 'config-picker-row';
-    if (currentValue) row.dataset.configType = currentValue;
-    const isFirst = i === 0;
-    const labelTxt = isFirst
-      ? 'Configuratie 1 <span style="color:var(--danger);font-size:1rem;">*</span>'
-      : `Configuratie ${i + 1} <span style="font-weight:400;text-transform:none;color:var(--muted)">(optioneel)</span>`;
-    const linesForRow = (currentValue && currentLines[currentValue]) || [];
-    const currentConfig = currentValue ? (_sheetConfigs || []).find(c => c.type === currentValue) : null;
-    if (currentConfig && currentConfig.source === 'productConfig' && !_compositionLinesByType[currentValue] && linesForRow.length) {
-      _compositionLinesByType[currentValue] = linesForRow.map(ln => ({
-        id: ln.id || _genMeerkostId(),
-        kind: Number(ln.amount) < 0 ? 'discount' : 'manual',
-        description: ln.description || '',
-        amountExVat: Number(ln.amount) || 0,
-        vat: parseFloat(document.getElementById('btwSelect')?.value) || 21,
-      }));
-    }
-    const adjustmentHtml = !currentValue
-      ? ''
-      : (currentConfig && currentConfig.source === 'productConfig'
-        ? _composerButtonHtml(currentValue, _compositionLinesByType[currentValue] || [])
-        : _meerkostDisclosureHtml(linesForRow));
-    row.innerHTML = `
-      <div class="form-group" style="flex:1;">
-        <label>${labelTxt}</label>
-        <select class="config-select">${_buildConfigOptionsHtml(currentValue, others, isFirst)}</select>
+  if (selectedTypes) _restoreSelectedTypesAsCustomCompositions(selectedTypes, compositionLines || {});
+  const cards = Object.values(_customCompositions).map(_customCompositionCardHtml).join('');
+  list.innerHTML = `
+    <div class="composition-start-panel" style="border:1px solid var(--border);border-radius:10px;padding:12px;background:rgba(59,130,246,.06);">
+      <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+        <button type="button" class="btn btn-calculate" id="startEmptyComposition" style="margin:0;"><i class="fa-solid fa-plus" aria-hidden="true"></i> Leeg starten</button>
+        <div class="form-group" style="min-width:220px;flex:1;margin:0;">
+          <label>Zoek bestaande samenstelling</label>
+          <input type="search" id="compositionSearch" placeholder="Zoek op merk/model/naam..." value="">
+        </div>
+        <div class="form-group" style="min-width:280px;flex:2;margin:0;">
+          <label>Start van bestaande samenstelling</label>
+          <select id="baseCompositionSelect"></select>
+        </div>
+        <button type="button" class="btn btn-secondary" id="startFromComposition" style="margin:0;">Gebruiken als basis</button>
       </div>
-      ${adjustmentHtml}
-    `;
-    row.querySelector('.config-select').addEventListener('change', () => {
-      renderConfigPickers(readSelectedConfigs(), _readMeerkostLinesFromDom());
-    });
-    _wireMeerkostRow(row);
-    list.appendChild(row);
-  }
+      <p style="margin:8px 0 0;color:var(--muted);font-size:.86rem;">Elke samenstelling is volledig bewerkbaar: producten toevoegen, verwijderen, manuele lijnen/kortingen toevoegen. Sheet-configs worden hier niet meer getoond.</p>
+    </div>
+    <div id="customCompositionCards">${cards || '<p class="text-muted" style="margin:12px 0 0;">Start leeg of kies een bestaande samenstelling als basis.</p>'}</div>
+  `;
+  _renderBaseCompositionOptions();
+  document.getElementById('compositionSearch')?.addEventListener('input', () => _renderBaseCompositionOptions(document.getElementById('baseCompositionSelect')?.value || ''));
 }
 
 // Legacy shim — _applyLoadedState calls this name.
@@ -467,26 +558,6 @@ function _populateConfigSelects(selectedTypes, meerkostLines, compositionLines) 
   renderConfigPickers(selectedTypes, meerkostLines, compositionLines);
 }
 
-function _composerButtonHtml(type, lines) {
-  const savedLines = serializeCompositionLines(lines || [], {
-    inspectionProductId: _inspectionProduct && _inspectionProduct.id,
-  });
-  const productCount = savedLines.filter(ln => ln.kind === 'product').length;
-  const manualCount = savedLines.filter(ln => ln.kind === 'manual').length;
-  const discountCount = savedLines.filter(ln => ln.kind === 'discount').length;
-  const bits = [];
-  if (productCount) bits.push(`${productCount} product${productCount === 1 ? '' : 'en'}`);
-  if (manualCount) bits.push(`${manualCount} manueel`);
-  if (discountCount) bits.push(`${discountCount} korting${discountCount === 1 ? '' : 'en'}`);
-  const summary = bits.length ? bits.join(' · ') : 'geen aanpassingen';
-  return `
-    <div class="composer-summary" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <button type="button" class="btn btn-secondary composer-open-btn" data-composer-type="${escapeHtml(type)}">
-        <i class="fa-solid fa-sliders" aria-hidden="true"></i> Samenstelling aanpassen
-      </button>
-      <span class="meerkost-summary-sum">${escapeHtml(summary)}</span>
-    </div>`;
-}
 
 function _productLabel(product) {
   return [product?.brand, product?.model].filter(Boolean).join(' ').trim()
@@ -568,8 +639,14 @@ function _ensureComposerModal() {
   return modal;
 }
 
+function _composerBaseConfig(type) {
+  const comp = _customCompositions[type];
+  if (comp) return _baseConfigForCustomComposition(comp);
+  return (_sheetConfigs || []).find(c => c.type === type && c.source === 'productConfig') || null;
+}
+
 function _openComposerModal(type) {
-  const cfg = (_sheetConfigs || []).find(c => c.type === type && c.source === 'productConfig');
+  const cfg = _composerBaseConfig(type);
   if (!cfg) return;
   const modal = _ensureComposerModal();
   modal.dataset.configType = type;
@@ -577,9 +654,12 @@ function _openComposerModal(type) {
   const saved = serializeCompositionLines(_compositionLinesByType[type] || [], { inspectionProductId: _inspectionProduct && _inspectionProduct.id });
   const productRows = saved.filter(ln => ln.kind === 'product').map(_composerProductRowHtml).join('');
   const manualRows = saved.filter(ln => ln.kind === 'manual' || ln.kind === 'discount').map(_composerManualRowHtml).join('');
+  const intro = _customCompositions[type]
+    ? 'Producten hieronder vormen de volledige samenstelling. Je kan alles toevoegen of verwijderen.'
+    : `Basis: <strong>${escapeHtml(cfg.omschrijving || cfg.type)}</strong>.`;
   body.innerHTML = `
-    <p style="margin-top:0;color:var(--muted);">Basis: <strong>${escapeHtml(cfg.omschrijving || cfg.type)}</strong>. Keuring wordt automatisch bepaald door de keuring-keuze buiten dit venster en staat hier bewust niet tussen de producten.</p>
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 8px;"><h4 style="margin:0;">Extra producten</h4><button type="button" class="btn btn-secondary" id="configComposerAddProduct">+ Product toevoegen</button></div>
+    <p style="margin-top:0;color:var(--muted);">${intro} Keuring wordt automatisch bepaald door de keuring-keuze buiten dit venster en staat hier bewust niet tussen de producten.</p>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 8px;"><h4 style="margin:0;">Producten</h4><button type="button" class="btn btn-secondary" id="configComposerAddProduct">+ Product toevoegen</button></div>
     <div id="configComposerProducts">${productRows || ''}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px;"><h4 style="margin:0;">Manuele lijnen en kortingen</h4><button type="button" class="btn btn-secondary" id="configComposerAddManual">+ Lijn toevoegen</button></div>
     <div id="configComposerManuals">${manualRows || ''}</div>
@@ -618,7 +698,7 @@ function _updateComposerPreview() {
   const modal = document.getElementById('configComposerModal');
   if (!modal || modal.style.display === 'none') return;
   const type = modal.dataset.configType;
-  const cfg = (_sheetConfigs || []).find(c => c.type === type);
+  const cfg = _composerBaseConfig(type);
   const lines = _readComposerModalLines();
   const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
   const withInspection = ensureInspectionLine(lines, _inspectionProduct, document.getElementById('keuringSelect')?.value || 'no', btwPercent);
@@ -631,7 +711,7 @@ function _updateComposerPreview() {
   const summary = modal.querySelector('#configComposerSummary');
   const adjustableTotal = (resolved?.compositionLines || []).filter(ln => !ln.automatic).reduce((sum, ln) => sum + ln.amountInclBtw, 0);
   const inspection = (resolved?.compositionLines || []).find(ln => ln.kind === 'inspection');
-  const html = `Aanpassingen: <strong>${fmtEur(adjustableTotal)}</strong> incl. BTW${inspection ? ` · automatische keuring: <strong>${fmtEur(inspection.amountInclBtw)}</strong>` : ''} · totaal: <strong>${fmtEur(resolved?.price || 0)}</strong>`;
+  const html = `Samenstelling: <strong>${fmt2(resolved?.batCap || 0)} kWh</strong> · <strong>${fmt2(resolved?.batInv || 0)} kW</strong> · lijnen: <strong>${fmtEur(adjustableTotal)}</strong> incl. BTW${inspection ? ` · automatische keuring: <strong>${fmtEur(inspection.amountInclBtw)}</strong>` : ''} · totaal: <strong>${fmtEur(resolved?.price || 0)}</strong>`;
   if (preview) preview.innerHTML = html;
   if (summary) summary.innerHTML = html;
 }
@@ -641,8 +721,11 @@ function _saveComposerModal() {
   const type = modal?.dataset.configType;
   if (!type) return;
   _compositionLinesByType[type] = _readComposerModalLines();
+  if (_customCompositions[type]) {
+    _customCompositions[type].name = _compositionNameFromLines(_compositionLinesByType[type]);
+  }
   _closeComposerModal();
-  renderConfigPickers(readSelectedConfigs(), _readMeerkostLinesFromDom());
+  renderConfigPickers();
 }
 
 // Build the <details> block for one config row. `lines` is the seeded
@@ -873,54 +956,28 @@ async function loadConfigs() {
   statusEl.innerHTML = '<span class="spinner"></span> Laden...';
   return withSpinner(async () => {
     try {
-      const legacyConfigs = [];
-      let legacyError = null;
-      try {
-        const cfg = await getProductsConfig();
-        if (!cfg || !cfg.csvUrl) throw new Error('config/products.csvUrl ontbreekt.');
-        const resp = await fetch(cfg.csvUrl);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        legacyConfigs.push(...parseSheetConfigs(await resp.text()).map(c => ({ ...c, source: 'sheet' })));
-      } catch (e) {
-        legacyError = e;
-        console.warn('Legacy sheet-configuraties laden mislukt:', e);
-      }
-
-      let productCalcConfigs = [];
-      let productConfigError = null;
-      try {
-        const [categories, products, productConfigs, settings] = await Promise.all([
-          listProductCategories(),
-          listProducts({ isActive: true }),
-          listProductConfigs(),
-          typeof getSettings === 'function' ? getSettings().catch(() => ({})) : Promise.resolve({}),
-        ]);
-        _sheetProducts = products;
-        _sheetCategories = categories;
-        _settings = settings || {};
-        _inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection') || null;
-        productCalcConfigs = productConfigsToCalcConfigs(productConfigs, products, categories);
-      } catch (e) {
-        productConfigError = e;
-        console.warn('Nieuwe samenstellingen laden mislukt:', e);
-      }
-
-      _sheetConfigs = [...legacyConfigs, ...productCalcConfigs];
-      if (!_sheetConfigs.length) {
-        throw productConfigError || legacyError || new Error('Geen configuraties gevonden.');
-      }
+      const [categories, products, productConfigs, settings] = await Promise.all([
+        listProductCategories(),
+        listProducts({ isActive: true }),
+        listProductConfigs(),
+        typeof getSettings === 'function' ? getSettings().catch(() => ({})) : Promise.resolve({}),
+      ]);
+      _sheetProducts = products;
+      _sheetCategories = categories;
+      _settings = settings || {};
+      _inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection') || null;
+      _sheetConfigs = productConfigsToCalcConfigs(productConfigs, products, categories);
+      if (!_sheetConfigs.length) throw new Error('Geen actieve product-samenstellingen gevonden.');
       _populateConfigSelects();
       document.getElementById('configSelectorsArea').style.display = '';
-      document.getElementById('addManualConfigBtn').style.display = '';
-      const parts = [];
-      if (legacyConfigs.length) parts.push(`${legacyConfigs.length} sheet`);
-      if (productCalcConfigs.length) parts.push(`${productCalcConfigs.length} samenstellingen`);
-      statusEl.textContent = `✅ ${_sheetConfigs.length} configuraties geladen (${parts.join(' + ')}).`;
+      const manualBtn = document.getElementById('addManualConfigBtn');
+      if (manualBtn) manualBtn.style.display = 'none';
+      statusEl.textContent = `✅ ${_sheetConfigs.length} samenstellingen geladen. Sheet-configs zijn niet meer beschikbaar in de calculator.`;
     } catch(e) {
       statusEl.textContent = `❌ Fout bij laden: ${e.message}`;
       throw e;
     }
-  }, { message: 'Configuraties laden...' });
+  }, { message: 'Samenstellingen laden...' });
 }
 
 // ─── MAIN CALC ─────────────────────────────────────────────────────────────────
@@ -1491,6 +1548,22 @@ function wireIndexActions() {
     copyShareUrlInput().catch(() => {});
   });
   document.getElementById('configPickerList')?.addEventListener('click', e => {
+    if (e.target.closest('#startEmptyComposition')) {
+      _startEmptyComposition();
+      return;
+    }
+    if (e.target.closest('#startFromComposition')) {
+      _startFromSelectedComposition();
+      return;
+    }
+    const delBtn = e.target.closest('.custom-composition-delete');
+    if (delBtn) {
+      const type = delBtn.dataset.configType;
+      delete _customCompositions[type];
+      delete _compositionLinesByType[type];
+      renderConfigPickers();
+      return;
+    }
     const btn = e.target.closest('.composer-open-btn');
     if (!btn) return;
     _openComposerModal(btn.dataset.composerType);

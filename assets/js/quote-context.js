@@ -81,7 +81,10 @@ export function buildQuoteContextFromProjectConfig(project, configType, opts = {
   return {
     projectId: project?.id || '',
     configType: type,
-    configId,
+    configId: type.startsWith('CUSTOM_') ? '' : configId,
+    customConfigName: type.startsWith('CUSTOM_')
+      ? String(cfg.omschrijving || cfg.description || cfg.name || 'Samenstelling uit calculator')
+      : '',
     vat,
     calculatedLine: calculatedQuoteLine(cfg, vat),
     extraProducts,
