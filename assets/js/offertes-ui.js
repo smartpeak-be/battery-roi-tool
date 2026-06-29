@@ -106,9 +106,17 @@ function renderOffertesCards(project) {
          ${createOfferAction}
          <button class="btn btn-sm btn-outline-danger  offerte-trash-btn"      data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen" aria-label="Config verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
 
+    const displayName = cfg.omschrijving || cfg.type;
     const titleLabel = isManual
-      ? `<span class="badge bg-primary" style="font-size:0.65rem; vertical-align:middle; margin-right:4px;">Manueel</span>${escapeHtml(cfg.omschrijving)}`
-      : escapeHtml(cfg.type);
+      ? `<span class="badge bg-primary" style="font-size:0.65rem; vertical-align:middle; margin-right:4px;">Manueel</span>${escapeHtml(displayName)}`
+      : isCustomCalculatorConfig
+        ? escapeHtml(displayName)
+        : escapeHtml(cfg.type);
+    const descriptionLabel = isManual
+      ? ''
+      : isCustomCalculatorConfig
+        ? (cfg.type && cfg.type !== displayName ? cfg.type : '')
+        : (cfg.omschrijving || '');
 
     return `
       <div class="col">
@@ -117,7 +125,7 @@ function renderOffertesCards(project) {
             ${iconState}
             <span class="offerte-row-title">${titleLabel}</span>
           </div>
-          <div class="offerte-row-desc">${isManual ? '' : escapeHtml(cfg.omschrijving || '')}</div>
+          <div class="offerte-row-desc">${escapeHtml(descriptionLabel)}</div>
           <div class="offerte-row-meta">
             € ${_formatEuros(cfg.priceEur)}${cfg.batCap ? ' · ' + escapeHtml(String(cfg.batCap)) + ' kWh' : ''}${cfg.batInv ? ' · ' + escapeHtml(String(cfg.batInv)) + ' kW' : ''}
           </div>

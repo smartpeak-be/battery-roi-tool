@@ -25,4 +25,11 @@ describe('offertes-ui quote preview action', () => {
     expect(source).toContain('offerte-create-btn');
     expect(source).toContain('buildQuoteContextFromProjectConfig(project, type');
   });
+
+  it('gebruikt de opgegeven custom samenstellingsnaam als titel in de project/offerte-lijst', () => {
+    expect(source).toContain('const displayName = cfg.omschrijving || cfg.type;');
+    expect(source).toContain('isCustomCalculatorConfig\n        ? escapeHtml(displayName)');
+    expect(source).toContain("? (cfg.type && cfg.type !== displayName ? cfg.type : '')");
+    expect(source).toContain('<div class="offerte-row-desc">${escapeHtml(descriptionLabel)}</div>');
+  });
 });
