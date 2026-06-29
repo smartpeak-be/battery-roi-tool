@@ -31,5 +31,8 @@ describe('offertes-ui quote preview action', () => {
     expect(source).toContain('isCustomCalculatorConfig\n        ? escapeHtml(displayName)');
     expect(source).toContain("? (cfg.type && cfg.type !== displayName ? cfg.type : '')");
     expect(source).toContain('<div class="offerte-row-desc">${escapeHtml(descriptionLabel)}</div>');
+    expect(source).toContain('const storedName = inputs && inputs.compositionNames && inputs.compositionNames[configType];');
+    expect(source).toContain("const cfg = match ? match.cfg : { type: configType, omschrijving: storedName || '' };");
+    expect(source).toContain('omschrijving:cfg.omschrijving || storedName ||');
   });
 });

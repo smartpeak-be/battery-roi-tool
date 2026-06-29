@@ -61,8 +61,13 @@ function _serializeState() {
   // Strip empty lines (no description AND zero amount) at serialize-time.
   const meerkostLines = {};
   const compositionLines = {};
+  const compositionNames = {};
   (d.configResults || []).forEach(cr => {
     if (!cr.cfg) return;
+    if (typeof cr.cfg.type === 'string' && cr.cfg.type.startsWith('CUSTOM_')) {
+      const name = String(cr.cfg.omschrijving || cr.cfg.description || cr.cfg.name || '').trim();
+      if (name) compositionNames[cr.cfg.type] = name;
+    }
     if (Array.isArray(cr.cfg.compositionLines)) {
       const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
         inspectionProductId: _inspectionProduct && _inspectionProduct.id,
@@ -90,6 +95,7 @@ function _serializeState() {
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
     meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
     compositionLines: Object.keys(compositionLines).length > 0 ? compositionLines : null,
+    compositionNames: Object.keys(compositionNames).length > 0 ? compositionNames : null,
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
@@ -214,6 +220,9 @@ function _compositionMapToMeerkostLines(map) {
 
 function _applyLoadedState(state, showBanner) {
   if (!state || ![1,2,3,4,5,6].includes(state.v)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
+  _restoredCompositionNames = state.v === 6 && state.compositionNames && typeof state.compositionNames === 'object'
+    ? { ...state.compositionNames }
+    : {};
   const f = state.form || {};
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val != null ? val : ''; };
   set('pvInverter',    f.pvInv);
@@ -270,6 +279,7 @@ let _inspectionProduct = null;
 let _suppressProjectCalcAutoSave = false;
 let _compositionLinesByType = {};
 let _customCompositions = {};
+let _restoredCompositionNames = {};
 
 // Manual configs — keyed by type ('MANUAL_<timestamp>'). Same resolved shape as sheet configs.
 let _manualConfigs = {};
@@ -534,11 +544,15 @@ function _readMeerkostLinesFromDom() {
   return out;
 }
 
-function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositionLines = {}) {
+function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositionLines = {}, compositionNames = {}) {
   selectedTypes.filter(Boolean).forEach(type => {
     if (_customCompositions[type]) return;
     if (type.startsWith('CUSTOM_')) {
-      _customCompositions[type] = { type, name: 'Samenstelling uit opgeslagen berekening', baseProductConfigId: '' };
+      _customCompositions[type] = {
+        type,
+        name: compositionNames[type] || 'Samenstelling uit opgeslagen berekening',
+        baseProductConfigId: '',
+      };
       return;
     }
     const cfg = (_sheetConfigs || []).find(c => c.type === type && c.source === 'productConfig');
@@ -595,7 +609,7 @@ function renderConfigPickers(selectedTypes = null, _meerkostLines = null, compos
   if (compositionLines && typeof compositionLines === 'object') {
     _compositionLinesByType = { ..._compositionLinesByType, ...compositionLines };
   }
-  if (selectedTypes) _restoreSelectedTypesAsCustomCompositions(selectedTypes, compositionLines || {});
+  if (selectedTypes) _restoreSelectedTypesAsCustomCompositions(selectedTypes, compositionLines || {}, _restoredCompositionNames || {});
   const cards = Object.values(_customCompositions).map(_customCompositionCardHtml).join('');
   list.innerHTML = `
     <div class="composition-start-panel" style="border:1px solid var(--border);border-radius:10px;padding:12px;background:rgba(59,130,246,.06);">
@@ -1439,8 +1453,13 @@ async function saveProjectCalcRun(d) {
   // Build adjustable lines from configResults.
   const meerkostLines = {};
   const compositionLines = {};
+  const compositionNames = {};
   (d.configResults || []).forEach(cr => {
     if (!cr.cfg) return;
+    if (typeof cr.cfg.type === 'string' && cr.cfg.type.startsWith('CUSTOM_')) {
+      const name = String(cr.cfg.omschrijving || cr.cfg.description || cr.cfg.name || '').trim();
+      if (name) compositionNames[cr.cfg.type] = name;
+    }
     if (Array.isArray(cr.cfg.compositionLines)) {
       const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
         inspectionProductId: _inspectionProduct && _inspectionProduct.id,
@@ -1485,6 +1504,7 @@ async function saveProjectCalcRun(d) {
       selectedConfigTypes,
       meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
       compositionLines: Object.keys(compositionLines).length > 0 ? compositionLines : null,
+      compositionNames: Object.keys(compositionNames).length > 0 ? compositionNames : null,
     },
     results,
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
@@ -2168,6 +2188,9 @@ function buildSavedFromProject(proj) {
   const compositionLines = (inputs.compositionLines && Object.keys(inputs.compositionLines).length > 0)
     ? inputs.compositionLines
     : null;
+  const compositionNames = (inputs.compositionNames && Object.keys(inputs.compositionNames).length > 0)
+    ? inputs.compositionNames
+    : null;
   return {
     v: 6,
     form: {
@@ -2179,6 +2202,7 @@ function buildSavedFromProject(proj) {
     manualConfigs: proj.manualConfigs || {},
     meerkostLines: meerkostLines || null,
     compositionLines,
+    compositionNames,
     r,
   };
 }

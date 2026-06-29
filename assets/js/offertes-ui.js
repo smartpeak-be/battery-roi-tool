@@ -41,14 +41,16 @@ function ensureOfferteModal() {
 
 function _findConfigByType(project, configType) {
   const results = project.lastCalcRun && project.lastCalcRun.results;
+  const inputs = project.lastCalcRun && project.lastCalcRun.inputs;
   const cfgResults = results && Array.isArray(results.configResults) ? results.configResults : [];
   const match = cfgResults.find(cr => cr.cfg && cr.cfg.type === configType);
-  const cfg = match ? match.cfg : { type: configType, omschrijving: '' };
+  const storedName = inputs && inputs.compositionNames && inputs.compositionNames[configType];
+  const cfg = match ? match.cfg : { type: configType, omschrijving: storedName || '' };
   const priceKey = _getProjectPriceKey(project);
   const priceEur = cfg.price || (cfg.prices && cfg.prices[priceKey]) || 0;
   return {
     type:        cfg.type || configType,
-    omschrijving:cfg.omschrijving || '',
+    omschrijving:cfg.omschrijving || storedName || '',
     batCap:      cfg.batCap || null,
     batInv:      cfg.batInv || null,
     priceEur,

@@ -26,6 +26,10 @@ describe('index custom composition UI', () => {
     expect(source).toContain('value="installation_extra"');
     expect(source).toContain("kindValue === 'installation_extra'");
     expect(source).toContain("ln.kind === 'installation_extra'");
+    expect(source).toContain('const compositionNames = {};');
+    expect(source).toContain('compositionNames[cr.cfg.type] = name;');
+    expect(source).toContain('compositionNames: Object.keys(compositionNames).length > 0 ? compositionNames : null');
+    expect(source).toContain('_restoredCompositionNames = state.v === 6 && state.compositionNames');
   });
 
   it('renders a project-mode quote button for calculated custom compositions without clearing project context on restore', () => {
