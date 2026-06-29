@@ -89,7 +89,10 @@ function renderOffertesCards(project) {
     const fileRow = pdf
       ? `<div class="offerte-row-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> ${escapeHtml(pdf.filename || '')}</div>`
       : `<div class="offerte-row-pdf" style="color:var(--sp-muted);">Nog geen offerte</div>`;
-    const canCreateOffer = cfg.productConfigId || (typeof window.isProductConfig === 'function' && window.isProductConfig(t));
+    const isManual = typeof window.isManualConfig === 'function' && window.isManualConfig(t);
+    const isProductConfig = typeof window.isProductConfig === 'function' && window.isProductConfig(t);
+    const isCustomCalculatorConfig = typeof t === 'string' && t.startsWith('CUSTOM_');
+    const canCreateOffer = !isManual && (cfg.productConfigId || isProductConfig || isCustomCalculatorConfig);
     const createOfferAction = canCreateOffer
       ? `<button class="btn btn-sm btn-outline-success offerte-create-btn" data-offerte-action data-type="${escapeHtml(t)}" title="Omzetten naar Billit-offerte" aria-label="Omzetten naar Billit-offerte"><i class="fa-solid fa-file-invoice" aria-hidden="true"></i></button>`
       : '';
@@ -103,7 +106,6 @@ function renderOffertesCards(project) {
          ${createOfferAction}
          <button class="btn btn-sm btn-outline-danger  offerte-trash-btn"      data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen" aria-label="Config verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
 
-    const isManual = typeof window.isManualConfig === 'function' && window.isManualConfig(t);
     const titleLabel = isManual
       ? `<span class="badge bg-primary" style="font-size:0.65rem; vertical-align:middle; margin-right:4px;">Manueel</span>${escapeHtml(cfg.omschrijving)}`
       : escapeHtml(cfg.type);

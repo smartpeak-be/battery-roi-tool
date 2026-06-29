@@ -18,4 +18,11 @@ describe('offertes-ui quote preview action', () => {
     expect(quotePreviewSource).toContain('amountInclVat / (1 + vat / 100)');
     expect(quotePreviewSource).not.toContain('<iframe');
   });
+
+  it('toont ook een offerteknop voor custom calculator-configs in project/drawer lijst', () => {
+    expect(source).toContain("const isCustomCalculatorConfig = typeof t === 'string' && t.startsWith('CUSTOM_');");
+    expect(source).toContain('const canCreateOffer = !isManual && (cfg.productConfigId || isProductConfig || isCustomCalculatorConfig);');
+    expect(source).toContain('offerte-create-btn');
+    expect(source).toContain('buildQuoteContextFromProjectConfig(project, type');
+  });
 });
