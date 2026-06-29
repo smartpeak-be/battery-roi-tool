@@ -116,6 +116,17 @@ async function loadQuoteData(context = {}) {
   _allConfigs = configs || [];
   _settings = settings || {};
   _quoteProjects = projects || [];
+  if (context.configType && !context.configId && String(context.configType).startsWith('CUSTOM_')) {
+    const customName = String(context.customConfigName || context.calculatedLine?.description || 'Samenstelling uit calculator').trim();
+    if (!_allConfigs.some(c => c.id === context.configType)) {
+      _allConfigs.unshift({
+        id: context.configType,
+        name: customName || 'Samenstelling uit calculator',
+        isActive: true,
+        items: [],
+      });
+    }
+  }
   if (context.project && context.project.id && !_quoteProjects.some(p => p.id === context.project.id)) {
     _quoteProjects.unshift(context.project);
   }
@@ -136,7 +147,10 @@ async function openQuoteModal(context = {}, options = {}) {
 
 function buildQuoteModalHtml(context = {}) {
   const selectedVat = Number(context.vat) === 6 ? 6 : 21;
-  const useCalculatedLine = Boolean(context.calculatedLine?.amountInclVat);
+  const hasContextCompositionLines = (Array.isArray(context.extraProducts) && context.extraProducts.length > 0)
+    || (Array.isArray(context.manualLines) && context.manualLines.length > 0)
+    || Number(context.discount?.value) > 0;
+  const useCalculatedLine = Boolean(context.calculatedLine?.amountInclVat) && !hasContextCompositionLines;
   const discount = useCalculatedLine ? {} : (context.discount || {});
   const discountType = discount.type === 'percent' ? 'percent' : 'fixed';
   const discountValue = Number(discount.value) > 0 ? Number(discount.value) : '';
@@ -148,8 +162,9 @@ function buildQuoteModalHtml(context = {}) {
   const manualRows = sourceManualLines
     .map(row => quoteManualLineRowHtml({ ...row, vat: row.vat || selectedVat }))
     .join('');
+  const selectedConfigId = context.configId || (String(context.configType || '').startsWith('CUSTOM_') ? context.configType : '');
   const configOptions = _allConfigs.filter(c => c.isActive !== false).map(c => (
-    `<option value="${escapeAttr(c.id)}" ${context.configId === c.id ? 'selected' : ''}>${escapeHtml(c.name || '(zonder naam)')}</option>`
+    `<option value="${escapeAttr(c.id)}" ${selectedConfigId === c.id ? 'selected' : ''}>${escapeHtml(c.name || '(zonder naam)')}</option>`
   )).join('');
   const projectOptions = (_quoteProjects || []).map(p => (
     `<option value="${escapeAttr(p.id)}" ${context.projectId === p.id ? 'selected' : ''}>${escapeHtml(p.projectName || p.customerName || '(zonder naam)')}</option>`

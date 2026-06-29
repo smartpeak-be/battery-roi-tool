@@ -171,6 +171,7 @@ let _settings = {};
 let _allConfigs = [];
 let _editingConfigId = null;
 let _quoteProjects = [];
+let _quoteVirtualConfig = null;
 let _quoteModalOpenedFromUrl = false;
 
 async function seedDefaultCategories() {
@@ -1583,6 +1584,14 @@ async function openQuoteModal(context = {}) {
     console.warn('Projecten laden voor offerte-preview mislukt', e);
   }
   _quoteProjects = projects || [];
+  const hasCustomCalculatorComposition = !context.configId && Array.isArray(context.extraProducts) && context.extraProducts.length > 0;
+  _quoteVirtualConfig = hasCustomCalculatorComposition ? {
+    id: '__calculator_custom__',
+    name: context.customConfigName || 'Samenstelling uit calculator',
+    items: [],
+    isVirtual: true,
+  } : null;
+  if (_quoteVirtualConfig) context.configId = _quoteVirtualConfig.id;
   body.innerHTML = buildQuoteModalHtml(projects, context);
   wireQuoteModal();
   updateQuotePreview();
@@ -1599,7 +1608,8 @@ function buildQuoteModalHtml(projects, context = {}) {
   const manualRows = (Array.isArray(context.manualLines) ? context.manualLines : [])
     .map(row => quoteManualLineRowHtml({ ...row, vat: row.vat || selectedVat }))
     .join('');
-  const configOptions = _allConfigs.filter(c => c.isActive !== false).map(c => (
+  const quoteConfigs = _quoteVirtualConfig ? [_quoteVirtualConfig, ..._allConfigs] : _allConfigs;
+  const configOptions = quoteConfigs.filter(c => c.isActive !== false).map(c => (
     `<option value="${escapeAttr(c.id)}" ${context.configId === c.id ? 'selected' : ''}>${escapeHtml(c.name || '(zonder naam)')}</option>`
   )).join('');
   const projectOptions = (projects || []).map(p => (
@@ -1866,7 +1876,8 @@ function groupedQuoteIncl(groups, productsById) {
 }
 
 function buildQuoteComputation() {
-  const cfg = _allConfigs.find(c => c.id === document.getElementById('quoteConfig')?.value);
+  const quoteConfigs = _quoteVirtualConfig ? [_quoteVirtualConfig, ..._allConfigs] : _allConfigs;
+  const cfg = quoteConfigs.find(c => c.id === document.getElementById('quoteConfig')?.value);
   if (!cfg) return null;
   const { productsById, categoriesById } = _maps();
   const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
@@ -2034,7 +2045,8 @@ function buildBillitOfferPayloadForComputed(computed) {
 
 function billitConfigTypeForComputed(computed) {
   const explicitType = document.getElementById('quoteConfigType')?.value || '';
-  const fallbackType = computed?.cfg?.id ? `PC_${computed.cfg.id}` : '';
+  const fallbackType = computed?.cfg?.id && !computed?.cfg?.isVirtual ? `PC_${computed.cfg.id}` : '';
+  if (computed?.cfg?.isVirtual && explicitType) return explicitType;
   if (explicitType && (!fallbackType || explicitType === fallbackType)) return explicitType;
   return fallbackType;
 }
@@ -2061,7 +2073,7 @@ async function attachBillitPdfToProjectConfig(computed, pdf, billitId) {
     source: 'billit',
     billitOrderId: String(billitId),
     billitFileName: pdf.fileName || file.name,
-    productConfigId: computed.cfg.id || null,
+    productConfigId: computed.cfg.isVirtual ? null : (computed.cfg.id || null),
   });
 }
 

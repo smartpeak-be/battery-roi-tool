@@ -41,14 +41,16 @@ function ensureOfferteModal() {
 
 function _findConfigByType(project, configType) {
   const results = project.lastCalcRun && project.lastCalcRun.results;
+  const inputs = project.lastCalcRun && project.lastCalcRun.inputs;
   const cfgResults = results && Array.isArray(results.configResults) ? results.configResults : [];
   const match = cfgResults.find(cr => cr.cfg && cr.cfg.type === configType);
-  const cfg = match ? match.cfg : { type: configType, omschrijving: '' };
+  const storedName = inputs && inputs.compositionNames && inputs.compositionNames[configType];
+  const cfg = match ? match.cfg : { type: configType, omschrijving: storedName || '' };
   const priceKey = _getProjectPriceKey(project);
   const priceEur = cfg.price || (cfg.prices && cfg.prices[priceKey]) || 0;
   return {
     type:        cfg.type || configType,
-    omschrijving:cfg.omschrijving || '',
+    omschrijving:cfg.omschrijving || storedName || '',
     batCap:      cfg.batCap || null,
     batInv:      cfg.batInv || null,
     priceEur,
@@ -89,7 +91,10 @@ function renderOffertesCards(project) {
     const fileRow = pdf
       ? `<div class="offerte-row-pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> ${escapeHtml(pdf.filename || '')}</div>`
       : `<div class="offerte-row-pdf" style="color:var(--sp-muted);">Nog geen offerte</div>`;
-    const canCreateOffer = cfg.productConfigId || (typeof window.isProductConfig === 'function' && window.isProductConfig(t));
+    const isManual = typeof window.isManualConfig === 'function' && window.isManualConfig(t);
+    const isProductConfig = typeof window.isProductConfig === 'function' && window.isProductConfig(t);
+    const isCustomCalculatorConfig = typeof t === 'string' && t.startsWith('CUSTOM_');
+    const canCreateOffer = !isManual && (cfg.productConfigId || isProductConfig || isCustomCalculatorConfig);
     const createOfferAction = canCreateOffer
       ? `<button class="btn btn-sm btn-outline-success offerte-create-btn" data-offerte-action data-type="${escapeHtml(t)}" title="Omzetten naar Billit-offerte" aria-label="Omzetten naar Billit-offerte"><i class="fa-solid fa-file-invoice" aria-hidden="true"></i></button>`
       : '';
@@ -103,10 +108,17 @@ function renderOffertesCards(project) {
          ${createOfferAction}
          <button class="btn btn-sm btn-outline-danger  offerte-trash-btn"      data-offerte-action data-type="${escapeHtml(t)}" title="Config verwijderen" aria-label="Config verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
 
-    const isManual = typeof window.isManualConfig === 'function' && window.isManualConfig(t);
+    const displayName = cfg.omschrijving || cfg.type;
     const titleLabel = isManual
-      ? `<span class="badge bg-primary" style="font-size:0.65rem; vertical-align:middle; margin-right:4px;">Manueel</span>${escapeHtml(cfg.omschrijving)}`
-      : escapeHtml(cfg.type);
+      ? `<span class="badge bg-primary" style="font-size:0.65rem; vertical-align:middle; margin-right:4px;">Manueel</span>${escapeHtml(displayName)}`
+      : isCustomCalculatorConfig
+        ? escapeHtml(displayName)
+        : escapeHtml(cfg.type);
+    const descriptionLabel = isManual
+      ? ''
+      : isCustomCalculatorConfig
+        ? (cfg.type && cfg.type !== displayName ? cfg.type : '')
+        : (cfg.omschrijving || '');
 
     return `
       <div class="col">
@@ -115,7 +127,7 @@ function renderOffertesCards(project) {
             ${iconState}
             <span class="offerte-row-title">${titleLabel}</span>
           </div>
-          <div class="offerte-row-desc">${isManual ? '' : escapeHtml(cfg.omschrijving || '')}</div>
+          <div class="offerte-row-desc">${escapeHtml(descriptionLabel)}</div>
           <div class="offerte-row-meta">
             € ${_formatEuros(cfg.priceEur)}${cfg.batCap ? ' · ' + escapeHtml(String(cfg.batCap)) + ' kWh' : ''}${cfg.batInv ? ' · ' + escapeHtml(String(cfg.batInv)) + ' kW' : ''}
           </div>
@@ -168,8 +180,8 @@ function wireOffertesClicks(containerEl, getProjectFn, onChange) {
         const context = quoteTools.buildQuoteContextFromProjectConfig(project, type, {
           vat: (typeof effectiveBtwFor === 'function') ? effectiveBtwFor(project) : 21,
         });
-        if (!context.configId) {
-          throw new Error('Deze configuratie kan nog niet automatisch naar de offerte-preview worden doorgestuurd.');
+        if (!context.configId && (!Array.isArray(context.extraProducts) || context.extraProducts.length === 0)) {
+          throw new Error('Deze configuratie bevat geen productlijnen voor de offerte-preview.');
         }
         window.SmartPeakQuotePreview.openQuoteModal(context, {
           onBillitPdfAttached: () => onChange && onChange(),

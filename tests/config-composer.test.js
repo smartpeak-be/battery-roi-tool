@@ -26,11 +26,13 @@ const baseConfig = {
 const products = [
   { id: 'inspection', brand: '', model: 'Keuring', purchasePrice: 150, marginType: 'fixed', marginValue: 0, serviceKey: 'inspection', specs: { serviceKey: 'inspection' } },
   { id: 'shelf', brand: 'Rack', model: 'Batterijschap', purchasePrice: 100, marginType: 'fixed', marginValue: 50, specs: {} },
-  { id: 'battery', categoryId: 'battery-cat', brand: 'Zendure', model: 'AB3000X', purchasePrice: 500, marginType: 'fixed', marginValue: 100, specs: { weightKg: 27.8 } },
+  { id: 'battery', categoryId: 'battery-cat', brand: 'Zendure', model: 'AB3000X', purchasePrice: 500, marginType: 'fixed', marginValue: 100, specs: { capacityKwh: 3.84, weightKg: 27.8 } },
+  { id: 'inverter', categoryId: 'inverter-cat', brand: 'Zendure', model: 'Solarflow 2400 AC', purchasePrice: 800, marginType: 'fixed', marginValue: 200, specs: { inverterPowerKw: 2.4, efficiency: 93 } },
 ];
 
 const categories = [
   { id: 'battery-cat', slug: 'batterijen', name: 'Batterijen' },
+  { id: 'inverter-cat', slug: 'omvormers', name: 'Omvormers' },
 ];
 
 describe('config composer', () => {
@@ -106,7 +108,33 @@ describe('config composer', () => {
     ]);
   });
 
+  it('resolves from-scratch product lines into calculator capacity, power and price', () => {
+    const resolved = resolveCompositionToCalculatorConfig({
+      type: 'CUSTOM_1',
+      source: 'customComposition',
+      omschrijving: 'Nieuwe samenstelling',
+      prices: { '6_no': 0, '6_yes': 0, '21_no': 0, '21_yes': 0 },
+      items: [],
+    }, {
+      type: 'CUSTOM_1',
+      lines: [
+        { id: 'battery-line', kind: 'product', productId: 'battery', qty: 2, vat: 6 },
+        { id: 'inverter-line', kind: 'product', productId: 'inverter', qty: 1, vat: 6 },
+      ],
+    }, products, { btwPercent: 6, categories, bebatPricePerKg: 0 });
+
+    expect(resolved.batCap).toBeCloseTo(7.68);
+    expect(resolved.batInv).toBeCloseTo(2.4);
+    expect(resolved.eff).toBeCloseTo(0.93);
+    expect(resolved.price).toBeCloseTo(((500 + 100) * 2 + (800 + 200)) * 1.06);
+    expect(resolved.omschrijving).toContain('2x Zendure AB3000X');
+    expect(resolved.compositionLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'product', productId: 'battery', qty: 2 }),
+      expect.objectContaining({ kind: 'product', productId: 'inverter', qty: 1 }),
+    ]));
+  });
+
   it('hides inspection products from composer product choices', () => {
-    expect(selectableComposerProducts(products).map(p => p.id)).toEqual(['shelf', 'battery']);
+    expect(selectableComposerProducts(products).map(p => p.id)).toEqual(['shelf', 'battery', 'inverter']);
   });
 });

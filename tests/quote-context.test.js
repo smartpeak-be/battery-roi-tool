@@ -48,6 +48,45 @@ describe('quote context handoff', () => {
     expect(context.discount).toEqual({ type: 'fixed', value: 50 });
   });
 
+  it('hands custom calculator compositions to quote preview without a stored base config', () => {
+    const project = {
+      id: 'project-1',
+      lastCalcRun: {
+        results: {
+          configResults: [{
+            cfg: {
+              type: 'CUSTOM_123',
+              omschrijving: '2x Zendure AB3000X & Zendure Solarflow 2400 AC',
+              price: 2400,
+              compositionLines: [
+                { id: 'battery', kind: 'product', productId: 'battery', qty: 2, vat: 6, amountExVat: 600 },
+                { id: 'inverter', kind: 'product', productId: 'inverter', qty: 1, vat: 6, amountExVat: 1000 },
+                { id: 'manual', kind: 'manual', description: 'Extra kabel', amountExVat: 75, vat: 6 },
+                { id: 'install-extra', kind: 'installation_extra', description: 'Extra plaatsing', amountExVat: 125, vat: 6 },
+                { id: 'discount', kind: 'discount', description: 'Actiekorting', amountExVat: -80, vat: 6 },
+              ],
+            },
+          }],
+        },
+      },
+    };
+
+    const context = buildQuoteContextFromProjectConfig(project, 'CUSTOM_123', { vat: 6 });
+
+    expect(context.configId).toBe('');
+    expect(context.customConfigName).toBe('2x Zendure AB3000X & Zendure Solarflow 2400 AC');
+    expect(context.configType).toBe('CUSTOM_123');
+    expect(context.extraProducts).toEqual([
+      { productId: 'battery', qty: 2, vat: 6 },
+      { productId: 'inverter', qty: 1, vat: 6 },
+    ]);
+    expect(context.manualLines).toEqual([
+      { kind: 'line', description: 'Extra kabel', priceExVat: 75, vat: 6 },
+      { kind: 'installation_extra', description: 'Extra plaatsing', priceExVat: 125, vat: 6 },
+    ]);
+    expect(context.discount).toEqual({ type: 'fixed', value: 80 });
+  });
+
   it('round-trips quote context through URL-safe base64', () => {
     const input = {
       projectId: 'p-ä',

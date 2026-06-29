@@ -18,4 +18,21 @@ describe('offertes-ui quote preview action', () => {
     expect(quotePreviewSource).toContain('amountInclVat / (1 + vat / 100)');
     expect(quotePreviewSource).not.toContain('<iframe');
   });
+
+  it('toont ook een offerteknop voor custom calculator-configs in project/drawer lijst', () => {
+    expect(source).toContain("const isCustomCalculatorConfig = typeof t === 'string' && t.startsWith('CUSTOM_');");
+    expect(source).toContain('const canCreateOffer = !isManual && (cfg.productConfigId || isProductConfig || isCustomCalculatorConfig);');
+    expect(source).toContain('offerte-create-btn');
+    expect(source).toContain('buildQuoteContextFromProjectConfig(project, type');
+  });
+
+  it('gebruikt de opgegeven custom samenstellingsnaam als titel in de project/offerte-lijst', () => {
+    expect(source).toContain('const displayName = cfg.omschrijving || cfg.type;');
+    expect(source).toContain('isCustomCalculatorConfig\n        ? escapeHtml(displayName)');
+    expect(source).toContain("? (cfg.type && cfg.type !== displayName ? cfg.type : '')");
+    expect(source).toContain('<div class="offerte-row-desc">${escapeHtml(descriptionLabel)}</div>');
+    expect(source).toContain('const storedName = inputs && inputs.compositionNames && inputs.compositionNames[configType];');
+    expect(source).toContain("const cfg = match ? match.cfg : { type: configType, omschrijving: storedName || '' };");
+    expect(source).toContain('omschrijving:cfg.omschrijving || storedName ||');
+  });
 });
