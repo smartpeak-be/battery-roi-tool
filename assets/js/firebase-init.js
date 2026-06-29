@@ -972,9 +972,10 @@ function hasUnreadComments(project, email) {
 function isMarstekConfig(type) { return typeof type === 'string' && type.startsWith('MARVE'); }
 function isZendureConfig(type) { return typeof type === 'string' && type.startsWith('ZSF'); }
 function isProductConfig(type) { return typeof type === 'string' && type.startsWith('PC_'); }
+function isCustomCalculatorConfig(type) { return typeof type === 'string' && type.startsWith('CUSTOM_'); }
 function isSupportedConfig(type) { return isMarstekConfig(type) || isZendureConfig(type); }
 function isManualConfig(type) { return typeof type === 'string' && type.startsWith('MANUAL_'); }
-function isGroundFaultIgnoredConfig(type) { return isManualConfig(type) || isProductConfig(type); }
+function isGroundFaultIgnoredConfig(type) { return isManualConfig(type) || isProductConfig(type) || isCustomCalculatorConfig(type); }
 
 // Returns: false (no warning), 'no-measurement' (warning), 'unsupported' (error)
 function groundFaultStatus(project) {
@@ -2804,6 +2805,7 @@ window.isZendureConfig = isZendureConfig;
 window.isSupportedConfig = isSupportedConfig;
 window.isManualConfig = isManualConfig;
 window.isProductConfig = isProductConfig;
+window.isCustomCalculatorConfig = isCustomCalculatorConfig;
 window.getSettings = getSettings;
 window.saveSettings = saveSettings;
 window.createReviewRequestForProject = createReviewRequestForProject;

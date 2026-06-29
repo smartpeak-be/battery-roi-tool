@@ -81,6 +81,18 @@ describe('ground fault measurement status', () => {
 
     expect(groundFaultStatus(project)).toBe(false);
   });
+
+  it('negeert product- en custom calculatorconfiguraties voor de oude Zendure/Marstek-waarschuwing', () => {
+    const { groundFaultStatus, window } = loadHelpers();
+    const project = {
+      lastCalcRun: { inputs: { selectedConfigTypes: ['PC_catalog_1', 'CUSTOM_abc'] } },
+      cabinet: { lineGroundChecked: null },
+      technical: { voltageMeasurements: {} },
+    };
+
+    expect(window.isCustomCalculatorConfig('CUSTOM_abc')).toBe(true);
+    expect(groundFaultStatus(project)).toBe(false);
+  });
 });
 
 describe('firebase helper signatures (existence smoke-test)', () => {
