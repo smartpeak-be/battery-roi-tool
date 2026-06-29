@@ -28,11 +28,14 @@ describe('index custom composition UI', () => {
     expect(source).toContain("ln.kind === 'installation_extra'");
   });
 
-  it('renders a project-mode quote button for calculated custom compositions', () => {
+  it('renders a project-mode quote button for calculated custom compositions without clearing project context on restore', () => {
     expect(source).toContain('function quotePreviewUrlForCalculatedConfig');
     expect(source).toContain('buildQuoteContextFromProjectConfig(project, configType');
     expect(source).toContain('buildQuoteContextUrl(context, \'producten-beheer.html\')');
     expect(source).toContain('Offerte maken ↗');
     expect(source).toContain('${quoteBtn}');
+    expect(source).toContain('let _suppressProjectCalcAutoSave = false;');
+    expect(source).toContain('if (_projectId && _projectDoc && !_suppressProjectCalcAutoSave)');
+    expect(source).not.toContain('_projectDoc = null;\n      _applyLoadedState(restored, /*showBanner*/ false);');
   });
 });

@@ -267,6 +267,7 @@ let _sheetProducts = [];
 let _sheetCategories = [];
 let _settings = {};
 let _inspectionProduct = null;
+let _suppressProjectCalcAutoSave = false;
 let _compositionLinesByType = {};
 let _customCompositions = {};
 
@@ -1356,7 +1357,7 @@ function renderResults(d) {
   renderEnergyChart(d);
 
   // Auto-save to Firestore if we're in project-mode
-  if (_projectId && _projectDoc) {
+  if (_projectId && _projectDoc && !_suppressProjectCalcAutoSave) {
     saveProjectCalcRun(d).catch(err => {
       console.error('Auto-save failed:', err);
       showToast('⚠️ Niet opgeslagen — controleer netwerk');
@@ -1371,17 +1372,16 @@ async function renderResultsAsync(d) {
   document.getElementById('results').style.display = 'block';
   document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Temporarily disable auto-save in renderResults by clearing the project context
-  const tempProjectId = _projectId;
-  const tempProjectDoc = _projectDoc;
-  _projectId = null;
-  _projectDoc = null;
-
-  renderResults(d);
-
-  // Restore project context
-  _projectId = tempProjectId;
-  _projectDoc = tempProjectDoc;
+  // Temporarily disable auto-save in renderResults without clearing project context.
+  // The project context is needed while rendering saved results so per-config
+  // actions such as "Offerte maken" can build their handoff URL.
+  const prevSuppressProjectCalcAutoSave = _suppressProjectCalcAutoSave;
+  _suppressProjectCalcAutoSave = true;
+  try {
+    renderResults(d);
+  } finally {
+    _suppressProjectCalcAutoSave = prevSuppressProjectCalcAutoSave;
+  }
 
   // Now do the save and wait for it
   if (_projectId && _projectDoc) {
@@ -2002,10 +2002,13 @@ async function loadProjectIntoUI(id) {
       // configResults may have a pre-v:6 cfg shape (no cfg.meerkostLines), so an
       // auto-save here would write meerkostLines:null and clobber the migration
       // below. Once the user clicks Bereken, the fresh save uses the new shape.
-      const _savedProjectDoc = _projectDoc;
-      _projectDoc = null;
-      _applyLoadedState(restored, /*showBanner*/ false);
-      _projectDoc = _savedProjectDoc;
+      const prevSuppressProjectCalcAutoSave = _suppressProjectCalcAutoSave;
+      _suppressProjectCalcAutoSave = true;
+      try {
+        _applyLoadedState(restored, /*showBanner*/ false);
+      } finally {
+        _suppressProjectCalcAutoSave = prevSuppressProjectCalcAutoSave;
+      }
 
       // One-time write-migration: legacy meerkostMap → meerkostLines on first open
       // in a post-v:6 build. Skipped if already migrated. Failure is non-blocking.
