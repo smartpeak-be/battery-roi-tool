@@ -1,0 +1,38 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+const source = readFileSync(new URL('../assets/js/pages/index-app.js', import.meta.url), 'utf8');
+
+describe('index custom composition UI', () => {
+  it('shows only two starter buttons and moves existing-config search into a modal', () => {
+    const renderStartPanel = source.slice(source.indexOf('function renderConfigPickers'), source.indexOf('// Legacy shim'));
+    expect(renderStartPanel).toContain('id="startEmptyComposition"');
+    expect(renderStartPanel).toContain('Leeg starten');
+    expect(renderStartPanel).toContain('id="startFromComposition"');
+    expect(renderStartPanel).toContain('Starten van bestaande');
+    expect(renderStartPanel).not.toContain('id="compositionSearch"');
+    expect(renderStartPanel).not.toContain('id="baseCompositionSelect"');
+
+    expect(source).toContain('function _ensureBaseCompositionModal');
+    expect(source).toContain('id="compositionSearch"');
+    expect(source).toContain('id="baseCompositionSelect"');
+    expect(source).toContain('id="baseCompositionUse"');
+    expect(source).toContain('_openBaseCompositionModal();');
+  });
+
+  it('lets custom compositions keep an explicit name and supports installation extra lines', () => {
+    expect(source).toContain('id="composerCompositionName"');
+    expect(source).toContain('const explicitName = (modal.querySelector(\'#composerCompositionName\')?.value || \'\').trim();');
+    expect(source).toContain('value="installation_extra"');
+    expect(source).toContain("kindValue === 'installation_extra'");
+    expect(source).toContain("ln.kind === 'installation_extra'");
+  });
+
+  it('renders a project-mode quote button for calculated custom compositions', () => {
+    expect(source).toContain('function quotePreviewUrlForCalculatedConfig');
+    expect(source).toContain('buildQuoteContextFromProjectConfig(project, configType');
+    expect(source).toContain('buildQuoteContextUrl(context, \'producten-beheer.html\')');
+    expect(source).toContain('Offerte maken ↗');
+    expect(source).toContain('${quoteBtn}');
+  });
+});

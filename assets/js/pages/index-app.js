@@ -15,6 +15,10 @@ import {
   selectableComposerProducts,
   serializeCompositionLines,
 } from '../config-composer.js';
+import {
+  buildQuoteContextFromProjectConfig,
+  buildQuoteContextUrl,
+} from '../quote-context.js';
 
 // ─── CSV PARSER ────────────────────────────────────────────────────────────────
 // CSV helpers (parseCSV, parseDate, parsVolume) are in assets/js/csv.js
@@ -348,7 +352,7 @@ function _startFromSelectedComposition() {
   const cfg = (_sheetConfigs || []).find(c => c.type === type && c.source === 'productConfig');
   if (!cfg) {
     alert('Kies eerst een bestaande samenstelling.');
-    return;
+    return false;
   }
   _createCustomComposition({
     name: cfg.omschrijving || cfg.productConfigName || 'Samenstelling',
@@ -356,6 +360,19 @@ function _startFromSelectedComposition() {
     baseProductConfigId: cfg.productConfigId || '',
     lines: _productLinesForConfig(cfg),
   });
+  return true;
+}
+
+function _openBaseCompositionModal() {
+  const modal = _ensureBaseCompositionModal();
+  modal.style.display = 'flex';
+  _renderBaseCompositionOptions();
+  setTimeout(() => document.getElementById('compositionSearch')?.focus(), 0);
+}
+
+function _closeBaseCompositionModal() {
+  const modal = document.getElementById('baseCompositionModal');
+  if (modal) modal.style.display = 'none';
 }
 
 function _filteredBaseConfigs() {
@@ -378,6 +395,52 @@ function _renderBaseCompositionOptions(selected = '') {
     </option>`).join('');
   const select = document.getElementById('baseCompositionSelect');
   if (select) select.innerHTML = `<option value="">— Zoek/kies bestaande samenstelling —</option>${opts}`;
+}
+
+function _ensureBaseCompositionModal() {
+  let modal = document.getElementById('baseCompositionModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'baseCompositionModal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px;';
+  modal.innerHTML = `
+    <div role="dialog" aria-modal="true" aria-labelledby="baseCompositionModalTitle" style="background:var(--card-bg,#fff);color:var(--text,#111);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(760px,100%);max-height:88vh;display:flex;flex-direction:column;">
+      <div style="padding:18px 20px;border-bottom:1px solid var(--border,#ddd);display:flex;justify-content:space-between;gap:12px;align-items:center;">
+        <h3 id="baseCompositionModalTitle" style="margin:0;font-size:1.15rem;">Starten van bestaande samenstelling</h3>
+        <button type="button" class="btn btn-secondary" data-base-composition-close>Sluiten</button>
+      </div>
+      <div style="padding:18px 20px;overflow:auto;">
+        <p style="margin-top:0;color:var(--muted);">Kies een bestaande product-samenstelling als basis. Daarna kan je producten toevoegen/verwijderen en lijnen aanpassen.</p>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label>Zoeken</label>
+          <input type="search" id="compositionSearch" placeholder="Zoek op merk/model/naam..." value="">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>Bestaande samenstelling</label>
+          <select id="baseCompositionSelect" size="8" style="min-height:220px;"></select>
+        </div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border,#ddd);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-secondary" data-base-composition-close>Annuleren</button>
+        <button type="button" class="btn btn-calculate" id="baseCompositionUse" style="margin:0;">Starten met deze samenstelling</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => {
+    if (e.target === modal || e.target.closest('[data-base-composition-close]')) _closeBaseCompositionModal();
+    if (e.target.closest('#baseCompositionUse')) {
+      if (_startFromSelectedComposition()) _closeBaseCompositionModal();
+    }
+  });
+  modal.addEventListener('dblclick', e => {
+    if (e.target.closest('#baseCompositionSelect') && _startFromSelectedComposition()) _closeBaseCompositionModal();
+  });
+  modal.addEventListener('input', e => {
+    if (e.target && e.target.id === 'compositionSearch') {
+      _renderBaseCompositionOptions(document.getElementById('baseCompositionSelect')?.value || '');
+    }
+  });
+  return modal;
 }
 
 // Read the selected custom compositions, in DOM order.
@@ -500,10 +563,12 @@ function _customCompositionCardHtml(comp) {
   });
   const productCount = lines.filter(ln => ln.kind === 'product').length;
   const manualCount = lines.filter(ln => ln.kind === 'manual').length;
+  const installExtraCount = lines.filter(ln => ln.kind === 'installation_extra').length;
   const discountCount = lines.filter(ln => ln.kind === 'discount').length;
   const bits = [];
   if (productCount) bits.push(`${productCount} product${productCount === 1 ? '' : 'en'}`);
   if (manualCount) bits.push(`${manualCount} manueel`);
+  if (installExtraCount) bits.push(`${installExtraCount} installatiekost${installExtraCount === 1 ? '' : 'en'}`);
   if (discountCount) bits.push(`${discountCount} korting${discountCount === 1 ? '' : 'en'}`);
   const summary = bits.length ? bits.join(' · ') : 'nog leeg';
   return `
@@ -533,24 +598,14 @@ function renderConfigPickers(selectedTypes = null, _meerkostLines = null, compos
   const cards = Object.values(_customCompositions).map(_customCompositionCardHtml).join('');
   list.innerHTML = `
     <div class="composition-start-panel" style="border:1px solid var(--border);border-radius:10px;padding:12px;background:rgba(59,130,246,.06);">
-      <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button type="button" class="btn btn-calculate" id="startEmptyComposition" style="margin:0;"><i class="fa-solid fa-plus" aria-hidden="true"></i> Leeg starten</button>
-        <div class="form-group" style="min-width:220px;flex:1;margin:0;">
-          <label>Zoek bestaande samenstelling</label>
-          <input type="search" id="compositionSearch" placeholder="Zoek op merk/model/naam..." value="">
-        </div>
-        <div class="form-group" style="min-width:280px;flex:2;margin:0;">
-          <label>Start van bestaande samenstelling</label>
-          <select id="baseCompositionSelect"></select>
-        </div>
-        <button type="button" class="btn btn-secondary" id="startFromComposition" style="margin:0;">Gebruiken als basis</button>
+        <button type="button" class="btn btn-secondary" id="startFromComposition" style="margin:0;"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Starten van bestaande</button>
       </div>
-      <p style="margin:8px 0 0;color:var(--muted);font-size:.86rem;">Elke samenstelling is volledig bewerkbaar: producten toevoegen, verwijderen, manuele lijnen/kortingen toevoegen. Sheet-configs worden hier niet meer getoond.</p>
+      <p style="margin:8px 0 0;color:var(--muted);font-size:.86rem;">Elke samenstelling is volledig bewerkbaar: producten toevoegen, verwijderen, manuele lijnen, extra installatiekosten en kortingen toevoegen. Sheet-configs worden hier niet meer getoond.</p>
     </div>
     <div id="customCompositionCards">${cards || '<p class="text-muted" style="margin:12px 0 0;">Start leeg of kies een bestaande samenstelling als basis.</p>'}</div>
   `;
-  _renderBaseCompositionOptions();
-  document.getElementById('compositionSearch')?.addEventListener('input', () => _renderBaseCompositionOptions(document.getElementById('baseCompositionSelect')?.value || ''));
 }
 
 // Legacy shim — _applyLoadedState calls this name.
@@ -584,10 +639,11 @@ function _composerProductRowHtml(line = {}) {
 
 function _composerManualRowHtml(line = {}) {
   const isDiscount = line.kind === 'discount';
+  const isInstallationExtra = line.kind === 'installation_extra';
   const amount = Math.abs(Number(line.amountExVat) || 0);
   return `
-    <div class="composer-line composer-manual-row" data-line-id="${escapeHtml(line.id || _genMeerkostId())}" style="display:grid;grid-template-columns:135px minmax(180px,1fr) 120px 90px 44px;gap:8px;align-items:end;margin-bottom:8px;">
-      <div class="form-group" style="margin:0;"><label>Type</label><select class="composer-manual-kind"><option value="manual" ${!isDiscount ? 'selected' : ''}>Manuele lijn</option><option value="discount" ${isDiscount ? 'selected' : ''}>Korting</option></select></div>
+    <div class="composer-line composer-manual-row" data-line-id="${escapeHtml(line.id || _genMeerkostId())}" style="display:grid;grid-template-columns:165px minmax(180px,1fr) 120px 90px 44px;gap:8px;align-items:end;margin-bottom:8px;">
+      <div class="form-group" style="margin:0;"><label>Type</label><select class="composer-manual-kind"><option value="manual" ${!isDiscount && !isInstallationExtra ? 'selected' : ''}>Manuele lijn</option><option value="installation_extra" ${isInstallationExtra ? 'selected' : ''}>Extra installatiekost</option><option value="discount" ${isDiscount ? 'selected' : ''}>Korting</option></select></div>
       <div class="form-group" style="margin:0;"><label>Omschrijving</label><input type="text" class="composer-manual-desc" value="${escapeHtml(line.description || '')}" placeholder="Omschrijving"></div>
       <div class="form-group" style="margin:0;"><label>Bedrag ex BTW</label><input type="number" class="composer-manual-amount" min="0" step="0.01" value="${amount || ''}"></div>
       <div class="form-group" style="margin:0;"><label>BTW</label><select class="composer-manual-vat"><option value="6" ${Number(line.vat) === 6 ? 'selected' : ''}>6%</option><option value="21" ${Number(line.vat) !== 6 ? 'selected' : ''}>21%</option></select></div>
@@ -651,14 +707,16 @@ function _openComposerModal(type) {
   const modal = _ensureComposerModal();
   modal.dataset.configType = type;
   const body = modal.querySelector('#configComposerBody');
+  const comp = _customCompositions[type] || null;
   const saved = serializeCompositionLines(_compositionLinesByType[type] || [], { inspectionProductId: _inspectionProduct && _inspectionProduct.id });
   const productRows = saved.filter(ln => ln.kind === 'product').map(_composerProductRowHtml).join('');
-  const manualRows = saved.filter(ln => ln.kind === 'manual' || ln.kind === 'discount').map(_composerManualRowHtml).join('');
-  const intro = _customCompositions[type]
+  const manualRows = saved.filter(ln => ln.kind === 'manual' || ln.kind === 'installation_extra' || ln.kind === 'discount').map(_composerManualRowHtml).join('');
+  const intro = comp
     ? 'Producten hieronder vormen de volledige samenstelling. Je kan alles toevoegen of verwijderen.'
     : `Basis: <strong>${escapeHtml(cfg.omschrijving || cfg.type)}</strong>.`;
   body.innerHTML = `
     <p style="margin-top:0;color:var(--muted);">${intro} Keuring wordt automatisch bepaald door de keuring-keuze buiten dit venster en staat hier bewust niet tussen de producten.</p>
+    ${comp ? `<div class="form-group" style="margin:0 0 14px;"><label>Naam samenstelling</label><input type="text" id="composerCompositionName" value="${escapeHtml(comp.name || '')}" placeholder="Bijv. 2x AB3000X + Solarflow"></div>` : ''}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 8px;"><h4 style="margin:0;">Producten</h4><button type="button" class="btn btn-secondary" id="configComposerAddProduct">+ Product toevoegen</button></div>
     <div id="configComposerProducts">${productRows || ''}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px;"><h4 style="margin:0;">Manuele lijnen en kortingen</h4><button type="button" class="btn btn-secondary" id="configComposerAddManual">+ Lijn toevoegen</button></div>
@@ -684,7 +742,8 @@ function _readComposerModalLines() {
     return { id: row.dataset.lineId || _genMeerkostId(), kind: 'product', productId, qty, vat };
   }).filter(Boolean);
   const manualLines = Array.from(modal.querySelectorAll('.composer-manual-row')).map(row => {
-    const kind = row.querySelector('.composer-manual-kind')?.value === 'discount' ? 'discount' : 'manual';
+    const kindValue = row.querySelector('.composer-manual-kind')?.value || 'manual';
+    const kind = kindValue === 'discount' ? 'discount' : (kindValue === 'installation_extra' ? 'installation_extra' : 'manual');
     const description = row.querySelector('.composer-manual-desc')?.value || '';
     const rawAmount = parseFloat(row.querySelector('.composer-manual-amount')?.value) || 0;
     const vat = parseFloat(row.querySelector('.composer-manual-vat')?.value) || 21;
@@ -722,7 +781,8 @@ function _saveComposerModal() {
   if (!type) return;
   _compositionLinesByType[type] = _readComposerModalLines();
   if (_customCompositions[type]) {
-    _customCompositions[type].name = _compositionNameFromLines(_compositionLinesByType[type]);
+    const explicitName = (modal.querySelector('#composerCompositionName')?.value || '').trim();
+    _customCompositions[type].name = explicitName || _compositionNameFromLines(_compositionLinesByType[type]);
   }
   _closeComposerModal();
   renderConfigPickers();
@@ -1156,6 +1216,21 @@ function renderSummaryCard(d) {
 }
 
 /** Build the scenario grid HTML (one group header + WC + Opt per config) into #scenariosGrid. */
+function quotePreviewUrlForCalculatedConfig(d, configType) {
+  if (!_projectId || !_projectDoc || !configType) return '';
+  const vat = parseFloat(document.getElementById('btwSelect')?.value) || 21;
+  const project = {
+    ..._projectDoc,
+    id: _projectId,
+    lastCalcRun: {
+      ...(_projectDoc.lastCalcRun || {}),
+      results: d,
+    },
+  };
+  const context = buildQuoteContextFromProjectConfig(project, configType, { vat });
+  return buildQuoteContextUrl(context, 'producten-beheer.html');
+}
+
 function renderScenarioGrid(d) {
   let gridHTML = '';
   d.configResults.forEach((cr, idx) => {
@@ -1166,12 +1241,17 @@ function renderScenarioGrid(d) {
     const specsBtn = cfg.isManual
       ? ''
       : `<button type="button" class="btn-spec js-product-specs" data-product-type="${escapeHtml(cfg.type)}">📖 Productspecs ↗</button>`;
+    const quoteUrl = quotePreviewUrlForCalculatedConfig(d, cfg.type);
+    const quoteBtn = quoteUrl
+      ? `<a class="btn-spec" href="${escapeHtml(quoteUrl)}" target="_blank" rel="noopener"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i> Offerte maken ↗</a>`
+      : '';
     gridHTML += `<div style="grid-column:1/-1;">
       <div class="config-group-header">
         🔋 Configuratie ${idx+1}
         <span class="cfg-sub">${cfgLabel}</span>
         <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}${cfg.meerkostTotalInclBtw > 0 ? ` <span style="font-size:0.75rem;color:var(--muted);">(incl. ${fmtEur(cfg.meerkostTotalInclBtw)} meerkost)</span>` : ''}</span>
         ${specsBtn}
+        ${quoteBtn}
       </div>
     </div>`;
     const subWC = pvGtBat
@@ -1553,7 +1633,7 @@ function wireIndexActions() {
       return;
     }
     if (e.target.closest('#startFromComposition')) {
-      _startFromSelectedComposition();
+      _openBaseCompositionModal();
       return;
     }
     const delBtn = e.target.closest('.custom-composition-delete');

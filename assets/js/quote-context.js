@@ -31,7 +31,7 @@ function fallbackCompositionLines(project, configType) {
 
 function normalizeManualQuoteLine(line) {
   return {
-    kind: 'line',
+    kind: line?.kind === 'installation_extra' ? 'installation_extra' : 'line',
     description: String(line?.description || ''),
     priceExVat: Math.abs(Number(line?.amountExVat) || 0),
     vat: normalizeVat(line?.vat),
@@ -69,7 +69,7 @@ export function buildQuoteContextFromProjectConfig(project, configType, opts = {
     .map(normalizeProductQuoteLine)
     .filter(line => line.productId);
   const manualLines = adjustableLines
-    .filter(line => line.kind === 'manual')
+    .filter(line => line.kind === 'manual' || line.kind === 'installation_extra')
     .map(normalizeManualQuoteLine)
     .filter(line => line.description || line.priceExVat > 0);
   const discountValue = adjustableLines

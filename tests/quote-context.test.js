@@ -62,6 +62,7 @@ describe('quote context handoff', () => {
                 { id: 'battery', kind: 'product', productId: 'battery', qty: 2, vat: 6, amountExVat: 600 },
                 { id: 'inverter', kind: 'product', productId: 'inverter', qty: 1, vat: 6, amountExVat: 1000 },
                 { id: 'manual', kind: 'manual', description: 'Extra kabel', amountExVat: 75, vat: 6 },
+                { id: 'install-extra', kind: 'installation_extra', description: 'Extra plaatsing', amountExVat: 125, vat: 6 },
               ],
             },
           }],
@@ -78,7 +79,10 @@ describe('quote context handoff', () => {
       { productId: 'battery', qty: 2, vat: 6 },
       { productId: 'inverter', qty: 1, vat: 6 },
     ]);
-    expect(context.manualLines).toEqual([{ kind: 'line', description: 'Extra kabel', priceExVat: 75, vat: 6 }]);
+    expect(context.manualLines).toEqual([
+      { kind: 'line', description: 'Extra kabel', priceExVat: 75, vat: 6 },
+      { kind: 'installation_extra', description: 'Extra plaatsing', priceExVat: 125, vat: 6 },
+    ]);
   });
 
   it('round-trips quote context through URL-safe base64', () => {
