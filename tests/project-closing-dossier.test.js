@@ -277,7 +277,10 @@ describe('project closing dossier', () => {
     expect(html).toContain('AB3000L datasheet.pdf');
     expect(html).toContain('class="spcd-doc-links"');
     expect(html).toContain('class="spcd-logo"');
-    expect(html).toContain('aria-label="SmartPeak"');
+    expect(html).toContain('assets/img/smartpeak-logo-mark.png');
+    expect(html).toContain('class="spcd-logo-name">SmartPeak</div>');
+    expect(html).toContain('class="spcd-logo-tagline">Slim omgaan met jouw energie</div>');
+    expect(html).toContain('aria-label="SmartPeak');
     expect(html).toContain('table-layout:fixed');
     expect(html).toContain('text-decoration:underline');
     expect(html).toContain('overflow-wrap:anywhere');
