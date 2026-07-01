@@ -607,6 +607,10 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   border-color: rgba(25, 135, 84, 0.38);
   background: rgba(25, 135, 84, 0.06);
 }
+.sp-workflow-card.is-partial {
+  border-color: rgba(13, 202, 240, 0.38);
+  background: rgba(13, 202, 240, 0.06);
+}
 .sp-workflow-card.is-placeholder {
   background: rgba(248, 249, 250, 0.72);
 }

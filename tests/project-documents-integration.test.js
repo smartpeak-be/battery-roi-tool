@@ -9,7 +9,7 @@ describe('project documents dashboard integration', () => {
   it('voorziet een documenten-tab naast fotos in de projectdrawer', () => {
     expect(dashboardSource).toContain('mountProjectDocuments');
     expect(dashboardSource).toContain('onCountChange: setDrawerDocumentsCount');
-    expect(dashboardSource).toContain('function setDrawerDocumentsCount(count)');
+    expect(dashboardSource).toContain('function setDrawerDocumentsCount(count, entries = [])');
     expect(dashboardSource).toContain('id="drawerMediaTabs"');
     expect(dashboardSource).toContain('data-bs-target="#drawerDocumentsPane"');
     expect(dashboardSource).toContain('id="drawerDocumentsMount"');

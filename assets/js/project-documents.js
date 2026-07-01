@@ -335,17 +335,19 @@ function openDocumentMetaModal(options = {}) {
   });
 }
 
-function promptMeta(files, parentTitle = '') {
+function promptMeta(files, parentTitle = '', defaults = {}) {
   const many = files.length > 1;
-  const fallback = many ? `Upload ${new Date().toLocaleDateString('nl-BE')}` : fileBaseName(files[0]);
+  const fallback = defaults.title || (many ? `Upload ${new Date().toLocaleDateString('nl-BE')}` : fileBaseName(files[0]));
   return openDocumentMetaModal({
     modalTitle: many ? 'Documenten uploaden' : 'Document uploaden',
     helpText: many
       ? `Meerdere bestanden worden als map opgeslagen${parentTitle ? ` in ${parentTitle}` : ''}.`
       : `Dit document wordt opgeslagen${parentTitle ? ` in ${parentTitle}` : ''}.`,
     title: fallback,
-    description: '',
-    documentKind: 'other',
+    description: defaults.description || '',
+    documentKind: defaults.documentKind || 'other',
+    includeInCloseoutPdf: 'includeInCloseoutPdf' in defaults ? !!defaults.includeInCloseoutPdf : null,
+    includeInInspectionPack: 'includeInInspectionPack' in defaults ? !!defaults.includeInInspectionPack : null,
     showDocumentFields: true,
     saveText: 'Uploaden',
   });
@@ -500,7 +502,7 @@ export function mountProjectDocuments(containerEl, opts = {}) {
     const folderIds = new Set(Array.from(state.tree.byId.values()).filter(node => node.type === 'folder').map(node => node.id));
     state.collapsedIds = new Set(Array.from(state.collapsedIds).filter(id => folderIds.has(id)));
     listEl.innerHTML = renderDocumentExplorerHtml(state.tree, state.collapsedIds);
-    if (typeof options.onCountChange === 'function') options.onCountChange(state.entries.length);
+    if (typeof options.onCountChange === 'function') options.onCountChange(state.entries.length, state.entries);
   }
 
   async function refresh() {
@@ -521,7 +523,8 @@ export function mountProjectDocuments(containerEl, opts = {}) {
   async function handleFiles(filesLike) {
     const files = Array.from(filesLike || []);
     if (!files.length) return;
-    const meta = presetUploadMeta || await promptMeta(files, uploadParentTitle);
+    const defaultMeta = presetUploadMeta || {};
+    const meta = await promptMeta(files, uploadParentTitle, defaultMeta);
     presetUploadMeta = null;
     if (!meta) return;
     const plan = documentUploadPlan(files, { ...meta, parentId: uploadParentId });
