@@ -746,9 +746,10 @@ function closeDrawer() {
   bootstrap.Offcanvas.getOrCreateInstance(el).hide();
 }
 
-function setDrawerDocumentsCount(count) {
+function setDrawerDocumentsCount(count, entries = []) {
   const docCountEl = document.getElementById('drawerDocumentsCount');
   if (docCountEl) docCountEl.textContent = count > 0 ? `(${count})` : '';
+  setWorkflowDocumentCounts(entries);
 }
 
 async function refreshDrawerAfterChange() {
@@ -791,19 +792,51 @@ function workflowStatusHtml({ count = 0, done = false, required = false } = {}) 
   return '<span class="sp-workflow-status text-bg-secondary"><i class="fa-regular fa-circle" aria-hidden="true"></i> Open</span>';
 }
 
-function workflowDoneState(project) {
+function isWorkflowFilled(value) {
+  return value !== null && value !== undefined && value !== '';
+}
+
+function isWorkflowTriFilled(value) {
+  return value === true || value === false || value === 'true' || value === 'false' || value === 'yes' || value === 'no';
+}
+
+function hasCompleteWorkflowChecks(project) {
   const p = mergeProjectMetadata(project || {});
   const measurements = p.technical || {};
   const voltage = measurements.voltageMeasurements || {};
-  const serials = Array.isArray(p.serialNumbers) ? p.serialNumbers : [];
-  const inspection = p.inspection || {};
   const electrical = p.electrical || {};
   const cabinet = p.cabinet || {};
+  const connectionType = electrical.connectionType || '';
+  const requiredVoltageKeys = workflowVoltageFieldsForConnection(connectionType).map(([key]) => key);
+  if (!connectionType || requiredVoltageKeys.length === 0) return false;
+  return [
+    isWorkflowFilled(electrical.fuseRatingA),
+    isWorkflowFilled(cabinet.freeUnits),
+    isWorkflowFilled(cabinet.wiringDiameterMm2),
+    isWorkflowTriFilled(cabinet.hasRemAutomaat),
+    isWorkflowTriFilled(cabinet.hasOutletNearFluvius),
+    isWorkflowTriFilled(cabinet.hasWifiNearFluvius),
+    isWorkflowTriFilled(cabinet.hasWifiNearCabinet),
+    isWorkflowTriFilled(cabinet.batteryPlacementRoom),
+    isWorkflowFilled(cabinet.lineGroundChecked),
+    isWorkflowFilled(measurements.earthResistanceOhm),
+    ...requiredVoltageKeys.map(key => isWorkflowFilled(voltage[key])),
+  ].every(Boolean);
+}
+
+function hasCompletedInspection(project) {
+  const p = mergeProjectMetadata(project || {});
+  return !!(p.planning.inspectionDoneDate || project?.status === 'keuring_gedaan' || project?.status === 'facturatie' || project?.status === 'afgesloten');
+}
+
+function workflowDoneState(project) {
+  const p = mergeProjectMetadata(project || {});
+  const serials = Array.isArray(p.serialNumbers) ? p.serialNumbers : [];
   return {
-    checksBefore: !!(electrical.connectionType || electrical.fuseRatingA || cabinet.freeUnits != null || cabinet.wiringDiameterMm2 || cabinet.lineGroundChecked || measurements.earthResistanceOhm || measurements.technicalNotes || Object.values(voltage).some(value => value != null && value !== '')),
+    checksBefore: hasCompleteWorkflowChecks(project),
     solarInverters: Array.isArray(p.solar?.inverters) && p.solar.inverters.some(inv => inv.powerKw || inv.brand || inv.model || inv.panelCount || inv.circuitCount || (Array.isArray(inv.circuits) && inv.circuits.length > 0)),
     installation: serials.length > 0,
-    inspection: !!(inspection.company || inspection.reference || inspection.notes || p.planning.inspectionPlannedDate || p.planning.inspectionDoneDate),
+    inspection: false,
   };
 }
 
@@ -864,6 +897,18 @@ function renderProjectWorkflowQuickMenu(project) {
         actions: '<button type="button" class="btn btn-outline-primary" data-workflow-action="solar-inverters"><i class="fa-solid fa-solar-panel me-1" aria-hidden="true"></i> PV/omvormers invullen</button>',
       })}
       ${workflowCardHtml({
+        id: 'pre-inspection-docs',
+        kicker: 'Voor keuring',
+        title: 'Bestaande documenten',
+        text: 'Upload bestaande keuringsverslagen, elektrische schema’s of plannen die de keurder vooraf nodig heeft.',
+        icon: 'fa-folder-open',
+        status: { required: true },
+        actions: `
+          <button type="button" class="btn btn-outline-primary" data-workflow-action="pre-inspection-docs"><i class="fa-solid fa-upload me-1" aria-hidden="true"></i> Bestaande documenten uploaden</button>
+          <div class="form-text w-100">Gebruik “bestaand keuringsverslag” voor oude rapporten en “schema/plan” voor vooraf mee te nemen plannen.</div>
+        `,
+      })}
+      ${workflowCardHtml({
         id: 'installation',
         kicker: 'Installatie',
         title: 'Toestellen & serienummers',
@@ -891,12 +936,12 @@ function renderProjectWorkflowQuickMenu(project) {
         id: 'inspection',
         kicker: 'Keuring / oplevering',
         title: 'Keuring & dossier',
-        text: 'Upload keuringsstukken of vul keuringsinfo in voor oplevering.',
+        text: 'Wordt pas klaar wanneer de keuring uitgevoerd is én het keuringsverslag na onze keuring geüpload is.',
         icon: 'fa-file-circle-check',
         status: { done: done.inspection },
         actions: `
           <button type="button" class="btn btn-outline-primary" data-workflow-action="inspection-info"><i class="fa-solid fa-file-circle-check me-1" aria-hidden="true"></i> Keuringsinfo invullen</button>
-          <button type="button" class="btn btn-outline-secondary" data-workflow-action="inspection-docs"><i class="fa-solid fa-upload me-1" aria-hidden="true"></i> Documenten uploaden</button>
+          <button type="button" class="btn btn-outline-secondary" data-workflow-action="inspection-docs"><i class="fa-solid fa-upload me-1" aria-hidden="true"></i> Keuringsverslag na keuring uploaden</button>
         `,
       })}
     </div>
@@ -922,7 +967,24 @@ function setWorkflowPhotoCounts(photos) {
   apply('photos-before', counts.before, true);
   apply('photos-after', counts.after);
   apply('installation', counts.equipment);
-  apply('inspection', counts.inspection);
+}
+
+function isProjectDocumentEntry(entry) {
+  return entry && entry.type !== 'folder';
+}
+
+function setWorkflowDocumentCounts(entries = []) {
+  const docs = (Array.isArray(entries) ? entries : []).filter(isProjectDocumentEntry);
+  const preInspectionCount = docs.filter(doc => ['pre_inspection_report', 'electrical_schema', 'inspection_support'].includes(doc.documentKind)).length;
+  const postInspectionCount = docs.filter(doc => doc.documentKind === 'inspection_certificate').length;
+  const apply = (block, done, required = false) => {
+    const card = document.querySelector(`[data-workflow-block="${block}"]`);
+    const status = document.querySelector(`[data-workflow-status="${block}"]`);
+    if (card) card.classList.toggle('is-done', !!done);
+    if (status) status.innerHTML = workflowStatusHtml(done ? { done: true } : { required });
+  };
+  apply('pre-inspection-docs', preInspectionCount > 0, true);
+  apply('inspection', hasCompletedInspection(_currentDrawerProject) && postInspectionCount > 0, false);
 }
 
 function showDrawerTab(targetSelector) {
@@ -1431,6 +1493,12 @@ function wireProjectWorkflowQuickMenu(project) {
       openWorkflowChecksModal(project);
     } else if (action === 'solar-inverters') {
       openWorkflowSolarModal(project);
+    } else if (action === 'pre-inspection-docs') {
+      startWorkflowDocumentUpload({
+        title: 'Bestaand document voor keuring',
+        documentKind: 'pre_inspection_report',
+        includeInInspectionPack: true,
+      });
     } else if (action === 'installation-camera') {
       showDrawerTab('#drawerPhotosPane');
       openWorkflowPhotoTypeModal('camera', WORKFLOW_INSTALLATION_PHOTO_TAGS, 'equipment_after');
@@ -1446,8 +1514,9 @@ function wireProjectWorkflowQuickMenu(project) {
       openWorkflowInspectionModal(project);
     } else if (action === 'inspection-docs') {
       startWorkflowDocumentUpload({
-        title: 'Keuringsdocument',
-        documentKind: 'inspection_support',
+        title: 'Keuringsverslag na onze keuring',
+        documentKind: 'inspection_certificate',
+        includeInCloseoutPdf: true,
         includeInInspectionPack: true,
       });
     }

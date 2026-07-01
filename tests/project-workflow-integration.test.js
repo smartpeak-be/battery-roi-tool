@@ -5,6 +5,7 @@ const dashboardSource = readFileSync(new URL('../assets/js/pages/dashboard-app.j
 const projectEditSource = readFileSync(new URL('../assets/js/pages/project-edit-app.js', import.meta.url), 'utf8');
 const photoUploaderSource = readFileSync(new URL('../assets/js/photo-uploader.js', import.meta.url), 'utf8');
 const documentSource = readFileSync(new URL('../assets/js/project-documents.js', import.meta.url), 'utf8');
+const taxonomySource = readFileSync(new URL('../assets/js/project-taxonomy.js', import.meta.url), 'utf8');
 const cssSource = readFileSync(new URL('../assets/css/smartpeak.css', import.meta.url), 'utf8');
 
 describe('project workflow quick menu', () => {
@@ -39,7 +40,30 @@ describe('project workflow quick menu', () => {
     expect(dashboardSource).toContain('WORKFLOW_INSTALLATION_PHOTO_TAGS');
     expect(dashboardSource).toContain('WORKFLOW_AFTER_PHOTO_TAGS');
     expect(dashboardSource).toContain('openWorkflowInspectionModal(project)');
+    expect(dashboardSource).toContain('data-workflow-action="pre-inspection-docs"');
+    expect(dashboardSource).toContain("documentKind: 'pre_inspection_report'");
+    expect(dashboardSource).toContain("documentKind: 'inspection_certificate'");
     expect(dashboardSource).toContain('startUploadWithMeta');
+  });
+
+  it('houdt voor-documenten en keuringsverslag na keuring apart', () => {
+    expect(taxonomySource).toContain("value: 'pre_inspection_report'");
+    expect(taxonomySource).toContain('Bestaand keuringsverslag (vóór SmartPeak)');
+    expect(taxonomySource).toContain('Keuringsverslag na onze keuring');
+    expect(taxonomySource).toContain('Elektrisch schema / plan voor keuring');
+    expect(dashboardSource).toContain("['pre_inspection_report', 'electrical_schema', 'inspection_support']");
+    expect(dashboardSource).toContain("doc.documentKind === 'inspection_certificate'");
+    expect(dashboardSource).toContain('hasCompletedInspection(_currentDrawerProject) && postInspectionCount > 0');
+  });
+
+  it('zet voorinstallatiechecks pas groen wanneer alle verplichte velden en metingen ingevuld zijn', () => {
+    expect(dashboardSource).toContain('function hasCompleteWorkflowChecks(project)');
+    expect(dashboardSource).toContain('if (!connectionType || requiredVoltageKeys.length === 0) return false;');
+    expect(dashboardSource).toContain('isWorkflowFilled(electrical.fuseRatingA)');
+    expect(dashboardSource).toContain('isWorkflowTriFilled(cabinet.hasRemAutomaat)');
+    expect(dashboardSource).toContain('isWorkflowFilled(measurements.earthResistanceOhm)');
+    expect(dashboardSource).toContain('...requiredVoltageKeys.map(key => isWorkflowFilled(voltage[key]))');
+    expect(dashboardSource).not.toContain('measurements.technicalNotes || Object.values(voltage).some');
   });
 
   it('slaat workflow formulieren op in echte projectmetadata', () => {
@@ -95,6 +119,7 @@ describe('project workflow quick menu', () => {
     expect(documentSource).toContain('startUploadWithMeta(meta = {}, parentId = null)');
     expect(documentSource).toContain('presetUploadMeta = { ...defaults, ...meta }');
     expect(documentSource).toContain('const meta = presetUploadMeta || await promptMeta(files, uploadParentTitle)');
+    expect(documentSource).toContain('options.onCountChange(state.entries.length, state.entries)');
   });
 
   it('heeft styling hooks voor de workflow cards en status badges', () => {

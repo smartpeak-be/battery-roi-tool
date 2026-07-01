@@ -98,8 +98,9 @@ export const SERIAL_CATEGORIES = [
 export const DOCUMENT_KINDS = [
   { value: 'offer', label: 'Offerte', icon: 'fa-file-invoice', includeInCloseoutPdf: true, includeInInspectionPack: false, sortOrder: 10 },
   { value: 'invoice', label: 'Factuur', icon: 'fa-file-invoice-dollar', includeInCloseoutPdf: true, includeInInspectionPack: false, sortOrder: 20 },
-  { value: 'inspection_certificate', label: 'Keuringsverslag', icon: 'fa-file-circle-check', includeInCloseoutPdf: true, includeInInspectionPack: true, sortOrder: 30 },
-  { value: 'electrical_schema', label: 'Elektrisch schema', icon: 'fa-diagram-project', includeInCloseoutPdf: true, includeInInspectionPack: true, sortOrder: 40 },
+  { value: 'pre_inspection_report', label: 'Bestaand keuringsverslag (vóór SmartPeak)', icon: 'fa-file-shield', includeInCloseoutPdf: false, includeInInspectionPack: true, sortOrder: 28 },
+  { value: 'inspection_certificate', label: 'Keuringsverslag na onze keuring', icon: 'fa-file-circle-check', includeInCloseoutPdf: true, includeInInspectionPack: true, sortOrder: 30, legacyValues: ['inspection_report'] },
+  { value: 'electrical_schema', label: 'Elektrisch schema / plan voor keuring', icon: 'fa-diagram-project', includeInCloseoutPdf: true, includeInInspectionPack: true, sortOrder: 40 },
   { value: 'inspection_support', label: 'Document voor keuring', icon: 'fa-clipboard-check', includeInCloseoutPdf: false, includeInInspectionPack: true, sortOrder: 50 },
   { value: 'datasheet', label: 'Datasheet / technische fiche', icon: 'fa-file-lines', includeInCloseoutPdf: true, includeInInspectionPack: true, sortOrder: 60 },
   { value: 'manual', label: 'Handleiding', icon: 'fa-book', includeInCloseoutPdf: true, includeInInspectionPack: false, sortOrder: 70 },

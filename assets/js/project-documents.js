@@ -500,7 +500,7 @@ export function mountProjectDocuments(containerEl, opts = {}) {
     const folderIds = new Set(Array.from(state.tree.byId.values()).filter(node => node.type === 'folder').map(node => node.id));
     state.collapsedIds = new Set(Array.from(state.collapsedIds).filter(id => folderIds.has(id)));
     listEl.innerHTML = renderDocumentExplorerHtml(state.tree, state.collapsedIds);
-    if (typeof options.onCountChange === 'function') options.onCountChange(state.entries.length);
+    if (typeof options.onCountChange === 'function') options.onCountChange(state.entries.length, state.entries);
   }
 
   async function refresh() {
