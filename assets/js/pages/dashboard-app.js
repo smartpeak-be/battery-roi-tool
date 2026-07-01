@@ -786,8 +786,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-function workflowStatusHtml({ count = 0, done = false, required = false } = {}) {
+function workflowStatusHtml({ count = 0, done = false, partial = false, required = false } = {}) {
   if (done || count > 0) return '<span class="sp-workflow-status text-bg-success"><i class="fa-solid fa-check" aria-hidden="true"></i> Klaar</span>';
+  if (partial) return '<span class="sp-workflow-status text-bg-info"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i> Deels ingevuld</span>';
   if (required) return '<span class="sp-workflow-status text-bg-warning"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> Nodig</span>';
   return '<span class="sp-workflow-status text-bg-secondary"><i class="fa-regular fa-circle" aria-hidden="true"></i> Open</span>';
 }
@@ -798,6 +799,23 @@ function isWorkflowFilled(value) {
 
 function isWorkflowTriFilled(value) {
   return value === true || value === false || value === 'true' || value === 'false' || value === 'yes' || value === 'no';
+}
+
+function hasAnyWorkflowChecks(project) {
+  const p = mergeProjectMetadata(project || {});
+  const measurements = p.technical || {};
+  const voltage = measurements.voltageMeasurements || {};
+  const electrical = p.electrical || {};
+  const cabinet = p.cabinet || {};
+  return !!(
+    electrical.connectionType || isWorkflowFilled(electrical.fuseRatingA) ||
+    isWorkflowFilled(cabinet.freeUnits) || isWorkflowFilled(cabinet.wiringDiameterMm2) ||
+    isWorkflowTriFilled(cabinet.hasRemAutomaat) || isWorkflowTriFilled(cabinet.hasOutletNearFluvius) ||
+    isWorkflowTriFilled(cabinet.hasWifiNearFluvius) || isWorkflowTriFilled(cabinet.hasWifiNearCabinet) ||
+    isWorkflowTriFilled(cabinet.batteryPlacementRoom) || isWorkflowFilled(cabinet.lineGroundChecked) ||
+    isWorkflowFilled(measurements.earthResistanceOhm) || measurements.technicalNotes || cabinet.preInstallationNotes ||
+    Object.values(voltage).some(isWorkflowFilled)
+  );
 }
 
 function hasCompleteWorkflowChecks(project) {
@@ -829,20 +847,36 @@ function hasCompletedInspection(project) {
   return !!(p.planning.inspectionDoneDate || project?.status === 'keuring_gedaan' || project?.status === 'facturatie' || project?.status === 'afgesloten');
 }
 
+function hasAnyInspectionInfo(project) {
+  const p = mergeProjectMetadata(project || {});
+  const inspection = p.inspection || {};
+  return !!(inspection.company || inspection.reference || inspection.notes || p.planning.inspectionPlannedDate || p.planning.inspectionDoneDate || hasCompletedInspection(project));
+}
+
 function workflowDoneState(project) {
   const p = mergeProjectMetadata(project || {});
   const serials = Array.isArray(p.serialNumbers) ? p.serialNumbers : [];
   return {
     checksBefore: hasCompleteWorkflowChecks(project),
+    checksBeforePartial: hasAnyWorkflowChecks(project) && !hasCompleteWorkflowChecks(project),
     solarInverters: Array.isArray(p.solar?.inverters) && p.solar.inverters.some(inv => inv.powerKw || inv.brand || inv.model || inv.panelCount || inv.circuitCount || (Array.isArray(inv.circuits) && inv.circuits.length > 0)),
     installation: serials.length > 0,
     inspection: false,
+    inspectionPartial: hasAnyInspectionInfo(project),
   };
+}
+
+function workflowCardClasses(status = {}) {
+  return [
+    'sp-workflow-card',
+    status.done ? 'is-done' : '',
+    !status.done && status.partial ? 'is-partial' : '',
+  ].filter(Boolean).join(' ');
 }
 
 function workflowCardHtml({ id, kicker, title, text, icon, status, actions }) {
   return `
-    <article class="sp-workflow-card${status.done ? ' is-done' : ''}" data-workflow-block="${escapeHtml(id)}">
+    <article class="${workflowCardClasses(status)}" data-workflow-block="${escapeHtml(id)}">
       <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
         <div>
           <div class="sp-workflow-kicker">${escapeHtml(kicker)}</div>
@@ -884,7 +918,7 @@ function renderProjectWorkflowQuickMenu(project) {
         title: 'Checks & metingen',
         text: 'Registreer aansluiting, zekeringkast, aarding en spanningsmetingen volgens het gekozen aansluitingstype.',
         icon: 'fa-clipboard-check',
-        status: { done: done.checksBefore },
+        status: { done: done.checksBefore, partial: done.checksBeforePartial },
         actions: '<button type="button" class="btn btn-outline-primary" data-workflow-action="checks-before"><i class="fa-solid fa-clipboard-check me-1" aria-hidden="true"></i> Checks & metingen invullen</button>',
       })}
       ${workflowCardHtml({
@@ -938,7 +972,7 @@ function renderProjectWorkflowQuickMenu(project) {
         title: 'Keuring & dossier',
         text: 'Wordt pas klaar wanneer de keuring uitgevoerd is én het keuringsverslag na onze keuring geüpload is.',
         icon: 'fa-file-circle-check',
-        status: { done: done.inspection },
+        status: { done: done.inspection, partial: done.inspectionPartial },
         actions: `
           <button type="button" class="btn btn-outline-primary" data-workflow-action="inspection-info"><i class="fa-solid fa-file-circle-check me-1" aria-hidden="true"></i> Keuringsinfo invullen</button>
           <button type="button" class="btn btn-outline-secondary" data-workflow-action="inspection-docs"><i class="fa-solid fa-upload me-1" aria-hidden="true"></i> Keuringsverslag na keuring uploaden</button>
@@ -960,7 +994,10 @@ function setWorkflowPhotoCounts(photos) {
   const apply = (block, count, required = false) => {
     const card = document.querySelector(`[data-workflow-block="${block}"]`);
     const status = document.querySelector(`[data-workflow-status="${block}"]`);
-    if (card) card.classList.toggle('is-done', count > 0 || card.classList.contains('is-done'));
+    if (card) {
+      card.classList.toggle('is-done', count > 0);
+      card.classList.remove('is-partial');
+    }
     if (status && count > 0) status.innerHTML = workflowStatusHtml({ count, required });
     else if (status && required) status.innerHTML = workflowStatusHtml({ required });
   };
@@ -977,14 +1014,20 @@ function setWorkflowDocumentCounts(entries = []) {
   const docs = (Array.isArray(entries) ? entries : []).filter(isProjectDocumentEntry);
   const preInspectionCount = docs.filter(doc => ['pre_inspection_report', 'electrical_schema', 'inspection_support'].includes(doc.documentKind)).length;
   const postInspectionCount = docs.filter(doc => doc.documentKind === 'inspection_certificate').length;
-  const apply = (block, done, required = false) => {
+  const apply = (block, statusState) => {
     const card = document.querySelector(`[data-workflow-block="${block}"]`);
     const status = document.querySelector(`[data-workflow-status="${block}"]`);
-    if (card) card.classList.toggle('is-done', !!done);
-    if (status) status.innerHTML = workflowStatusHtml(done ? { done: true } : { required });
+    if (card) {
+      card.classList.toggle('is-done', !!statusState.done);
+      card.classList.toggle('is-partial', !statusState.done && !!statusState.partial);
+    }
+    if (status) status.innerHTML = workflowStatusHtml(statusState);
   };
-  apply('pre-inspection-docs', preInspectionCount > 0, true);
-  apply('inspection', hasCompletedInspection(_currentDrawerProject) && postInspectionCount > 0, false);
+  apply('pre-inspection-docs', { done: preInspectionCount > 0, required: true });
+  apply('inspection', {
+    done: hasCompletedInspection(_currentDrawerProject) && postInspectionCount > 0,
+    partial: hasAnyInspectionInfo(_currentDrawerProject) || postInspectionCount > 0,
+  });
 }
 
 function showDrawerTab(targetSelector) {

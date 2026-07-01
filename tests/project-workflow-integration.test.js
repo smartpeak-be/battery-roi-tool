@@ -58,12 +58,25 @@ describe('project workflow quick menu', () => {
 
   it('zet voorinstallatiechecks pas groen wanneer alle verplichte velden en metingen ingevuld zijn', () => {
     expect(dashboardSource).toContain('function hasCompleteWorkflowChecks(project)');
+    expect(dashboardSource).toContain('function hasAnyWorkflowChecks(project)');
+    expect(dashboardSource).toContain('checksBeforePartial: hasAnyWorkflowChecks(project) && !hasCompleteWorkflowChecks(project)');
+    expect(dashboardSource).toContain('Deels ingevuld');
+    expect(dashboardSource).toContain('fa-circle-half-stroke');
     expect(dashboardSource).toContain('if (!connectionType || requiredVoltageKeys.length === 0) return false;');
     expect(dashboardSource).toContain('isWorkflowFilled(electrical.fuseRatingA)');
     expect(dashboardSource).toContain('isWorkflowTriFilled(cabinet.hasRemAutomaat)');
     expect(dashboardSource).toContain('isWorkflowFilled(measurements.earthResistanceOhm)');
     expect(dashboardSource).toContain('...requiredVoltageKeys.map(key => isWorkflowFilled(voltage[key]))');
     expect(dashboardSource).not.toContain('measurements.technicalNotes || Object.values(voltage).some');
+  });
+
+  it('toont een tussenstatus wanneer workflowdata gestart maar nog niet volledig is', () => {
+    expect(dashboardSource).toContain('partial = false');
+    expect(dashboardSource).toContain("!status.done && status.partial ? 'is-partial' : ''");
+    expect(dashboardSource).toContain('status: { done: done.checksBefore, partial: done.checksBeforePartial }');
+    expect(dashboardSource).toContain('inspectionPartial: hasAnyInspectionInfo(project)');
+    expect(dashboardSource).toContain('partial: hasAnyInspectionInfo(_currentDrawerProject) || postInspectionCount > 0');
+    expect(cssSource).toContain('.sp-workflow-card.is-partial');
   });
 
   it('slaat workflow formulieren op in echte projectmetadata', () => {
@@ -129,6 +142,7 @@ describe('project workflow quick menu', () => {
     expect(cssSource).toContain('.sp-workflow-grid');
     expect(cssSource).toContain('.sp-workflow-card');
     expect(cssSource).toContain('.sp-workflow-card.is-done');
+    expect(cssSource).toContain('.sp-workflow-card.is-partial');
     expect(cssSource).toContain('.sp-workflow-status');
   });
 });
