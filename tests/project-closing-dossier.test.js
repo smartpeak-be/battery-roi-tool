@@ -86,6 +86,27 @@ describe('project closing dossier', () => {
     expect(JSON.stringify(model).toLowerCase()).not.toContain('terugverdientijd');
   });
 
+  it('gebruikt thumbnails als PDF-bron en houdt originele foto als link bij', () => {
+    const model = buildClosingDossierModel(baseProject, {
+      photos: [{
+        id: 'photo-big',
+        tag: 'situatie',
+        name: 'plaatsing.jpg',
+        downloadUrl: 'https://storage.test/full/plaatsing-8mb.jpg',
+        thumbUrl: 'https://storage.test/thumbs/plaatsing-800w.jpg',
+      }],
+      generatedAt: '2026-06-11T18:00:00.000Z',
+    });
+    const html = renderClosingDossierHtml(model);
+
+    expect(model.photos.situation[0].url).toBe('https://storage.test/thumbs/plaatsing-800w.jpg');
+    expect(model.photos.situation[0].fullUrl).toBe('https://storage.test/full/plaatsing-8mb.jpg');
+    expect(html).toContain('<img src="https://storage.test/thumbs/plaatsing-800w.jpg"');
+    expect(html).toContain('href="https://storage.test/full/plaatsing-8mb.jpg"');
+    expect(html).toContain('class="spcd-photo-full-link"');
+    expect(html).toContain('object-fit:contain');
+  });
+
   it('rendert klantvriendelijk zonder fake logo, interne keuken of letterlijke klantperspectief-copy', () => {
     const project = {
       ...baseProject,
