@@ -27,6 +27,28 @@ describe('communicatie templates', () => {
     expect(template.blocks.map(b => b.text).join('\n')).toContain('Mogelijk heb je intussen al een deel hiervan doorgestuurd');
   });
 
+  it('voorziet de relevante SmartPeak vervolgtemplates als defaults', () => {
+    const templates = defaultCommunicationTemplates();
+    expect(templates).toHaveLength(13);
+    expect(templates.map(t => t.id)).toEqual(expect.arrayContaining([
+      'intake-thuisbatterij',
+      'intake-na-plaatsbezoek',
+      'reminder-myfluvius-data',
+      'berekening-klaar',
+      'offerte-verzenden',
+      'akkoord-ontvangen',
+      'voorschotfactuur',
+      'installatieplanning-bevestigen',
+      'keuring-inplannen',
+      'na-installatie-opvolging',
+      'afsluitdossier-factuur-review',
+      'niet-rendabel',
+      'geen-zonnepanelen',
+    ]));
+    expect(templates.find(t => t.id === 'voorschotfactuur').blocks.map(b => b.text).join('\n')).toContain('Blox-it BV');
+    expect(templates.find(t => t.id === 'niet-rendabel').blocks.map(b => b.text).join('\n')).toContain('meerwaarde vandaag te beperkt');
+  });
+
   it('rendert emailvriendelijke HTML met table-layout, inline basisstijl en variabelen', () => {
     const html = renderTemplateHtml(defaultCommunicationTemplates()[0]);
     expect(html).toContain('<table role="presentation"');

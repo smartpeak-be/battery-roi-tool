@@ -111,8 +111,180 @@ export const DEFAULT_INTAKE_TEMPLATE = {
   ],
 };
 
+const ADDITIONAL_DEFAULT_TEMPLATES = [
+  makeDefaultTemplate({
+    id: 'intake-na-plaatsbezoek',
+    name: 'Intake na plaatsbezoek',
+    subject: 'Aanvullende gegevens na plaatsbezoek',
+    description: 'Opvolgmail na een bezoek ter plaatse, met focus op ontbrekende data zonder opnieuw alles generiek te vragen.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nMerci om mij te ontvangen. Op basis van wat we ter plaatse bekeken hebben, kunnen we al een stuk gerichter inschatten wat technisch mogelijk is. Voor de berekening zelf ontbreekt meestal nog vooral de verbruiksdata en eventueel wat extra technische info.'),
+      c('focus', 'Wat we nog zoeken', 'Mogelijk heb je intussen al een deel bezorgd. Hieronder staat vooral het overzicht van wat nog nuttig is om de analyse correct te maken.'),
+      l('missing-data', 'Belangrijkste ontbrekende info', 'Voor de eerste berekening zijn vooral deze zaken belangrijk.', ['MyFluvius historische data op dagtotalen', 'Indien mogelijk piekverbruik', 'Duidelijke foto van typeplaatje(s) van de omvormer(s)', 'Recente afrekening of totale elektriciteitsprijs per kWh', 'Eventueel keuringsverslag of schema’s als die snel beschikbaar zijn']),
+      p('closing', 'Volgende stap', 'Bezorg gerust wat al beschikbaar is. Wat ontbreekt, kunnen we later nog aanvullen of samen bekijken. Zodra ik de belangrijkste gegevens heb, werk ik de berekening verder uit.\n\nGroeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'reminder-myfluvius-data',
+    name: 'Reminder MyFluvius-data ontbreekt',
+    subject: 'Nog even navragen voor de thuisbatterij-analyse',
+    description: 'Zachte opvolging wanneer klant nog geen data/info bezorgde.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nIk wou even kort navragen of mijn vorige mail goed is toegekomen. Het kan natuurlijk altijd dat die ergens tussen de mails is blijven hangen.'),
+      p('ask', 'Vraag', 'Als jullie nog graag willen dat we dit verder bekijken, mag je ons alsnog de MyFluvius-data en de ontbrekende installatiegegevens bezorgen. Met die gegevens kunnen we de berekening correcter en sneller maken.'),
+      c('no-pressure', 'Geen druk', 'Mochten jullie intussen beslist hebben om hier voorlopig niet mee verder te gaan, dan is dat uiteraard ook helemaal oké. Laat dat gerust gewoon even weten, dan weten wij ook dat we dit niet verder moeten opvolgen.'),
+      p('closing', 'Afsluiter', 'Alvast bedankt.\n\nVriendelijke groeten,\nKevin\nSmartPeak'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'berekening-klaar',
+    name: 'Voorstel / berekening klaar',
+    subject: 'Voorlopige berekening thuisbatterij',
+    description: 'Mail om ROI-link of eerste analyse naar klant te sturen.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nIk heb op basis van de gegevens die we ontvingen een eerste berekening gemaakt. Je kan de vergelijking hier bekijken: {{berekeningLink}}'),
+      c('conclusion', 'Korte conclusie', 'Op basis van de huidige gegevens lijkt vooral {{aanbevolenOptie}} interessant om verder te bekijken. De exacte keuze hangt natuurlijk af van hoe ruim je vandaag wil zitten en of je verwacht dat je verbruik later nog stijgt.'),
+      p('scenario', 'Voorzichtige berekening', 'Onze berekening is bewust vrij voorzichtig opgebouwd. We houden rekening met beperkingen zoals verhouding tussen zonnepanelenomvormer en batterij-omvormer, batterijrendement en hoeveel opgeslagen energie dezelfde dag nog nuttig gebruikt kan worden.'),
+      p('next', 'Volgende stap', 'Bekijk dit gerust rustig. Als je wil, overlopen we de cijfers samen en kan ik daarna een concrete offerte opmaken voor de optie die het meest logisch lijkt.\n\nGroeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'offerte-verzenden',
+    name: 'Offerte verzenden',
+    subject: 'Offerte thuisbatterij SmartPeak',
+    description: 'Mail voor officiële offerte-PDF of aangepaste offerte.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nIn bijlage vind je de offerte voor de besproken thuisbatterij-opstelling.'),
+      p('scope', 'Wat zit inbegrepen?', 'De installatieprijs is voorzien als totaalprijs voor normale omstandigheden zoals we ze besproken of ter plaatse bekeken hebben. Daarin zitten installatie, configuratie, elektrische schema’s, keuring, werkuren en het nodige materiaal inbegrepen.'),
+      c('extras', 'Onvoorziene zaken', 'We verwachten op basis van de huidige info normaal geen bijkomende kosten. Mocht er toch iets onvoorzien naar boven komen dat echt extra werk of materiaal vraagt, dan bekijken we dat pro rata en uiteraard altijd eerst in overleg.'),
+      p('acceptance', 'Akkoord geven', 'Als dit voor jou akkoord is, mag je dat gewoon per mail bevestigen. Ondertekenen en terugsturen mag ook, maar is niet noodzakelijk tenzij je dat zelf makkelijker vindt.\n\nVriendelijke groeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'akkoord-ontvangen',
+    name: 'Akkoord ontvangen / voorschot volgt',
+    subject: 'Akkoord ontvangen – volgende stap',
+    description: 'Bevestiging na akkoord van klant, voor materiaalbestelling/planning.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nBedankt voor je bevestiging. We hebben het akkoord goed ontvangen.'),
+      p('next', 'Volgende stap', 'De volgende stap is dat we de voorschotfactuur opmaken. Na ontvangst daarvan kunnen we het materiaal bestellen en de installatie verder inplannen.'),
+      c('planning', 'Planning', 'De exacte timing stemmen we verder af zodra er voldoende zicht is op materiaal en agenda. Als er intussen praktische voorkeuren of beperkingen zijn, mag je die gerust al doorgeven.'),
+      p('closing', 'Afsluiter', 'We houden je verder op de hoogte.\n\nGroeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'voorschotfactuur',
+    name: 'Voorschotfactuur verzenden',
+    subject: 'Voorschotfactuur thuisbatterij',
+    description: 'Mail voor voorschotfactuur met Blox-it/SmartPeak banknaamnuance.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nIn bijlage vind je de voorschotfactuur voor de bestelling en verdere planning van de installatie.'),
+      c('bank-name', 'Naam bij betaling', 'SmartPeak werkt onder Blox-it BV. Het kan dus zijn dat je bank bij de naamcontrole Blox-it BV toont in plaats van SmartPeak. Dat is normaal en hoort bij dezelfde btw-structuur.'),
+      p('after-payment', 'Na betaling', 'Na ontvangst van het voorschot kunnen we het materiaal definitief bestellen en de planning concreet verder afstemmen.'),
+      p('closing', 'Afsluiter', 'Als er nog iets onduidelijk is, laat gerust iets weten.\n\nVriendelijke groeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'installatieplanning-bevestigen',
+    name: 'Installatieplanning bevestigen',
+    subject: 'Bevestiging installatie thuisbatterij',
+    description: 'Bevestiging van installatie-afspraak en praktische voorbereiding.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nZoals besproken bevestigen we hierbij de installatie van de thuisbatterij op {{installatieDatum}}.'),
+      l('prep', 'Praktisch vooraf', 'Om vlot te kunnen werken, is het handig als volgende zaken in orde zijn.', ['Vrije toegang tot de zekeringkast en digitale meter', 'De plaats waar de batterij komt zo goed mogelijk vrijmaken', 'Wifi beschikbaar in de buurt van meter/kast/batterij', 'P1-poort vooraf activeren als dat nog niet gebeurd is', 'Eventuele documenten of schema’s klaarleggen als die beschikbaar zijn']),
+      c('timing', 'Timing', 'Het exacte uur kan soms nog licht wijzigen door planning of verkeer. Als er iets verandert, laten we dat uiteraard weten.'),
+      p('closing', 'Afsluiter', 'Tot dan.\n\nGroeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'keuring-inplannen',
+    name: 'Keuring inplannen / communiceren',
+    subject: 'Keuring thuisbatterij',
+    description: 'Mail rond keuringsaanvraag, planning of uurvenster.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nDe installatie is klaar voor de keuring. We volgen de planning hiervan verder op.'),
+      p('timing', 'Timing', 'Het exacte uur van de keurder is niet altijd meteen duidelijk. Zodra we meer info hebben, geven we die zo snel mogelijk door. Reken best wel op wat marge rond het meegedeelde uur.'),
+      c('presence', 'Aanwezigheid', 'Meestal is het vooral belangrijk dat de keurder toegang heeft tot de installatie, zekeringkast en documenten. Als er iets specifieks nodig is, laten we dat vooraf weten.'),
+      p('closing', 'Afsluiter', 'We houden je op de hoogte.\n\nVriendelijke groeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'na-installatie-opvolging',
+    name: 'Na installatie opvolging',
+    subject: 'Opvolging na installatie thuisbatterij',
+    description: 'Korte mail na installatie met opvolging en volgende stappen.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nDe installatie is intussen geplaatst. We volgen de werking nog verder op zodat alles correct draait.'),
+      l('next', 'Wat volgt er nog?', 'Afhankelijk van het dossier kunnen deze stappen nog openstaan.', ['Controle van monitoring/app', 'Eventuele P1- of EMS-instellingen nakijken', 'Keuring of keuringsverslag opvolgen', 'Eventuele documenten of schema’s bezorgen', 'Eindfactuur of afsluitdossier bezorgen']),
+      c('support', 'Vragen', 'Merk je iets op dat niet duidelijk is of waarvan je twijfelt of het normaal is, laat gerust iets weten. Dan bekijken we dat samen.'),
+      p('closing', 'Afsluiter', 'Bedankt alvast voor het vertrouwen.\n\nGroeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'afsluitdossier-factuur-review',
+    name: 'Afsluitdossier / factuur / review',
+    subject: 'Factuur en afsluitdossier',
+    description: 'Mail met eindfactuur, documenten en eventueel reviewvraag.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nIn bijlage of via de meegestuurde link vind je de documenten rond de afgewerkte installatie.'),
+      l('included', 'Inhoud', 'Afhankelijk van het dossier kan dit onder meer bevatten:', ['Eindfactuur', 'Keuringsverslag', 'Elektrische schema’s', 'Foto’s of overzicht van de installatie', 'Andere relevante documenten voor het dossier']),
+      p('review', 'Review', 'Als je tevreden bent over de samenwerking, appreciëren we het enorm als je eventueel een korte review wil nalaten. Dat helpt ons als kleine onderneming echt vooruit.'),
+      p('closing', 'Afsluiter', 'Als er nog iets ontbreekt of onduidelijk is, laat gerust iets weten.\n\nVriendelijke groeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'niet-rendabel',
+    name: 'Niet rendabel / voorlopig niet interessant',
+    subject: 'Eerste inschatting thuisbatterij',
+    description: 'Transparante mail wanneer een batterij voorlopig niet voldoende interessant lijkt.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nIk heb de gegevens bekeken en wil hier graag transparant in zijn: op basis van de huidige cijfers lijkt een thuisbatterij voorlopig niet automatisch de meest interessante investering.'),
+      p('why', 'Waarom', 'Dat kan bijvoorbeeld komen door een laag elektriciteitsverbruik, beperkte injectie, een minder passend verbruiksprofiel of omdat de terugverdientijd te lang uitkomt in verhouding tot de investering.'),
+      c('honest', 'Eerlijk advies', 'We stellen liever niets voor als de meerwaarde vandaag te beperkt lijkt. Mocht je verbruik later stijgen, bijvoorbeeld door elektrische wagen, warmtepomp of andere elektrificatie, dan kan de situatie opnieuw veranderen.'),
+      p('closing', 'Afsluiter', 'Als je wil, kan ik de redenering gerust kort toelichten of later opnieuw bekijken wanneer er nieuwe gegevens zijn.\n\nVriendelijke groeten,\nKevin'),
+    ],
+  }),
+  makeDefaultTemplate({
+    id: 'geen-zonnepanelen',
+    name: 'Geen zonnepanelen / eerst PV bekijken',
+    subject: 'Thuisbatterij zonder zonnepanelen',
+    description: 'Voor leads zonder zonnepanelen, met voorzichtige nuance rond dynamische tarieven.',
+    blocks: [
+      p('intro', 'Intro', 'Dag {{voornaam}},\n\nIk zie dat je momenteel nog geen zonnepanelen hebt. Dat is op zich geen probleem, maar een thuisbatterij is in de meeste situaties vooral interessant in combinatie met zonnepanelen.'),
+      p('context', 'Context', 'Met zonnepanelen kan je eigen opgewekte stroom opslaan en later gebruiken. Zonder zonnepanelen moet een batterij vooral inspelen op prijsverschillen of andere sturing, en in de praktijk is dat niet altijd voldoende om de investering alleen daarop te verantwoorden.'),
+      c('pv-first', 'Eerst zonnepanelen bekijken?', 'Daarom bekijken we best eerst of zonnepanelen nu of op termijn een optie zijn. Als dat interessant lijkt, kunnen we daarna de combinatie met een batterij veel correcter beoordelen.'),
+      p('closing', 'Afsluiter', 'Als je wil, mag je gerust wat info doorsturen over je dak, verbruik en situatie. Dan bekijken we welke richting het meest logisch is.\n\nVriendelijke groeten,\nKevin'),
+    ],
+  }),
+];
+
+function makeDefaultTemplate({ id, name, subject, description, blocks }) {
+  return {
+    ...cloneTemplate(DEFAULT_INTAKE_TEMPLATE),
+    id,
+    name,
+    category: 'smartpeak-mail',
+    subject,
+    description,
+    isSystemDefault: true,
+    blocks,
+  };
+}
+
+function p(id, title, text) {
+  return { id, type: 'paragraph', title, text };
+}
+
+function c(id, title, text) {
+  return { id, type: 'callout', title, text };
+}
+
+function l(id, title, text, items) {
+  return { id, type: 'checklist', title, text, items };
+}
+
 export function defaultCommunicationTemplates() {
-  return [cloneTemplate(DEFAULT_INTAKE_TEMPLATE)];
+  return [DEFAULT_INTAKE_TEMPLATE, ...ADDITIONAL_DEFAULT_TEMPLATES].map(cloneTemplate);
 }
 
 function cloneTemplate(template) {
