@@ -69,6 +69,10 @@ function firstOfferte(project) {
   return Object.values(offertes)[0] || null;
 }
 
+function configIdFromType(type) {
+  return typeof type === 'string' && type.startsWith('PC_') ? type.slice(3) : '';
+}
+
 function fileTitle(doc) {
   return text(doc?.title, text(doc?.name, 'Document'));
 }
@@ -84,7 +88,7 @@ function classifyDocument(doc) {
   const hay = `${doc?.title || ''} ${doc?.name || ''} ${doc?.description || ''}`.toLowerCase();
   if (/factuur|invoice|voorschot|saldo/.test(hay)) return 'facturen';
   if (/handleiding|manual|gebruik/.test(hay)) return 'handleidingen';
-  if (/datasheet|fiche|technisch|technical|schema|keuring|certificate|certificaat/.test(hay)) return 'technischeFiches';
+  if (/datasheet|fiche|technisch|technical|schema|keuring|certificate|certificaat|declaration|conformity|conformiteit/.test(hay)) return 'technischeFiches';
   return 'overige';
 }
 
@@ -108,7 +112,7 @@ function normalizeDocument(doc) {
     description: text(doc.description),
     contentType: text(doc.contentType),
     downloadUrl: doc.downloadUrl || '',
-    category: classifyDocument(doc),
+    category: doc.category || classifyDocument(doc),
   };
 }
 
@@ -116,30 +120,132 @@ function productSpecsText(product) {
   const specs = product?.specs || {};
   const parts = [];
   if (Number.isFinite(Number(specs.capacityKwh))) parts.push(`${Number(specs.capacityKwh).toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kWh`);
-  if (Number.isFinite(Number(specs.powerKw))) parts.push(`${Number(specs.powerKw).toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kW`);
+  if (Number.isFinite(Number(specs.inverterPowerKw))) parts.push(`${Number(specs.inverterPowerKw).toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kW omvormer`);
+  else if (Number.isFinite(Number(specs.powerKw))) parts.push(`${Number(specs.powerKw).toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kW`);
   if (Number.isFinite(Number(specs.weightKg))) parts.push(`${Number(specs.weightKg).toLocaleString('nl-BE', { maximumFractionDigits: 1 })} kg`);
   return parts.join(' · ');
 }
 
-function buildPlacedItems(cfg, productsById = {}) {
-  const items = Array.isArray(cfg?.items) ? cfg.items : [];
+function productInlineDocs(product, item = {}, productDocuments = []) {
+  const docs = [];
+  const add = (kind, title, url) => {
+    if (!url) return;
+    docs.push({ kind, title: text(title, kind === 'manual' ? 'Handleiding' : 'Datasheet'), url });
+  };
+  add('datasheet', 'Datasheet', product?.datasheetUrl || product?.specs?.datasheetUrl || item.datasheetUrl || '');
+  add('manual', 'Handleiding', product?.manualUrl || product?.specs?.manualUrl || item.manualUrl || '');
+  (productDocuments || []).forEach(doc => {
+    const title = fileTitle(doc);
+    const hay = `${title} ${doc?.description || ''}`.toLowerCase();
+    const kind = /handleiding|manual|gebruik/.test(hay) ? 'manual' : 'datasheet';
+    add(kind, title, doc.downloadUrl || doc.url || '');
+  });
+  const seen = new Set();
+  return docs.filter(doc => {
+    const key = `${doc.kind}|${doc.url || doc.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function configItems(cfg, productConfigsById = {}) {
+  if (Array.isArray(cfg?.items) && cfg.items.length) return cfg.items;
+  const configId = cfg?.productConfigId || configIdFromType(cfg?.type) || cfg?.composition?.baseProductConfigId || '';
+  const linkedConfig = configId ? productConfigsById[configId] : null;
+  return Array.isArray(linkedConfig?.items) ? linkedConfig.items : [];
+}
+
+function installedSolutionItems(solution = {}) {
+  const items = Array.isArray(solution?.items) ? solution.items : [];
+  return items.map(item => ({
+    productId: item.productId || '',
+    product: {
+      id: item.productId || '',
+      brand: '',
+      model: item.label || '',
+      name: item.label || '',
+      specs: item.specs || {},
+    },
+    description: item.label || '',
+    qty: Math.max(1, Number(item.quantity) || 1),
+    datasheetUrl: item.datasheetUrl || '',
+    manualUrl: item.manualUrl || '',
+  })).filter(item => item.productId || item.description);
+}
+
+function placedSourceItems(cfg, options = {}) {
+  const installedItems = installedSolutionItems(options.installedSolution || {});
+  if (installedItems.length) return installedItems;
+  return configItems(cfg, options.productConfigsById || {});
+}
+
+function installedSolutionSummary(solution = {}) {
+  const items = installedSolutionItems(solution);
+  if (!items.length) return null;
+  let capacityKwh = 0;
+  let inverterPowerKw = 0;
+  const labels = [];
+  items.forEach(item => {
+    const qty = Math.max(1, Number(item.qty) || 1);
+    const specs = item.product?.specs || {};
+    const cap = Number(item.capacityKwh ?? specs.capacityKwh);
+    const inv = Number(item.inverterPowerKw ?? specs.inverterPowerKw ?? specs.powerKw);
+    if (Number.isFinite(cap)) capacityKwh += qty * cap;
+    if (Number.isFinite(inv)) inverterPowerKw += qty * inv;
+    if (item.description) labels.push(`${qty}x ${item.description}`);
+  });
+  const description = labels.join(' + ');
+  return {
+    description,
+    batteryCapacity: capacityKwh > 0 ? `${capacityKwh.toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kWh` : 'Nog niet ingevuld',
+    batteryInverter: inverterPowerKw > 0 ? `${inverterPowerKw.toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kW` : 'Nog niet ingevuld',
+  };
+}
+
+function buildPlacedItems(cfg, options = {}) {
+  const productsById = options.productsById || {};
+  const productDocumentsById = options.productDocumentsById || {};
+  const items = placedSourceItems(cfg, options);
   const mapped = items.map(item => {
     const qty = Math.max(1, Number(item.qty) || 1);
     const product = productsById[item.productId] || item.product || null;
     const label = product ? productLabel(product) : text(item.description || item.productId, 'Product');
+    const documents = productInlineDocs(product, item, productDocumentsById[item.productId] || []);
     return {
       qty,
       label,
       specs: productSpecsText(product),
-      datasheetUrl: product?.datasheetUrl || product?.specs?.datasheetUrl || item.datasheetUrl || '',
-      manualUrl: product?.manualUrl || product?.specs?.manualUrl || item.manualUrl || '',
+      documents,
+      datasheetUrl: documents.find(doc => doc.kind === 'datasheet')?.url || '',
+      manualUrl: documents.find(doc => doc.kind === 'manual')?.url || '',
     };
   }).filter(item => item.label);
   if (mapped.length) return mapped;
   if (cfg?.omschrijving) {
-    return [{ qty: 1, label: cfg.omschrijving, specs: '', datasheetUrl: '', manualUrl: '' }];
+    return [{ qty: 1, label: cfg.omschrijving, specs: '', documents: [], datasheetUrl: '', manualUrl: '' }];
   }
   return [];
+}
+
+function productDocumentsFromPlacedItems(items = []) {
+  const seen = new Set();
+  const docs = [];
+  items.forEach(item => (item.documents || []).forEach(doc => {
+    if (!doc.url) return;
+    const key = `${doc.kind}|${doc.url}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    docs.push(normalizeDocument({
+      id: `product-${key}`,
+      title: `${item.label} — ${doc.title}`,
+      name: doc.title,
+      downloadUrl: doc.url,
+      description: item.label,
+      category: 'handleidingen',
+    }));
+  }));
+  return docs;
 }
 
 function buildTechnicalRows(project) {
@@ -176,8 +282,15 @@ function buildTechnicalRows(project) {
 
 export function buildClosingDossierModel(project, options = {}) {
   const cfg = firstConfig(project);
+  const offer = firstOfferte(project);
+  const offerDocument = (options.documents || []).find(d => d && (d.documentKind === 'offer' || d.source === 'project.offertes' || d.configType));
   const photos = (options.photos || []).map(normalizePhoto);
-  const documents = (options.documents || []).map(normalizeDocument);
+  const installedSummary = installedSolutionSummary(project?.installedSolution);
+  const placedItems = buildPlacedItems(cfg, { ...options, installedSolution: project?.installedSolution });
+  const documents = [
+    ...(options.documents || []).map(normalizeDocument),
+    ...productDocumentsFromPlacedItems(placedItems),
+  ];
   const docsByCategory = {
     facturen: documents.filter(d => d.category === 'facturen'),
     technischeFiches: documents.filter(d => d.category === 'technischeFiches'),
@@ -209,13 +322,14 @@ export function buildClosingDossierModel(project, options = {}) {
       meterType: text(project?.csvUpload?.meterType, 'Nog niet ingevuld'),
     },
     solution: {
-      description: text(cfg?.omschrijving, 'Nog niet ingevuld'),
-      batteryCapacity: Number.isFinite(Number(cfg?.batCap)) ? `${Number(cfg.batCap).toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kWh` : 'Nog niet ingevuld',
-      batteryInverter: formatKw(cfg?.batInv),
+      description: text(installedSummary?.description, text(cfg?.omschrijving, 'Nog niet ingevuld')),
+      batteryCapacity: installedSummary?.batteryCapacity || (Number.isFinite(Number(cfg?.batCap)) ? `${Number(cfg.batCap).toLocaleString('nl-BE', { maximumFractionDigits: 2 })} kWh` : 'Nog niet ingevuld'),
+      batteryInverter: installedSummary?.batteryInverter || formatKw(cfg?.batInv),
       pvInverter: formatKw(project?.lastCalcRun?.inputs?.pvInv),
-      offerte: text(firstOfferte(project)?.filename, 'Nog niet gekoppeld'),
+      offerte: text(offer?.filename || offerDocument?.name || offerDocument?.title, 'Nog niet gekoppeld'),
+      offerteUrl: offer?.downloadUrl || offerDocument?.downloadUrl || '',
     },
-    placedItems: buildPlacedItems(cfg, options.productsById || {}),
+    placedItems,
     technicalRows: buildTechnicalRows(project),
     energyContext: {
       period: [project?.lastCalcRun?.results?.windowStart, project?.lastCalcRun?.results?.lastDate].filter(Boolean).join(' → ') || 'Nog niet ingevuld',
@@ -239,12 +353,11 @@ export function buildClosingDossierModel(project, options = {}) {
 }
 
 export function buildClosingDossierDraftTexts(model) {
-  const original = model.originalRequestSource
-    || 'Beschrijf hier kort de oorspronkelijke aanvraag en wat SmartPeak ter plaatse of op basis van de projectgegevens heeft bekeken.';
+  const original = model.originalRequestSource || '';
   return {
     projectSummary: `Voor ${model.customer.name} werd een thuisbatterij-oplossing uitgewerkt en opgevolgd door SmartPeak. Dit dossier bundelt de belangrijkste gegevens, documenten, foto’s en technische informatie rond het project.`,
     originalRequest: original,
-    solutionSummary: `De gekozen configuratie is ${model.solution.description}. De voorziene batterijcapaciteit bedraagt ${model.solution.batteryCapacity}.`,
+    solutionSummary: `De geplaatste oplossing is ${model.solution.description}. De geregistreerde batterijcapaciteit bedraagt ${model.solution.batteryCapacity}.`,
     technicalSummary: model.technicalRows.length
       ? 'Onderstaande technische gegevens en metingen werden geregistreerd tijdens de voorbereiding, plaatsing of opvolging van het project.'
       : 'Technische gegevens en metingen kunnen hier aangevuld worden wanneer ze beschikbaar zijn.',
@@ -257,6 +370,13 @@ function paragraph(value) {
 
 function fact(label, value) {
   return `<div class="spcd-fact"><div class="spcd-label">${escapeHtml(label)}</div><div class="spcd-value">${escapeHtml(value || 'Nog niet ingevuld')}</div></div>`;
+}
+
+function linkedFact(label, value, url) {
+  const content = url
+    ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(value || 'Openen')}</a>`
+    : escapeHtml(value || 'Nog niet ingevuld');
+  return `<div class="spcd-fact"><div class="spcd-label">${escapeHtml(label)}</div><div class="spcd-value">${content}</div></div>`;
 }
 
 function section(title, body, extraClass = '') {
@@ -273,13 +393,22 @@ function documentList(items, placeholder) {
   return `<ul class="spcd-doc-list">${items.map(d => `<li>${d.downloadUrl ? `<a href="${escapeHtml(d.downloadUrl)}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a>` : escapeHtml(d.title)}${d.description ? `<span>${escapeHtml(d.description)}</span>` : ''}</li>`).join('')}</ul>`;
 }
 
+function itemDocumentLinks(item) {
+  const docs = item.documents && item.documents.length
+    ? item.documents
+    : [
+        item.datasheetUrl ? { title: 'Datasheet', url: item.datasheetUrl } : null,
+        item.manualUrl ? { title: 'Handleiding', url: item.manualUrl } : null,
+      ].filter(Boolean);
+  return docs.length
+    ? `<div class="spcd-doc-links">${docs.map(doc => `<a href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">${escapeHtml(doc.title)}</a>`).join('')}</div>`
+    : 'Nog te koppelen';
+}
+
 function placedItemsTable(items) {
   if (!items.length) return '<p class="spcd-muted">Nog geen gestructureerde onderdelen beschikbaar.</p>';
   return `<table class="spcd-table"><thead><tr><th>Aantal</th><th>Onderdeel</th><th>Specificaties</th><th>Documenten</th></tr></thead><tbody>${items.map(item => {
-    const docs = [
-      item.datasheetUrl ? `<a href="${escapeHtml(item.datasheetUrl)}" target="_blank" rel="noopener">Datasheet</a>` : '',
-      item.manualUrl ? `<a href="${escapeHtml(item.manualUrl)}" target="_blank" rel="noopener">Handleiding</a>` : '',
-    ].filter(Boolean).join(' · ') || 'Nog te koppelen';
+    const docs = itemDocumentLinks(item);
     return `<tr><td>${escapeHtml(`${item.qty}x`)}</td><td>${escapeHtml(item.label)}</td><td>${escapeHtml(item.specs || '—')}</td><td>${docs}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
@@ -329,11 +458,16 @@ export function renderClosingDossierEditorModalHtml(drafts = {}) {
     </div>`;
 }
 
+function smartPeakLogoSvg() {
+  return `<svg class="spcd-logo" viewBox="0 0 430 82" role="img" aria-label="SmartPeak" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="spcdLogoMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${BRAND.primary}"/><stop offset="1" stop-color="${BRAND.success}"/></linearGradient></defs><g fill="none" fill-rule="evenodd"><path d="M18 58 42 18l19 30 14-20 22 30" stroke="url(#spcdLogoMark)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/><circle cx="99" cy="58" r="6" fill="${BRAND.success}"/><text x="121" y="58" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="46" font-weight="850" letter-spacing="-2.3" fill="${BRAND.primaryDark}">SmartPeak</text></g></svg>`;
+}
+
 export function closingDossierStyles() {
   return `
     <style>
       :root{--spcd-primary:${BRAND.primary};--spcd-primary-dark:${BRAND.primaryDark};--spcd-success:${BRAND.success};--spcd-warning:${BRAND.warning};--spcd-bg:${BRAND.bg};--spcd-border:${BRAND.border};--spcd-text:${BRAND.text};--spcd-muted:${BRAND.muted};}
-      *{box-sizing:border-box} body.spcd-body{margin:0;font-family:"Segoe UI",Inter,Arial,sans-serif;color:var(--spcd-text);background:#fff;font-size:14px;line-height:1.45}.spcd-printbar{position:sticky;top:0;z-index:10;display:flex;gap:.5rem;justify-content:flex-end;padding:.75rem 1rem;background:rgba(255,255,255,.94);border-bottom:1px solid var(--spcd-border);backdrop-filter:blur(8px)}.spcd-printbar button{border:0;border-radius:999px;background:linear-gradient(135deg,var(--spcd-primary),var(--spcd-success));color:white;font-weight:700;padding:.65rem 1rem;cursor:pointer}.spcd-cover{min-height:100vh;padding:72px 56px;background:radial-gradient(circle at 84% 84%,rgba(44,123,229,.12),transparent 34%),radial-gradient(circle at 88% 8%,rgba(0,180,120,.16),transparent 30%),linear-gradient(135deg,#f8fbff,#edf4ff 55%,#eafff7);position:relative;overflow:hidden}.spcd-brand{font-weight:850;color:var(--spcd-primary-dark);font-size:34px;letter-spacing:-.05em}.spcd-subtitle{font-size:13px;color:var(--spcd-muted);font-weight:700;letter-spacing:0}.spcd-cover h1{margin:112px 0 18px;max-width:760px;font-size:52px;line-height:1.05;letter-spacing:-.07em;color:#10233f}.spcd-lead{max-width:660px;font-size:18px;color:#51627d}.spcd-cover-card{margin-top:70px;max-width:640px;background:rgba(255,255,255,.88);border:1px solid rgba(220,227,240,.95);border-radius:22px;padding:38px;box-shadow:0 24px 58px rgba(30,42,58,.10)}.spcd-meta-grid,.spcd-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 24px}.spcd-label{text-transform:uppercase;color:#7b8baa;font-size:11px;letter-spacing:.08em;font-weight:800}.spcd-value{margin-top:5px;font-weight:750;color:#17243a}.spcd-page{padding:0 0 32px}.spcd-card{break-inside:avoid;margin:0 0 28px;padding:30px 32px;border:1px solid var(--spcd-border);border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(30,42,58,.045)}.spcd-card h2{margin:0 0 20px;font-size:26px;letter-spacing:-.045em;color:#17365f;display:flex;align-items:center;gap:10px}.spcd-card h2:before{content:"";width:7px;height:25px;border-radius:999px;background:linear-gradient(var(--spcd-primary),var(--spcd-success))}.spcd-card h3{font-size:18px;margin:24px 0 12px}.spcd-copy{font-size:15px;color:#33435c;white-space:pre-wrap}.spcd-fact{background:#f7f9fd;border:1px solid var(--spcd-border);border-radius:13px;padding:16px;min-height:74px}.spcd-callout{border-left:4px solid var(--spcd-success);background:#effbf6;padding:15px 18px;border-radius:12px;margin-top:16px}.spcd-callout-warning{border-left-color:var(--spcd-warning);background:#fff8eb}.spcd-muted{color:var(--spcd-muted)}table.spcd-table{width:100%;border-collapse:collapse}table.spcd-table th,table.spcd-table td{padding:12px;border-bottom:1px solid var(--spcd-border);text-align:left;vertical-align:top}table.spcd-table th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--spcd-muted)}code{background:#edf4ff;color:#10233f;border-radius:6px;padding:3px 7px}.spcd-doc-list{margin:0;padding-left:18px}.spcd-doc-list li{margin-bottom:8px}.spcd-doc-list span{display:block;color:var(--spcd-muted);font-size:12px}.spcd-photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.spcd-photo-grid figure{margin:0;border:1px solid var(--spcd-border);border-radius:16px;overflow:hidden;background:#fff;break-inside:avoid}.spcd-photo-grid img,.spcd-photo-placeholder{width:100%;height:320px;object-fit:contain;display:flex;align-items:center;justify-content:center;background:#eef3fb;color:var(--spcd-muted)}.spcd-photo-grid figcaption{padding:12px 14px}.spcd-photo-grid figcaption span{display:block;color:var(--spcd-muted);font-size:12px;margin-top:2px;word-break:break-word}.spcd-break{break-before:page}@media print{.spcd-printbar{display:none}.spcd-cover{min-height:100vh}.spcd-card{box-shadow:none;margin-bottom:18px}.spcd-photo-grid img,.spcd-photo-placeholder{height:260px}a{color:inherit;text-decoration:none}}@media(max-width:760px){.spcd-cover{padding:42px 24px}.spcd-cover h1{font-size:40px;margin-top:72px}.spcd-meta-grid,.spcd-grid,.spcd-photo-grid{grid-template-columns:1fr}.spcd-card{padding:24px 20px}}
+      *{box-sizing:border-box} body.spcd-body{margin:0;font-family:"Segoe UI",Inter,Arial,sans-serif;color:var(--spcd-text);background:#fff;font-size:14px;line-height:1.45}.spcd-printbar{position:sticky;top:0;z-index:10;display:flex;gap:.5rem;justify-content:flex-end;padding:.75rem 1rem;background:rgba(255,255,255,.94);border-bottom:1px solid var(--spcd-border);backdrop-filter:blur(8px)}.spcd-printbar button{border:0;border-radius:999px;background:linear-gradient(135deg,var(--spcd-primary),var(--spcd-success));color:white;font-weight:700;padding:.65rem 1rem;cursor:pointer}.spcd-cover{min-height:100vh;padding:72px 56px;background:radial-gradient(circle at 84% 84%,rgba(44,123,229,.12),transparent 34%),radial-gradient(circle at 88% 8%,rgba(0,180,120,.16),transparent 30%),linear-gradient(135deg,#f8fbff,#edf4ff 55%,#eafff7);position:relative;overflow:hidden}.spcd-brand{font-weight:850;color:var(--spcd-primary-dark);font-size:34px;letter-spacing:-.05em}.spcd-subtitle{font-size:13px;color:var(--spcd-muted);font-weight:700;letter-spacing:0}.spcd-cover h1{margin:112px 0 18px;max-width:760px;font-size:52px;line-height:1.05;letter-spacing:-.07em;color:#10233f}.spcd-lead{max-width:660px;font-size:18px;color:#51627d}.spcd-cover-card{margin-top:70px;max-width:640px;background:rgba(255,255,255,.88);border:1px solid rgba(220,227,240,.95);border-radius:22px;padding:38px;box-shadow:0 24px 58px rgba(30,42,58,.10)}.spcd-meta-grid,.spcd-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 24px}.spcd-label{text-transform:uppercase;color:#7b8baa;font-size:11px;letter-spacing:.08em;font-weight:800}.spcd-value{margin-top:5px;font-weight:750;color:#17243a}.spcd-page{padding:0 0 32px}.spcd-card{break-inside:avoid;margin:0 0 28px;padding:30px 32px;border:1px solid var(--spcd-border);border-radius:18px;background:#fff;box-shadow:0 6px 18px rgba(30,42,58,.045)}.spcd-card h2{margin:0 0 20px;font-size:26px;letter-spacing:-.045em;color:#17365f;display:flex;align-items:center;gap:10px}.spcd-card h2:before{content:"";width:7px;height:25px;border-radius:999px;background:linear-gradient(var(--spcd-primary),var(--spcd-success))}.spcd-card h3{font-size:18px;margin:24px 0 12px}.spcd-copy{font-size:15px;color:#33435c;white-space:pre-wrap}.spcd-fact{background:#f7f9fd;border:1px solid var(--spcd-border);border-radius:13px;padding:16px;min-height:74px}.spcd-callout{border-left:4px solid var(--spcd-success);background:#effbf6;padding:15px 18px;border-radius:12px;margin-top:16px}.spcd-callout-warning{border-left-color:var(--spcd-warning);background:#fff8eb}.spcd-muted{color:var(--spcd-muted)}table.spcd-table{width:100%;border-collapse:collapse}table.spcd-table th,table.spcd-table td{padding:12px;border-bottom:1px solid var(--spcd-border);text-align:left;vertical-align:top}table.spcd-table th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--spcd-muted)}code{background:#edf4ff;color:#10233f;border-radius:6px;padding:3px 7px}.spcd-doc-list{margin:0;padding-left:18px}.spcd-doc-list li{margin-bottom:8px}.spcd-doc-list span{display:block;color:var(--spcd-muted);font-size:12px}.spcd-photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.spcd-photo-grid figure{margin:0;border:1px solid var(--spcd-border);border-radius:16px;overflow:hidden;background:#fff;break-inside:avoid}.spcd-photo-grid img,.spcd-photo-placeholder{width:100%;height:320px;object-fit:contain;display:flex;align-items:center;justify-content:center;background:#eef3fb;color:var(--spcd-muted)}.spcd-photo-grid figcaption{padding:12px 14px}.spcd-photo-grid figcaption span{display:block;color:var(--spcd-muted);font-size:12px;margin-top:2px;word-break:break-word}.spcd-break{break-before:page}@media print{.spcd-printbar{display:none}.spcd-cover{min-height:100vh}.spcd-card{box-shadow:none;margin-bottom:18px}.spcd-photo-grid img,.spcd-photo-placeholder{height:260px}a{color:var(--spcd-primary-dark);text-decoration:underline;text-underline-offset:2px}}@media(max-width:760px){.spcd-cover{padding:42px 24px}.spcd-cover h1{font-size:40px;margin-top:72px}.spcd-meta-grid,.spcd-grid,.spcd-photo-grid{grid-template-columns:1fr}.spcd-card{padding:24px 20px}}
+      .spcd-page{max-width:1120px;margin:0 auto;padding:32px}.spcd-table{table-layout:fixed}.spcd-table th,.spcd-table td{overflow-wrap:anywhere;word-break:break-word}.spcd-table th:first-child,.spcd-table td:first-child{width:58px;white-space:nowrap}.spcd-table th:nth-child(2),.spcd-table td:nth-child(2){width:30%}.spcd-table th:nth-child(3),.spcd-table td:nth-child(3){width:24%}.spcd-logo{display:block;width:280px;max-width:58vw;height:auto;margin-bottom:8px}.spcd-doc-links{display:flex;flex-direction:column;gap:4px}.spcd-doc-links a,.spcd-doc-list a,.spcd-value a{overflow-wrap:anywhere;word-break:break-word;color:var(--spcd-primary-dark);text-decoration:underline;text-underline-offset:2px}.spcd-doc-list{padding-left:16px}.spcd-fact{min-width:0}.spcd-grid>*{min-width:0}@media print{@page{size:A4;margin:12mm}.spcd-page{padding:0}.spcd-card{box-shadow:none;margin-bottom:14px;padding:20px;break-inside:avoid}.spcd-table{font-size:12px}.spcd-table th,.spcd-table td{padding:8px 6px}.spcd-table th:first-child,.spcd-table td:first-child{width:46px}.spcd-cover{padding:48px 36px}.spcd-cover-card{margin-top:44px}.spcd-card h2{font-size:22px}.spcd-card h3{font-size:16px}}
     </style>
   `;
 }
@@ -344,7 +478,7 @@ export function renderClosingDossierHtml(model, options = {}) {
   const texts = { ...defaults, ...(options.texts || {}) };
   const docCards = `
     <div class="spcd-grid">
-      ${fact('Offerte', model.solution.offerte)}
+      ${linkedFact('Offerte', model.solution.offerte, model.solution.offerteUrl)}
       <div class="spcd-fact"><div class="spcd-label">Facturen</div>${documentList(model.documents.facturen, 'Plaats voorzien voor voorschot- en saldofactuur.')}</div>
       <div class="spcd-fact"><div class="spcd-label">Technische fiches</div>${documentList(model.documents.technischeFiches, 'Plaats voorzien per geplaatst product.')}</div>
       <div class="spcd-fact"><div class="spcd-label">Handleidingen</div>${documentList(model.documents.handleidingen, 'Plaats voorzien per geplaatst product.')}</div>
@@ -353,7 +487,7 @@ export function renderClosingDossierHtml(model, options = {}) {
   return `<!doctype html><html lang="nl-BE"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(model.title)} - ${escapeHtml(model.customer.name)}</title>${closingDossierStyles()}</head><body class="spcd-body">
     <div class="spcd-printbar"><button type="button" data-closing-dossier-print onclick="window.print()">PDF maken / afdrukken</button></div>
     <section class="spcd-cover">
-      <div class="spcd-brand">SmartPeak<div class="spcd-subtitle">Slim omgaan met jouw energie</div></div>
+      <div class="spcd-brand">${smartPeakLogoSvg()}<div class="spcd-subtitle">Slim omgaan met jouw energie</div></div>
       <h1>${escapeHtml(model.title)}</h1>
       <p class="spcd-lead">Een gebundeld overzicht van de installatie, technische gegevens, documenten, foto’s en praktische opvolging.</p>
       <div class="spcd-cover-card"><div class="spcd-meta-grid">
@@ -362,10 +496,9 @@ export function renderClosingDossierHtml(model, options = {}) {
     </section>
     <main class="spcd-page">
       ${section('Projectoverzicht', `${paragraph(texts.projectSummary)}<div class="spcd-grid">${fact('Klant', model.customer.name)}${fact('Adres', model.customer.address)}${fact('E-mail', model.customer.email)}${fact('Telefoon', model.customer.phone)}${fact('EAN-code', model.meter.eanCode)}${fact('Meter', `${model.meter.meterType}${model.meter.meterNumber ? ` · ${model.meter.meterNumber}` : ''}`)}</div>`)}
-      ${section('Originele aanvraag', paragraph(texts.originalRequest))}
-      ${section('Geplaatste / voorziene oplossing', `${paragraph(texts.solutionSummary)}<div class="spcd-grid">${fact('Configuratie', model.solution.description)}${fact('Batterijcapaciteit', model.solution.batteryCapacity)}${fact('Batterij-omvormer', model.solution.batteryInverter)}${fact('PV-omvormer', model.solution.pvInverter)}${fact('Offerte', model.solution.offerte)}${fact('Keuring', model.planning.inspectionPlannedDate !== 'Nog niet ingevuld' || model.planning.inspectionDoneDate !== 'Nog niet ingevuld' ? 'Voorzien' : 'Nog te bevestigen')}</div><h3>Geplaatste onderdelen</h3>${placedItemsTable(model.placedItems)}`)}
+      ${texts.originalRequest && texts.originalRequest.trim() ? section('Originele aanvraag', paragraph(texts.originalRequest)) : ''}
+      ${section('Geplaatste / voorziene oplossing', `${paragraph(texts.solutionSummary)}<div class="spcd-grid">${fact('Geplaatste oplossing', model.solution.description)}${fact('Batterijcapaciteit', model.solution.batteryCapacity)}${fact('Batterij-omvormer', model.solution.batteryInverter)}${fact('PV-omvormer', model.solution.pvInverter)}${linkedFact('Offerte', model.solution.offerte, model.solution.offerteUrl)}${fact('Keuring', model.planning.inspectionPlannedDate !== 'Nog niet ingevuld' || model.planning.inspectionDoneDate !== 'Nog niet ingevuld' ? 'Voorzien' : 'Nog te bevestigen')}</div><h3>Geplaatste onderdelen</h3>${placedItemsTable(model.placedItems)}`)}
       ${section('Technische gegevens en metingen', `${paragraph(texts.technicalSummary)}<table class="spcd-table"><tbody>${tableRows(model.technicalRows, 'Nog geen technische metingen geregistreerd.')}</tbody></table>`)}
-      ${section('Verbruik / injectie samenvatting', `<p class="spcd-muted">Compacte context, zonder ROI-detail of terugverdientijd.</p><div class="spcd-grid">${fact('CSV-periode', model.energyContext.period)}${fact('Afname jaarvenster', model.energyContext.totalAfname)}${fact('Injectie jaarvenster', model.energyContext.totalInjectie)}${fact('Energieprijs gebruikt', model.energyContext.effectivePrice)}</div>`)}
       ${section('Planning en keuring', `<div class="spcd-grid">${fact('Plaatsbezoek uitgevoerd', model.planning.visitDoneDate)}${fact('Installatie afgerond', model.planning.installationDoneDate)}${fact('Keuring gepland', model.planning.inspectionPlannedDate)}${fact('Keuring afgerond', model.planning.inspectionDoneDate)}</div>`)}
       ${section('Serienummers', `<table class="spcd-table"><thead><tr><th>Categorie</th><th>Serienummer</th><th>Bron</th></tr></thead><tbody>${serialRows(model.serialNumbers)}</tbody></table>`)}
       ${section('Documenten en bijlagen', docCards)}

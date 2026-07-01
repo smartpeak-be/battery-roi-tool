@@ -1,6 +1,6 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
-import { mountProjectDocuments } from '../project-documents.js';
+import { mountProjectDocuments, mergeProjectDocuments, resolveDocumentDownloadUrls } from '../project-documents.js';
 import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
@@ -1753,11 +1753,13 @@ function renderDrawer(project) {
       closingBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Dossier voorbereiden…';
       await withSpinner(async () => {
         try {
-          const [photos, documents] = await Promise.all([
+          const dossierProject = _currentDrawerProject || project;
+          const [photos, rawDocuments] = await Promise.all([
             listProjectPhotos(project.id).catch(err => { console.warn('closing dossier photos failed', err); return []; }),
             listProjectDocuments(project.id).catch(err => { console.warn('closing dossier documents failed', err); return []; }),
           ]);
-          const model = buildClosingDossierModel(_currentDrawerProject || project, { photos, documents });
+          const dossierInputs = await loadClosingDossierInputs(dossierProject, rawDocuments);
+          const model = buildClosingDossierModel(dossierProject, { photos, ...dossierInputs });
           const drafts = buildClosingDossierDraftTexts(model);
           document.getElementById('spClosingDossierModal')?.remove();
           document.body.insertAdjacentHTML('beforeend', renderClosingDossierEditorModalHtml(drafts));
@@ -1826,6 +1828,41 @@ function renderDrawer(project) {
       }
     });
   }
+}
+
+function mapById(list = []) {
+  return Object.fromEntries((list || []).filter(item => item && item.id).map(item => [item.id, item]));
+}
+
+async function loadClosingDossierInputs(project, rawDocuments = []) {
+  const safe = (promise, fallback, label) => promise.catch(err => {
+    console.warn(`closing dossier ${label} failed`, err);
+    return fallback;
+  });
+  const [products, productConfigs] = await Promise.all([
+    typeof window.listProducts === 'function' ? safe(window.listProducts(), [], 'products') : [],
+    typeof window.listProductConfigs === 'function' ? safe(window.listProductConfigs(), [], 'product configs') : [],
+  ]);
+  const productsById = mapById(products);
+  const productConfigsById = mapById(productConfigs);
+  const mergedDocuments = await resolveDocumentDownloadUrls(mergeProjectDocuments(rawDocuments, project));
+  const cfg = project?.lastCalcRun?.results?.configResults?.[0]?.cfg || {};
+  const configId = cfg.productConfigId || (typeof cfg.type === 'string' && cfg.type.startsWith('PC_') ? cfg.type.slice(3) : '') || cfg.composition?.baseProductConfigId || '';
+  const configItems = (Array.isArray(cfg.items) && cfg.items.length)
+    ? cfg.items
+    : (Array.isArray(productConfigsById[configId]?.items) ? productConfigsById[configId].items : []);
+  const installedItems = Array.isArray(project?.installedSolution?.items) ? project.installedSolution.items : [];
+  const productIds = [...new Set([
+    ...configItems.map(item => item && item.productId),
+    ...installedItems.map(item => item && item.productId),
+  ].filter(Boolean))];
+  const productDocumentsById = {};
+  if (typeof window.listProductDatasheets === 'function') {
+    await Promise.all(productIds.map(async productId => {
+      productDocumentsById[productId] = await safe(window.listProductDatasheets(productId), [], `product documents ${productId}`);
+    }));
+  }
+  return { documents: mergedDocuments, productsById, productConfigsById, productDocumentsById };
 }
 
 function _renderDrawerSerial(entry) {

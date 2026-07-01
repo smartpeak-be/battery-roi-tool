@@ -160,6 +160,182 @@ describe('project closing dossier', () => {
     expect(html).toContain('Handleiding');
   });
 
+  it('verbergt optionele originele aanvraag en ROI-context wanneer er geen tekst is', () => {
+    const model = buildClosingDossierModel(baseProject, { generatedAt: '2026-06-11T18:00:00.000Z' });
+    const drafts = buildClosingDossierDraftTexts(model);
+    const html = renderClosingDossierHtml(model);
+
+    expect(drafts.originalRequest).toBe('');
+    expect(html).not.toContain('<h2>Originele aanvraag</h2>');
+    expect(html).not.toContain('Verbruik / injectie samenvatting');
+    expect(html).not.toContain('ROI-detail');
+    expect(html).not.toContain('terugverdientijd');
+  });
+
+  it('neemt geplaatste onderdelen, specs en productdocumenten mee via gekoppelde productconfig', () => {
+    const project = {
+      ...baseProject,
+      lastCalcRun: {
+        ...baseProject.lastCalcRun,
+        results: {
+          ...baseProject.lastCalcRun.results,
+          configResults: [{
+            cfg: {
+              type: 'PC_cfg-1',
+              productConfigId: 'cfg-1',
+              omschrijving: 'Catalogusconfiguratie',
+              batCap: 10,
+              batInv: 5,
+            },
+          }],
+        },
+      },
+    };
+    const model = buildClosingDossierModel(project, {
+      productConfigsById: {
+        'cfg-1': { id: 'cfg-1', items: [{ productId: 'bat-1', qty: 2 }, { productId: 'inv-1', qty: 1 }] },
+      },
+      productsById: {
+        'bat-1': { id: 'bat-1', brand: 'Zendure', model: 'AB2000S', specs: { capacityKwh: 1.92, weightKg: 25 } },
+        'inv-1': { id: 'inv-1', brand: 'Zendure', model: 'SolarFlow 2400 AC', specs: { inverterPowerKw: 2.4 } },
+      },
+      productDocumentsById: {
+        'bat-1': [
+          { name: 'AB2000S datasheet.pdf', downloadUrl: 'https://example.test/ab2000s-ds.pdf' },
+          { name: 'AB2000S manual.pdf', downloadUrl: 'https://example.test/ab2000s-manual.pdf' },
+        ],
+        'inv-1': [{ name: 'SolarFlow 2400 AC handleiding.pdf', downloadUrl: 'https://example.test/sf-manual.pdf' }],
+      },
+      generatedAt: '2026-06-11T18:00:00.000Z',
+    });
+    const html = renderClosingDossierHtml(model);
+
+    expect(model.placedItems).toHaveLength(2);
+    expect(html).toContain('1,92 kWh · 25 kg');
+    expect(html).toContain('2,4 kW omvormer');
+    expect(html).toContain('AB2000S datasheet.pdf');
+    expect(html).toContain('AB2000S manual.pdf');
+    expect(html).toContain('SolarFlow 2400 AC handleiding.pdf');
+    expect(model.documents.handleidingen.some(d => d.downloadUrl === 'https://example.test/ab2000s-ds.pdf')).toBe(true);
+    expect(model.documents.handleidingen.some(d => d.downloadUrl === 'https://example.test/sf-manual.pdf')).toBe(true);
+    expect(model.documents.technischeFiches.some(d => d.downloadUrl === 'https://example.test/ab2000s-ds.pdf')).toBe(false);
+  });
+
+  it('maakt virtuele offerte-documenten als link openbaar in het dossier', () => {
+    const model = buildClosingDossierModel(baseProject, {
+      documents: [{
+        source: 'project.offertes',
+        documentKind: 'offer',
+        configType: 'ZSF2400AC+_2X1',
+        name: 'Offerte_OFF-024035_DavidVerberckmoes.pdf',
+        downloadUrl: 'https://storage.test/offerte.pdf',
+      }],
+      generatedAt: '2026-06-11T18:00:00.000Z',
+    });
+    const html = renderClosingDossierHtml(model);
+
+    expect(model.solution.offerteUrl).toBe('https://storage.test/offerte.pdf');
+    expect(html).toContain('<a href="https://storage.test/offerte.pdf" target="_blank" rel="noopener">Offerte_OFF-024035_DavidVerberckmoes.pdf</a>');
+  });
+
+  it('neemt geplaatste producten uit installedSolution wanneer de calc-config geen itemregels heeft', () => {
+    const project = {
+      ...baseProject,
+      installedSolution: {
+        items: [
+          {
+            productId: 'sf-2400',
+            label: 'Zendure Solarflow 2400 AC+',
+            quantity: 2,
+            specs: { capacityKwh: 2.4, inverterPowerKw: 2.4, weightKg: 27.8 },
+          },
+          {
+            productId: 'ab3000l',
+            label: 'Zendure AB3000L',
+            quantity: 2,
+            specs: { capacityKwh: 2.88, weightKg: 26.3 },
+          },
+        ],
+      },
+    };
+    const model = buildClosingDossierModel(project, {
+      productDocumentsById: {
+        'sf-2400': [{ name: 'SolarFlow 2400 AC+ handleiding.pdf', downloadUrl: 'https://example.test/sf-manual.pdf' }],
+        ab3000l: [{ name: 'AB3000L datasheet.pdf', downloadUrl: 'https://example.test/ab3000l-ds.pdf' }],
+      },
+      generatedAt: '2026-06-11T18:00:00.000Z',
+    });
+    const html = renderClosingDossierHtml(model);
+
+    expect(model.placedItems).toHaveLength(2);
+    expect(html).toContain('2x');
+    expect(html).toContain('Zendure Solarflow 2400 AC+');
+    expect(html).toContain('2,4 kWh · 2,4 kW omvormer · 27,8 kg');
+    expect(html).toContain('Zendure AB3000L');
+    expect(html).toContain('2,88 kWh · 26,3 kg');
+    expect(html).toContain('SolarFlow 2400 AC+ handleiding.pdf');
+    expect(html).toContain('AB3000L datasheet.pdf');
+    expect(html).toContain('class="spcd-doc-links"');
+    expect(html).toContain('class="spcd-logo"');
+    expect(html).toContain('aria-label="SmartPeak"');
+    expect(html).toContain('table-layout:fixed');
+    expect(html).toContain('text-decoration:underline');
+    expect(html).toContain('overflow-wrap:anywhere');
+    expect(model.documents.handleidingen.some(d => d.downloadUrl === 'https://example.test/ab3000l-ds.pdf')).toBe(true);
+    expect(model.documents.technischeFiches.some(d => d.downloadUrl === 'https://example.test/ab3000l-ds.pdf')).toBe(false);
+  });
+
+  it('gebruikt de geplaatste oplossing als waarheid, ook wanneer de calc-config itemregels heeft', () => {
+    const project = {
+      ...baseProject,
+      installedSolution: {
+        items: [{
+          productId: 'real-battery',
+          label: 'Werkelijk geplaatste batterij',
+          quantity: 3,
+          specs: { capacityKwh: 3.2, weightKg: 29 },
+        }],
+      },
+      lastCalcRun: {
+        ...baseProject.lastCalcRun,
+        results: {
+          ...baseProject.lastCalcRun.results,
+          configResults: [{
+            cfg: {
+              type: 'PC_calc-1',
+              productConfigId: 'calc-1',
+              omschrijving: 'Calculatieconfiguratie',
+              batCap: 10,
+              batInv: 5,
+              items: [{ productId: 'calc-product', qty: 1 }],
+            },
+          }],
+        },
+      },
+    };
+    const model = buildClosingDossierModel(project, {
+      productsById: {
+        'calc-product': { id: 'calc-product', brand: 'Niet', model: 'Geplaatst', specs: { capacityKwh: 99 } },
+      },
+      productDocumentsById: {
+        'real-battery': [{ name: 'Werkelijke handleiding.pdf', downloadUrl: 'https://example.test/real-manual.pdf' }],
+      },
+      generatedAt: '2026-06-11T18:00:00.000Z',
+    });
+    const html = renderClosingDossierHtml(model);
+
+    expect(model.placedItems).toHaveLength(1);
+    expect(html).toContain('Werkelijk geplaatste batterij');
+    expect(html).toContain('De geplaatste oplossing is 3x Werkelijk geplaatste batterij');
+    expect(html).toContain('geregistreerde batterijcapaciteit');
+    expect(html).toContain('9,6 kWh');
+    expect(html).toContain('3x');
+    expect(html).toContain('3,2 kWh · 29 kg');
+    expect(html).toContain('Werkelijke handleiding.pdf');
+    expect(html).not.toContain('Niet Geplaatst');
+    expect(html).not.toContain('99 kWh');
+  });
+
   it('biedt vooraf ingevulde tekstvakken aan die voor generatie aangepast kunnen worden', () => {
     const model = buildClosingDossierModel({
       ...baseProject,
