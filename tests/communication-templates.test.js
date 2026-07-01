@@ -31,9 +31,13 @@ describe('communicatie templates', () => {
     const html = renderTemplateHtml(defaultCommunicationTemplates()[0]);
     expect(html).toContain('<table role="presentation"');
     expect(html).toContain('style="margin:0;padding:0;background:');
+    expect(html).toContain('class="sp-mail-block sp-mail-block-paragraph sp-mail-block-intro"');
+    expect(html).toContain('class="sp-mail-block-inner" style="padding:18px 18px 4px 22px;"');
+    expect(html).toContain('class="sp-mail-block sp-mail-block-callout sp-mail-block-why"');
     expect(html).toContain('SmartPeak');
     expect(html).toContain('Dag voornaam');
     expect(html).toContain('✓');
+    expect(html).not.toContain('Deze mail is opgesteld met een herbruikbare SmartPeak-template');
   });
 
   it('rendert platte tekst zodat template later tekstueel aangepast kan worden', () => {

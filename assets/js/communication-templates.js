@@ -175,22 +175,31 @@ function checklistHtml(block, style, variables) {
   return `${intro}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:4px;">${items}</table>`;
 }
 
+function cssClassHandle(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'block';
+}
+
 function blockHtml(block, style, variables) {
-  if (block.type === 'spacer') return '<tr><td style="height:18px;font-size:18px;line-height:18px;">&nbsp;</td></tr>';
+  const blockClasses = `sp-mail-block sp-mail-block-${cssClassHandle(block.type)} sp-mail-block-${cssClassHandle(block.id)}`;
+  if (block.type === 'spacer') return `<tr class="${blockClasses}" data-block-id="${escapeHtml(block.id)}"><td style="height:18px;font-size:18px;line-height:18px;">&nbsp;</td></tr>`;
   const body = block.type === 'checklist'
     ? checklistHtml(block, style, variables)
     : paragraphsHtml(block.text, variables);
-  const title = block.title ? `<h2 style="margin:0 0 12px;font-size:18px;line-height:1.25;color:${style.textColor};">${escapeHtml(block.title)}</h2>` : '';
+  const title = block.title ? `<h2 class="sp-mail-block-title" style="margin:0 0 12px;font-size:18px;line-height:1.25;color:${style.textColor};">${escapeHtml(block.title)}</h2>` : '';
   const isCallout = block.type === 'callout';
   const boxStyle = isCallout
     ? `background:${style.backgroundColor};border-left:4px solid ${style.accentColor};border-radius:${Math.max(8, Number(style.borderRadius) - 6)}px;padding:18px 18px 4px;`
-    : 'padding:0;';
+    : 'padding:18px 18px 4px 22px;';
   return `
-    <tr>
+    <tr class="${blockClasses}" data-block-id="${escapeHtml(block.id)}">
       <td style="padding:0 0 18px;">
-        <div style="${boxStyle}">
+        <div class="sp-mail-block-inner" style="${boxStyle}">
           ${title}
-          ${body}
+          <div class="sp-mail-block-content">${body}</div>
         </div>
       </td>
     </tr>`;
@@ -223,12 +232,6 @@ export function renderTemplateHtml(templateInput) {
           <tr>
             <td style="padding:28px;color:${style.textColor};font-size:15px;line-height:1.55;">
               ${blocks}
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:18px 28px;background:#f8fafc;color:${style.mutedColor};font-size:12px;line-height:1.5;">
-              SmartPeak · Thuisbatterijen en energieoptimalisatie<br>
-              Deze mail is opgesteld met een herbruikbare SmartPeak-template en kan voor verzending tekstueel aangepast worden.
             </td>
           </tr>
         </table>
