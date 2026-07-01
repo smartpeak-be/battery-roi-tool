@@ -175,6 +175,8 @@ describe('operations workflow defaults', () => {
     expect(bebatSummaryForProject(project)).toEqual({
       total: 2,
       registered: 1,
+      paid: 0,
+      externalFulfilled: 0,
       pending: 1,
       notRequired: 0,
       status: 'pending',
@@ -258,13 +260,25 @@ describe('operations workflow defaults', () => {
   });
 
   it('builds cross-project Bebat rows only for battery serials and sorts pending first', () => {
-    const { bebatRowsForProjects } = loadHelpers();
+    const { bebatRowsForProjects, bebatSummaryForProject } = loadHelpers();
     const projects = [
       {
         id: 'project-registered',
         customerName: 'Geregistreerd',
         status: 'klaar_voor_inplannen_keuring',
         serialNumbers: [{ id: 'bat-registered', value: 'BATT-002', category: 'batterij', bebatStatus: 'registered', bebatRegisteredAt: '2026-05-24', bebatReference: 'BE-42' }],
+      },
+      {
+        id: 'project-paid',
+        customerName: 'Betaald',
+        status: 'plaatsing_ingepland',
+        serialNumbers: [{ id: 'bat-paid', value: 'BATT-003', category: 'batterij', bebatStatus: 'paid', bebatRegisteredAt: '2026-05-25', bebatReference: 'PAY-1' }],
+      },
+      {
+        id: 'project-external',
+        customerName: 'Extern voldaan',
+        status: 'plaatsing_ingepland',
+        serialNumbers: [{ id: 'bat-external', value: 'BATT-004', category: 'omvormer_batterij', bebatStatus: 'external_fulfilled', bebatReference: 'Leverancier X' }],
       },
       {
         id: 'project-pending',
@@ -280,7 +294,19 @@ describe('operations workflow defaults', () => {
     expect(bebatRowsForProjects(projects)).toEqual([
       expect.objectContaining({ projectId: 'project-pending', serialId: 'bat-pending', serial: 'BATT-001', status: 'pending', customerName: 'Nog te doen', projectStatusLabel: 'Bezoek gepland' }),
       expect.objectContaining({ projectId: 'project-registered', serialId: 'bat-registered', serial: 'BATT-002', status: 'registered', registeredAt: '2026-05-24', reference: 'BE-42', projectStatusLabel: 'Klaar voor inplannen keuring' }),
+      expect.objectContaining({ projectId: 'project-paid', serialId: 'bat-paid', serial: 'BATT-003', status: 'paid', registeredAt: '2026-05-25', reference: 'PAY-1' }),
+      expect.objectContaining({ projectId: 'project-external', serialId: 'bat-external', serial: 'BATT-004', status: 'external_fulfilled', reference: 'Leverancier X' }),
     ]);
+
+    expect(bebatSummaryForProject({
+      serialNumbers: [
+        { id: 'pending', value: 'BATT-001', category: 'batterij' },
+        { id: 'registered', value: 'BATT-002', category: 'batterij', bebatStatus: 'registered' },
+        { id: 'paid', value: 'BATT-003', category: 'batterij', bebatStatus: 'paid' },
+        { id: 'external', value: 'BATT-004', category: 'omvormer_batterij', bebatStatus: 'external_fulfilled' },
+        { id: 'na', value: 'BATT-005', category: 'batterij', bebatStatus: 'not_required' },
+      ],
+    })).toMatchObject({ total: 5, pending: 1, registered: 1, paid: 1, externalFulfilled: 1, notRequired: 1 });
   });
 
   it('builds a cross-project task inbox with own tasks, general tasks and suggested actions', () => {

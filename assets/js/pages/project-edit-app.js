@@ -1631,6 +1631,8 @@ function _renderSerialRow(entry) {
       <select class="form-select form-select-sm w-auto" data-serial-field="bebatStatus" title="Bebat-status">
         <option value="pending" ${bebatStatus === 'pending' ? 'selected' : ''}>Bebat: nog</option>
         <option value="registered" ${bebatStatus === 'registered' ? 'selected' : ''}>Bebat: geregistreerd</option>
+        <option value="paid" ${bebatStatus === 'paid' ? 'selected' : ''}>Bebat: betaald</option>
+        <option value="external_fulfilled" ${bebatStatus === 'external_fulfilled' ? 'selected' : ''}>Bebat: extern voldaan</option>
         <option value="not_required" ${bebatStatus === 'not_required' ? 'selected' : ''}>Bebat: n.v.t.</option>
       </select>
       ${rerunBtnHtml}

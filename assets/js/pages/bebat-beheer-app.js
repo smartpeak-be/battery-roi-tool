@@ -6,11 +6,15 @@ let _rows = [];
 const STATUS_LABELS = {
   pending: 'Nog te registreren',
   registered: 'Geregistreerd',
+  paid: 'Betaald',
+  external_fulfilled: 'Extern voldaan',
   not_required: 'Niet nodig',
 };
 
 function statusBadge(status) {
   if (status === 'registered') return '<span class="badge text-bg-success">Geregistreerd</span>';
+  if (status === 'paid') return '<span class="badge text-bg-primary">Betaald</span>';
+  if (status === 'external_fulfilled') return '<span class="badge text-bg-info">Extern voldaan</span>';
   if (status === 'not_required') return '<span class="badge text-bg-secondary">Niet nodig</span>';
   return '<span class="badge text-bg-warning text-dark">Nog te registreren</span>';
 }
@@ -28,7 +32,33 @@ function updateSummary() {
   document.getElementById('summaryTotal').textContent = _rows.length;
   document.getElementById('summaryPending').textContent = _rows.filter(r => r.status === 'pending').length;
   document.getElementById('summaryRegistered').textContent = _rows.filter(r => r.status === 'registered').length;
+  document.getElementById('summaryPaid').textContent = _rows.filter(r => r.status === 'paid').length;
+  document.getElementById('summaryExternalFulfilled').textContent = _rows.filter(r => r.status === 'external_fulfilled').length;
   document.getElementById('summaryNotRequired').textContent = _rows.filter(r => r.status === 'not_required').length;
+}
+
+function rowFormValues(rowEl) {
+  return {
+    status: rowEl.querySelector('.bebat-status-input').value || 'pending',
+    registeredAt: rowEl.querySelector('.bebat-date-input').value || '',
+    reference: rowEl.querySelector('.bebat-ref-input').value.trim(),
+  };
+}
+
+function rowHasChanges(rowEl) {
+  const patch = patchForValues(rowFormValues(rowEl));
+  return patch.bebatStatus !== (rowEl.dataset.originalStatus || 'pending')
+    || (patch.bebatRegisteredAt || '') !== (rowEl.dataset.originalRegisteredAt || '')
+    || (patch.bebatReference || '') !== (rowEl.dataset.originalReference || '');
+}
+
+function patchForValues(values) {
+  const keepsRegistrationMeta = ['registered', 'paid', 'external_fulfilled'].includes(values.status);
+  return {
+    bebatStatus: values.status,
+    bebatRegisteredAt: keepsRegistrationMeta ? (values.registeredAt || null) : null,
+    bebatReference: keepsRegistrationMeta ? (values.reference || null) : null,
+  };
 }
 
 function renderRows() {
@@ -44,7 +74,7 @@ function renderRows() {
   }
 
   tbody.innerHTML = rows.map(row => `
-    <tr data-project-id="${escapeHtml(row.projectId || '')}" data-serial-id="${escapeHtml(row.serialId || '')}">
+    <tr data-project-id="${escapeHtml(row.projectId || '')}" data-serial-id="${escapeHtml(row.serialId || '')}" data-original-status="${escapeHtml(row.status || 'pending')}" data-original-registered-at="${escapeHtml(row.registeredAt || '')}" data-original-reference="${escapeHtml(row.reference || '')}">
       <td>
         <a href="project-edit.html?project=${encodeURIComponent(row.projectId)}" class="fw-semibold text-decoration-none">${escapeHtml(row.projectLabel || '(zonder naam)')}</a>
         <div class="text-muted small">${escapeHtml(row.projectStatusLabel || row.projectStatus || '')}</div>
@@ -58,7 +88,7 @@ function renderRows() {
         </select>
       </td>
       <td><input type="date" class="form-control form-control-sm bebat-date-input" value="${escapeHtml(row.registeredAt || '')}"></td>
-      <td><input type="text" class="form-control form-control-sm bebat-ref-input" value="${escapeHtml(row.reference || '')}" placeholder="Bebat referentie"></td>
+      <td><input type="text" class="form-control form-control-sm bebat-ref-input" value="${escapeHtml(row.reference || '')}" placeholder="Referentie / leverancier"></td>
       <td class="text-end">
         <button type="button" class="btn btn-sm btn-primary save-bebat-row"><i class="fa-solid fa-floppy-disk me-1"></i> Opslaan</button>
       </td>
@@ -82,14 +112,7 @@ async function loadBebatRows(showToastOnSuccess = false) {
 async function saveRow(rowEl) {
   const projectId = rowEl.dataset.projectId;
   const serialId = rowEl.dataset.serialId;
-  const status = rowEl.querySelector('.bebat-status-input').value || 'pending';
-  const registeredAt = rowEl.querySelector('.bebat-date-input').value || null;
-  const reference = rowEl.querySelector('.bebat-ref-input').value.trim() || null;
-  const patch = {
-    bebatStatus: status,
-    bebatRegisteredAt: status === 'registered' ? registeredAt : null,
-    bebatReference: status === 'registered' ? reference : null,
-  };
+  const patch = patchForValues(rowFormValues(rowEl));
 
   const btn = rowEl.querySelector('.save-bebat-row');
   btn.disabled = true;
@@ -106,6 +129,38 @@ async function saveRow(rowEl) {
   }
 }
 
+async function saveVisibleChanges() {
+  const rows = Array.from(document.querySelectorAll('#bebatTableBody tr[data-project-id][data-serial-id]'))
+    .filter(rowHasChanges);
+  const btn = document.getElementById('btnSaveVisibleChanges');
+  if (!rows.length) {
+    showToast('Geen zichtbare wijzigingen om op te slaan', 'info');
+    return;
+  }
+
+  btn.disabled = true;
+  const rowButtons = rows.map(row => row.querySelector('.save-bebat-row')).filter(Boolean);
+  rowButtons.forEach(b => { b.disabled = true; });
+  btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${rows.length} opslaan`;
+  try {
+    for (const row of rows) {
+      await updateProjectSerial(
+        row.dataset.projectId,
+        row.dataset.serialId,
+        patchForValues(rowFormValues(row)),
+      );
+    }
+    showToast(`${rows.length} Bebat-wijziging(en) opgeslagen`, 'success');
+    await loadBebatRows(false);
+  } catch (e) {
+    showToast('Bulk opslaan mislukt: ' + (e && e.message ? e.message : String(e)), 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i> Alle zichtbare wijzigingen opslaan';
+    rowButtons.forEach(b => { b.disabled = false; });
+  }
+}
+
 function wireEvents() {
   document.getElementById('btnSignIn').addEventListener('click', async () => {
     const errEl = document.getElementById('signInError');
@@ -119,6 +174,7 @@ function wireEvents() {
   document.getElementById('btnSignOut').addEventListener('click', () => signOut());
   document.getElementById('btnSignOutNW').addEventListener('click', () => signOut());
   document.getElementById('btnRefresh').addEventListener('click', () => loadBebatRows(true));
+  document.getElementById('btnSaveVisibleChanges').addEventListener('click', saveVisibleChanges);
   document.getElementById('searchInput').addEventListener('input', renderRows);
   document.getElementById('statusFilter').addEventListener('change', renderRows);
   document.getElementById('bebatTableBody').addEventListener('click', event => {
@@ -129,7 +185,7 @@ function wireEvents() {
     const input = event.target.closest('.bebat-status-input');
     if (!input) return;
     const row = input.closest('tr');
-    if (input.value === 'registered' && !row.querySelector('.bebat-date-input').value) {
+    if (['registered', 'paid', 'external_fulfilled'].includes(input.value) && !row.querySelector('.bebat-date-input').value) {
       row.querySelector('.bebat-date-input').value = new Date().toISOString().slice(0, 10);
     }
   });
