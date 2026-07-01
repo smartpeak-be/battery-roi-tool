@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" integrity="sha512-jnSuA4Ss2PkkikSOLtYs8BlYIeeIK1h99ty4YfvRPAlzr377vr3CXDb7sb7eEEBYjDtcYj+AjBH3FLv5uSJuXg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="assets/css/smartpeak.css?v=3" />
+  <title>SmartPeak — Communicatie templates</title>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js" integrity="sha384-+65NgAKqXr1Nb7sBmV6O09pL8ASqZsi29OE718meKinGAWaa70VE5V6LNjXVBjIA" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js" integrity="sha384-I1LYojsZ5RM1cOda44Z2h42Qa6YfsQ1XkXxREnhp4ueYBR/4d1pG1K+NZM537Vsj" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js" integrity="sha384-YHSscHG455M7b+d6r5ibTMznxrZxV272bMjXT9ndTgmx05fLR7HsdmcVklhpBSyt" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="assets/js/firebase-init.js?v=3"></script>
+</head>
+<body>
+<div class="card mx-auto mt-5 hide" id="stateLoggedOut" style="max-width:480px">
+  <div class="card-body text-center p-4">
+    <h1 class="h4 mb-2"><i class="fa-solid fa-envelope-open-text text-primary"></i> SmartPeak — Templates</h1>
+    <p class="text-muted mb-3">Alleen voor Bloxit medewerkers.</p>
+    <button type="button" class="btn btn-primary" id="btnSignIn">Log in met Google</button>
+    <p id="signInError" class="alert alert-danger mt-3 hide"></p>
+  </div>
+</div>
+
+<div class="card mx-auto mt-5 hide" id="stateNotWhitelisted" style="max-width:480px">
+  <div class="card-body text-center p-4">
+    <h1 class="h4 mb-2"><i class="fa-solid fa-triangle-exclamation icon-danger"></i> Geen toegang</h1>
+    <p class="text-muted mb-3">Je bent ingelogd als <strong id="notWhitelistedEmail">…</strong> maar dit account heeft geen toegang tot SmartPeak Templates.</p>
+    <button type="button" class="btn btn-outline-secondary" id="btnSignOutNW">Uitloggen</button>
+  </div>
+</div>
+
+<div class="hide" id="stateAuthorized">
+  <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+    <div class="container-fluid">
+      <span class="navbar-brand mb-0 h1"><i class="fa-solid fa-envelope-open-text text-primary"></i> SmartPeak — Communicatie templates</span>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="Menu">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarContent">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-2">
+          <li class="nav-item"><a href="dashboard.html" class="btn btn-outline-primary btn-sm"><i class="fa-solid fa-arrow-left me-1"></i> Dashboard</a></li>
+          <li class="nav-item"><a href="producten-beheer.html" class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-boxes-stacked me-1"></i> Producten</a></li>
+          <li class="nav-item">Hallo, <strong id="userDisplayName">…</strong></li>
+          <li class="nav-item"><button type="button" class="btn btn-outline-secondary btn-sm" id="btnSignOut">Uitloggen</button></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container-fluid py-4 communication-template-page">
+    <div class="d-flex flex-column flex-xl-row justify-content-between gap-3 mb-3">
+      <div>
+        <h1 class="h4 mb-1">Communicatie templates</h1>
+        <p class="text-muted mb-0">Maak moderne SmartPeak mails in herbruikbare blokken. Tekst blijft vrij aanpasbaar, stijl blijft consistent.</p>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-outline-secondary" id="btnDuplicateTemplate"><i class="fa-solid fa-copy me-1"></i> Kopie</button>
+        <button class="btn btn-outline-secondary" id="btnExportHtml"><i class="fa-solid fa-code me-1"></i> HTML kopiëren</button>
+        <button class="btn btn-primary" id="btnSaveTemplate"><i class="fa-solid fa-floppy-disk me-1"></i> Template opslaan</button>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <aside class="col-12 col-xl-3">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="h6 mb-0">Templates</h2>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnNewTemplate"><i class="fa-solid fa-plus"></i></button>
+          </div>
+          <div class="list-group list-group-flush" id="templateList"><div class="list-group-item text-muted">Laden…</div></div>
+        </div>
+        <div class="alert alert-info small mb-3">
+          <strong>Gebruik:</strong> kies een template, pas blokken aan en kopieer daarna HTML of platte tekst voor een mailconcept. Variabelen zoals <code>{{voornaam}}</code> blijven herkenbaar tot je ze vervangt bij gebruik.
+        </div>
+        <div class="card communication-variable-card">
+          <div class="card-header">
+            <h2 class="h6 mb-1">Projectvariabelen</h2>
+            <p class="small text-muted mb-0">Klik om te kopiëren. Gebruik bv. <code>{{project.customerName}}</code>.</p>
+          </div>
+          <div class="card-body p-2" id="projectVariableList">
+            <div class="text-muted small p-2">Variabelen laden…</div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="col-12 col-xl-5">
+        <div class="card mb-3">
+          <div class="card-header"><h2 class="h6 mb-0">Template-instellingen</h2></div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label" for="templateName">Naam</label>
+                <input type="text" class="form-control" id="templateName">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="templateSubject">Onderwerp</label>
+                <input type="text" class="form-control" id="templateSubject">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="templateDescription">Omschrijving</label>
+                <textarea class="form-control" id="templateDescription" rows="2"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="h6 mb-0">Blokken</h2>
+            <div class="btn-group btn-group-sm">
+              <button type="button" class="btn btn-outline-primary" data-add-block="paragraph">Tekst</button>
+              <button type="button" class="btn btn-outline-primary" data-add-block="callout">Kader</button>
+              <button type="button" class="btn btn-outline-primary" data-add-block="checklist">Checklist</button>
+            </div>
+          </div>
+          <div class="card-body" id="blockEditor"></div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-header"><h2 class="h6 mb-0">Stijl / CSS</h2></div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-6 col-md-4"><label class="form-label">Merk</label><input type="color" class="form-control form-control-color" id="styleBrandColor"></div>
+              <div class="col-6 col-md-4"><label class="form-label">Accent</label><input type="color" class="form-control form-control-color" id="styleAccentColor"></div>
+              <div class="col-6 col-md-4"><label class="form-label">Achtergrond</label><input type="color" class="form-control form-control-color" id="styleBackgroundColor"></div>
+              <div class="col-6 col-md-4"><label class="form-label">Kaart</label><input type="color" class="form-control form-control-color" id="styleCardColor"></div>
+              <div class="col-6 col-md-4"><label class="form-label">Tekst</label><input type="color" class="form-control form-control-color" id="styleTextColor"></div>
+              <div class="col-6 col-md-4"><label class="form-label">Ronding</label><input type="number" class="form-control" id="styleBorderRadius" min="0" max="32"></div>
+              <div class="col-12">
+                <label class="form-label" for="styleCustomCss">Extra CSS voor preview/geavanceerd gebruik</label>
+                <textarea class="form-control font-monospace" id="styleCustomCss" rows="5" placeholder="Bij voorkeur beperkt houden voor mailclients. Basisstijl wordt table-based en inline gegenereerd."></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="col-12 col-xl-4">
+        <div class="card sticky-xl-top communication-preview-card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="h6 mb-0">Live preview</h2>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCopyText"><i class="fa-solid fa-align-left me-1"></i> Tekst kopiëren</button>
+          </div>
+          <div class="card-body p-0">
+            <iframe id="templatePreview" title="Template preview" class="communication-template-preview"></iframe>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index:1080"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js" integrity="sha512-7Pi/otdlbbCR+LnW+F7PwFcSDJOuUJB3OxtEHbg4vSMvzvJjde4Po1v4BR9Gdc9aXNUNFVUY+SK51wWT8WF0Gg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script type="module" src="assets/js/pages/communicatie-templates-app.js?v=1"></script>
+</body>
+</html>

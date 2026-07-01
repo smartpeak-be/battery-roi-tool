@@ -1462,3 +1462,49 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
     flex-wrap: wrap;
   }
 }
+
+/* Communication template editor */
+.communication-template-page {
+  background: linear-gradient(180deg, #f7f9fc 0%, #eef4fb 100%);
+  min-height: calc(100vh - 58px);
+}
+
+.communication-template-page .card {
+  border: 1px solid rgba(13, 110, 253, .08);
+  box-shadow: 0 10px 30px rgba(16, 24, 40, .06);
+}
+
+.communication-block-editor {
+  background: #fbfdff;
+  border-color: rgba(13, 110, 253, .16) !important;
+}
+
+.communication-block-type {
+  max-width: 190px;
+}
+
+.communication-preview-card {
+  top: 78px;
+}
+
+.communication-template-preview {
+  width: 100%;
+  min-height: 78vh;
+  border: 0;
+  background: #f4f7fb;
+}
+
+.communication-variable-card {
+  max-height: 66vh;
+  overflow: auto;
+}
+
+.communication-variable-group summary {
+  cursor: pointer;
+  padding: 6px 8px;
+}
+
+.communication-variable-group code {
+  white-space: normal;
+  word-break: break-word;
+}
