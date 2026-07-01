@@ -49,6 +49,15 @@ describe('mailbox view', () => {
     vi.unstubAllGlobals();
   });
 
+  it('herkent Firebase als veilige mailbox-provider fallback', () => {
+    vi.stubGlobal('firebase', { auth: () => ({ currentUser: null }) });
+    expect(mailboxProviderStatus(normalizeMailboxSettings({}))).toMatchObject({
+      available: true,
+      label: 'Firebase mailbox provider',
+    });
+    vi.unstubAllGlobals();
+  });
+
   it('kan berichten via plugin ophalen en normaliseren', async () => {
     vi.stubGlobal('SmartPeakMailboxPlugin', {
       label: 'Test plugin',

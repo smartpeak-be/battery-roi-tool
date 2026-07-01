@@ -75,6 +75,13 @@ export function mailboxProviderStatus(settings = {}) {
       message: 'Mailbox-plugin actief.',
     };
   }
+  if (typeof globalThis !== 'undefined' && globalThis.firebase && globalThis.firebase.auth) {
+    return {
+      available: true,
+      label: 'Firebase mailbox provider',
+      message: 'Mailboxdata wordt veilig server-side via Firebase Functions opgehaald.',
+    };
+  }
   return {
     available: false,
     label: settings.provider?.name || 'SmartPeakMailboxPlugin',
@@ -117,10 +124,31 @@ export function normalizeMailboxMessage(message = {}, account = {}, folder = {})
   };
 }
 
+export async function listMessagesViaFirebaseFunction({ account, folder, limit }) {
+  if (!account || account.key !== 'kevin') return [];
+  if (typeof globalThis === 'undefined' || !globalThis.firebase) return [];
+  const user = globalThis.firebase.auth().currentUser;
+  if (!user) throw new Error('Niet ingelogd.');
+  const token = await user.getIdToken();
+  const projectId = globalThis.firebase.app().options.projectId;
+  const response = await globalThis.fetch(`https://europe-west1-${projectId}.cloudfunctions.net/mailboxListMessages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ accountKey: account.key, folderKey: folder.key, limit }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Mailbox ophalen mislukt.');
+  return Array.isArray(data.messages) ? data.messages : [];
+}
+
 export async function listMailboxMessages({ account, folder, query = '', limit = 50 }) {
   const provider = getMailboxProvider();
-  if (!provider) return [];
-  const messages = await provider.listMessages({ account, folder, query, limit });
+  const messages = provider
+    ? await provider.listMessages({ account, folder, query, limit })
+    : await listMessagesViaFirebaseFunction({ account, folder, query, limit });
   return (Array.isArray(messages) ? messages : []).map(message => normalizeMailboxMessage(message, account, folder));
 }
 

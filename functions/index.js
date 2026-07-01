@@ -13,14 +13,34 @@ import {
 import { defineSecret } from 'firebase-functions/params';
 import admin from 'firebase-admin';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
+import { ImapFlow } from 'imapflow';
 
 if (!admin.apps.length) admin.initializeApp();
 
 const billitApiKey = defineSecret('BILLIT_API_KEY');
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
+const hostingerSmartpeakKevinPassword = defineSecret('HOSTINGER_SMARTPEAK_KEVIN_PASSWORD');
 const BILLIT_BASE_URL = 'https://api.sandbox.billit.be';
 const TASKS_URL = 'https://smartpeak-battery-roi.netlify.app/tasks.html';
 const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be']);
+
+const SMARTPEAK_MAILBOX_ACCOUNTS = {
+  kevin: {
+    email: 'kevin@smartpeak.be',
+    host: 'imap.hostinger.com',
+    port: 993,
+    secure: true,
+    passwordSecret: hostingerSmartpeakKevinPassword,
+  },
+};
+
+const SMARTPEAK_MAILBOX_FOLDERS = {
+  inbox: 'INBOX',
+  'follow-up': 'INBOX.Opvolgen',
+  'to-answer': 'INBOX.Te Beantwoorden',
+  review: 'INBOX.Te Bekijken',
+  sent: 'INBOX.Sent',
+};
 
 // Vision client — lazy singleton. Firebase CLI loads this module during deploy
 // analysis; constructing the client eagerly can trigger local ADC/metadata
@@ -500,6 +520,87 @@ function cleanString(value, max = 4000) {
   return String(value == null ? '' : value).trim().slice(0, max);
 }
 
+function cleanMailboxKey(value) {
+  return cleanString(value, 80).replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+function cleanMailboxFolder(value) {
+  return cleanString(value, 80).replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+function addressListText(addresses = []) {
+  return (Array.isArray(addresses) ? addresses : [])
+    .map(address => {
+      if (!address) return '';
+      const name = cleanString(address.name || '', 120);
+      const addr = cleanString(address.address || '', 180);
+      if (name && addr) return `${name} <${addr}>`;
+      return name || addr;
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+function formatMailboxDate(date) {
+  if (!date) return '';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString();
+}
+
+function normalizeImapMessage(message, accountKey, folderKey) {
+  const envelope = message.envelope || {};
+  const flags = Array.isArray(message.flags) ? message.flags : [...(message.flags || [])];
+  return {
+    id: String(message.uid || message.seq || ''),
+    uid: message.uid || null,
+    mailboxKey: accountKey,
+    folderKey,
+    from: addressListText(envelope.from),
+    to: addressListText(envelope.to),
+    subject: cleanString(envelope.subject || '(geen onderwerp)', 500),
+    preview: '',
+    date: formatMailboxDate(envelope.date || message.internalDate),
+    unread: !flags.includes('\\Seen'),
+    flagged: flags.includes('\\Flagged'),
+  };
+}
+
+async function listHostingerMessages({ accountKey, folderKey, limit }) {
+  const account = SMARTPEAK_MAILBOX_ACCOUNTS[accountKey];
+  if (!account) return [];
+  const folderPath = SMARTPEAK_MAILBOX_FOLDERS[folderKey] || SMARTPEAK_MAILBOX_FOLDERS.inbox;
+  const password = account.passwordSecret.value();
+  if (!password) throw new Error(`Mailbox secret ontbreekt voor ${accountKey}`);
+  const client = new ImapFlow({
+    host: account.host,
+    port: account.port,
+    secure: account.secure,
+    auth: { user: account.email, pass: password },
+    logger: false,
+  });
+  await client.connect();
+  const lock = await client.getMailboxLock(folderPath);
+  try {
+    const uids = await client.search({ all: true }, { uid: true });
+    const selected = uids.slice(-limit).reverse();
+    if (!selected.length) return [];
+    const rows = [];
+    for await (const message of client.fetch(selected, {
+      uid: true,
+      envelope: true,
+      flags: true,
+      internalDate: true,
+    })) {
+      rows.push(normalizeImapMessage(message, accountKey, folderKey));
+    }
+    return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  } finally {
+    lock.release();
+    await client.logout().catch(() => {});
+  }
+}
+
 function cleanNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -681,6 +782,32 @@ export const createBillitOffer = functions.https.onRequest(
         return;
       }
       res.json({ ok: true, billit: billit.data, orderId: extractBillitOrderId(billit.data), order });
+    } catch (err) {
+      const status = err.status || 400;
+      res.status(status).json({ error: err.message || String(err) });
+    }
+  },
+);
+
+export const mailboxListMessages = functions.https.onRequest(
+  { region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword], timeoutSeconds: 30, memory: '256MiB' },
+  async (req, res) => {
+    setCors(req, res);
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+    try {
+      await requireWhitelistedUser(req);
+      const accountKey = cleanMailboxKey(req.body && req.body.accountKey || '');
+      const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'inbox') || 'inbox';
+      const limit = Math.min(100, Math.max(1, cleanNumber(req.body && req.body.limit, 50)));
+      const messages = await listHostingerMessages({ accountKey, folderKey, limit });
+      res.json({ ok: true, messages });
     } catch (err) {
       const status = err.status || 400;
       res.status(status).json({ error: err.message || String(err) });
