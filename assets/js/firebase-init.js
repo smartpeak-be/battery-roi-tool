@@ -283,17 +283,19 @@ function bebatSummaryForProject(project) {
   const batteries = _batterySerialsForBebat(project);
   const total = batteries.length;
   const registered = batteries.filter(s => s.bebatStatus === 'registered').length;
+  const paid = batteries.filter(s => s.bebatStatus === 'paid').length;
+  const externalFulfilled = batteries.filter(s => s.bebatStatus === 'external_fulfilled').length;
   const notRequired = batteries.filter(s => s.bebatStatus === 'not_required').length;
-  const pending = Math.max(0, total - registered - notRequired);
+  const pending = Math.max(0, total - registered - paid - externalFulfilled - notRequired);
   const explicitStatus = project && project.batteryRegistry && project.batteryRegistry.bebatStatus;
   const status = total === 0
     ? (explicitStatus || 'not_needed')
     : pending > 0 ? 'pending' : 'registered';
-  return { total, registered, pending, notRequired, status };
+  return { total, registered, paid, externalFulfilled, pending, notRequired, status };
 }
 
 function bebatRowsForProjects(projects = []) {
-  const statusRank = { pending: 0, registered: 1, not_required: 2 };
+  const statusRank = { pending: 0, registered: 1, paid: 2, external_fulfilled: 3, not_required: 4 };
   return (Array.isArray(projects) ? projects : [])
     .flatMap(project => {
       const p = mergeProjectMetadata(project || {});

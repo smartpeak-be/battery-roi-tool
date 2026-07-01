@@ -61,10 +61,12 @@
     </div>
 
     <div class="row g-3 mb-3" id="summaryCards">
-      <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Totaal</div><div class="h3 mb-0" id="summaryTotal">—</div></div></div></div>
-      <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Nog te registreren</div><div class="h3 mb-0 text-warning" id="summaryPending">—</div></div></div></div>
-      <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Geregistreerd</div><div class="h3 mb-0 text-success" id="summaryRegistered">—</div></div></div></div>
-      <div class="col-6 col-lg-3"><div class="card"><div class="card-body"><div class="text-muted small">Niet nodig</div><div class="h3 mb-0 text-muted" id="summaryNotRequired">—</div></div></div></div>
+      <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Totaal</div><div class="h3 mb-0" id="summaryTotal">—</div></div></div></div>
+      <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Nog te registreren</div><div class="h3 mb-0 text-warning" id="summaryPending">—</div></div></div></div>
+      <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Geregistreerd</div><div class="h3 mb-0 text-success" id="summaryRegistered">—</div></div></div></div>
+      <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Betaald</div><div class="h3 mb-0 text-primary" id="summaryPaid">—</div></div></div></div>
+      <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Extern voldaan</div><div class="h3 mb-0 text-info" id="summaryExternalFulfilled">—</div></div></div></div>
+      <div class="col-6 col-lg-2"><div class="card"><div class="card-body"><div class="text-muted small">Niet nodig</div><div class="h3 mb-0 text-muted" id="summaryNotRequired">—</div></div></div></div>
     </div>
 
     <div class="card mb-3">
@@ -83,11 +85,14 @@
               <option value="pending">Nog te registreren</option>
               <option value="all">Alles</option>
               <option value="registered">Geregistreerd</option>
+              <option value="paid">Betaald</option>
+              <option value="external_fulfilled">Extern voldaan</option>
               <option value="not_required">Niet nodig</option>
             </select>
           </div>
           <div class="col-12 col-sm-6 col-lg-4">
-            <div class="form-text">Wijzigingen worden per rij opgeslagen op het serienummer in het project.</div>
+            <button type="button" class="btn btn-primary w-100" id="btnSaveVisibleChanges"><i class="fa-solid fa-floppy-disk me-1"></i> Alle zichtbare wijzigingen opslaan</button>
+            <div class="form-text">Slaat alle gewijzigde rijen in de huidige lijst/filter op.</div>
           </div>
         </div>
       </div>
