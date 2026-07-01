@@ -46,10 +46,10 @@ function rowFormValues(rowEl) {
 }
 
 function rowHasChanges(rowEl) {
-  const values = rowFormValues(rowEl);
-  return values.status !== (rowEl.dataset.originalStatus || 'pending')
-    || values.registeredAt !== (rowEl.dataset.originalRegisteredAt || '')
-    || values.reference !== (rowEl.dataset.originalReference || '');
+  const patch = patchForValues(rowFormValues(rowEl));
+  return patch.bebatStatus !== (rowEl.dataset.originalStatus || 'pending')
+    || (patch.bebatRegisteredAt || '') !== (rowEl.dataset.originalRegisteredAt || '')
+    || (patch.bebatReference || '') !== (rowEl.dataset.originalReference || '');
 }
 
 function patchForValues(values) {
@@ -143,11 +143,13 @@ async function saveVisibleChanges() {
   rowButtons.forEach(b => { b.disabled = true; });
   btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${rows.length} opslaan`;
   try {
-    await Promise.all(rows.map(row => updateProjectSerial(
-      row.dataset.projectId,
-      row.dataset.serialId,
-      patchForValues(rowFormValues(row)),
-    )));
+    for (const row of rows) {
+      await updateProjectSerial(
+        row.dataset.projectId,
+        row.dataset.serialId,
+        patchForValues(rowFormValues(row)),
+      );
+    }
     showToast(`${rows.length} Bebat-wijziging(en) opgeslagen`, 'success');
     await loadBebatRows(false);
   } catch (e) {

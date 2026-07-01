@@ -21,8 +21,16 @@ describe('Bebat beheer statussen en bulk save', () => {
     expect(appSource).toContain('function saveVisibleChanges()');
     expect(appSource).toContain("document.querySelectorAll('#bebatTableBody tr[data-project-id][data-serial-id]')");
     expect(appSource).toContain('.filter(rowHasChanges)');
-    expect(appSource).toContain('await Promise.all(rows.map(row => updateProjectSerial(');
+    expect(appSource).toContain('for (const row of rows)');
+    expect(appSource).toContain('await updateProjectSerial(');
+    expect(appSource).not.toContain('Promise.all(rows.map(row => updateProjectSerial(');
     expect(appSource).toContain("document.getElementById('btnSaveVisibleChanges').addEventListener('click', saveVisibleChanges)");
+  });
+
+  it('telt een datum op pending/niet nodig niet als opgeslagen wijziging omdat die bewust niet bewaard wordt', () => {
+    expect(appSource).toContain('const patch = patchForValues(rowFormValues(rowEl));');
+    expect(appSource).toContain("(patch.bebatRegisteredAt || '') !== (rowEl.dataset.originalRegisteredAt || '')");
+    expect(appSource).toContain("const keepsRegistrationMeta = ['registered', 'paid', 'external_fulfilled'].includes(values.status);");
   });
 
   it('bewaart referentie/datum voor geregistreerd, betaald en extern voldaan', () => {
