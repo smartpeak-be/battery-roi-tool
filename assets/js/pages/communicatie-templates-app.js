@@ -3,6 +3,7 @@ import {
   defaultCommunicationTemplates,
   normalizeBlock,
   normalizeTemplate,
+  projectVariableDefinitionsByCategory,
   renderTemplateHtml,
   renderTemplatePlainText,
 } from '../communication-templates.js';
@@ -88,6 +89,34 @@ function renderTemplateList() {
       renderPreview();
       setDirty(false);
     });
+  });
+}
+
+function renderVariableList() {
+  const container = document.getElementById('projectVariableList');
+  if (!container) return;
+  const groups = projectVariableDefinitionsByCategory();
+  container.innerHTML = Object.entries(groups).map(([category, variables]) => `
+    <details class="communication-variable-group mb-2" open>
+      <summary class="fw-semibold small text-muted">${escapeHtml(category)} <span class="badge text-bg-light">${variables.length}</span></summary>
+      <div class="list-group list-group-flush mt-1">
+        ${variables.map(variable => {
+          const placeholder = `{{${variable.key}}}`;
+          return `
+            <button type="button" class="list-group-item list-group-item-action py-2" data-copy-variable="${escapeHtml(placeholder)}">
+              <div class="d-flex justify-content-between gap-2 align-items-start">
+                <span>${escapeHtml(variable.label)}</span>
+                <code>${escapeHtml(placeholder)}</code>
+              </div>
+              ${variable.example ? `<div class="small text-muted">bv. ${escapeHtml(variable.example)}</div>` : ''}
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </details>
+  `).join('');
+  container.querySelectorAll('[data-copy-variable]').forEach(btn => {
+    btn.addEventListener('click', async () => copyToClipboard(btn.dataset.copyVariable, 'Variabele'));
   });
 }
 
@@ -283,6 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     document.getElementById('userDisplayName').textContent = user.displayName || user.email;
     showState('stateAuthorized');
+    renderVariableList();
     loadTemplates().catch(e => showToast('Templates laden mislukt: ' + e.message, 'danger'));
   });
 });

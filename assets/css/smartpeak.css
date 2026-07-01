@@ -1493,3 +1493,18 @@ body.readonly-mode input, body.readonly-mode textarea, body.readonly-mode select
   border: 0;
   background: #f4f7fb;
 }
+
+.communication-variable-card {
+  max-height: 66vh;
+  overflow: auto;
+}
+
+.communication-variable-group summary {
+  cursor: pointer;
+  padding: 6px 8px;
+}
+
+.communication-variable-group code {
+  white-space: normal;
+  word-break: break-word;
+}

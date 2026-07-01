@@ -2,6 +2,73 @@ import { escapeHtml } from './shared-helpers.js';
 
 export const COMMUNICATION_TEMPLATE_VERSION = 1;
 
+export const PROJECT_VARIABLE_DEFINITIONS = [
+  { key: 'project.id', label: 'Project ID', category: 'Project' },
+  { key: 'project.projectName', label: 'Projectnaam', category: 'Project', example: 'Familie Peeters' },
+  { key: 'project.customerName', label: 'Klantnaam', category: 'Project', example: 'Jan Peeters' },
+  { key: 'project.status', label: 'Status', category: 'Project' },
+  { key: 'project.createdBy', label: 'Aangemaakt door', category: 'Project' },
+  { key: 'project.createdAt', label: 'Aangemaakt op', category: 'Project', type: 'date' },
+  { key: 'project.updatedAt', label: 'Laatst aangepast op', category: 'Project', type: 'date' },
+  { key: 'project.customer.email', label: 'E-mail klant', category: 'Klant' },
+  { key: 'project.customer.phone', label: 'Telefoon klant', category: 'Klant' },
+  { key: 'project.customer.address', label: 'Adres volledig', category: 'Klant' },
+  { key: 'project.customer.addressStructured.street', label: 'Straat', category: 'Klant' },
+  { key: 'project.customer.addressStructured.houseNumber', label: 'Huisnummer', category: 'Klant' },
+  { key: 'project.customer.addressStructured.bus', label: 'Bus', category: 'Klant' },
+  { key: 'project.customer.addressStructured.postalCode', label: 'Postcode', category: 'Klant' },
+  { key: 'project.customer.addressStructured.city', label: 'Gemeente/stad', category: 'Klant' },
+  { key: 'project.customer.addressStructured.countryCode', label: 'Landcode', category: 'Klant' },
+  { key: 'project.situation', label: 'Situatie', category: 'Notities' },
+  { key: 'project.notes', label: 'Algemene notities', category: 'Notities' },
+  { key: 'project.planning.visitPlannedDate', label: 'Plaatsbezoek ingepland', category: 'Planning', type: 'date' },
+  { key: 'project.planning.visitDoneDate', label: 'Plaatsbezoek uitgevoerd', category: 'Planning', type: 'date' },
+  { key: 'project.planning.installationPlannedDate', label: 'Installatie ingepland', category: 'Planning', type: 'date' },
+  { key: 'project.planning.installationDoneDate', label: 'Installatie uitgevoerd', category: 'Planning', type: 'date' },
+  { key: 'project.planning.inspectionPlannedDate', label: 'Keuring ingepland', category: 'Planning', type: 'date' },
+  { key: 'project.planning.inspectionDoneDate', label: 'Keuring uitgevoerd', category: 'Planning', type: 'date' },
+  { key: 'project.site.houseAgeOver10Years', label: 'Woning ouder dan 10 jaar', category: 'Woning', type: 'boolean' },
+  { key: 'project.electrical.connectionType', label: 'Aansluitingstype', category: 'Elektrisch' },
+  { key: 'project.electrical.fuseRatingA', label: 'Hoofdzekering A', category: 'Elektrisch' },
+  { key: 'project.cabinet.freeUnits', label: 'Vrije modules zekeringkast', category: 'Zekeringkast' },
+  { key: 'project.cabinet.hasRemAutomaat', label: 'REM-automaat aanwezig', category: 'Zekeringkast', type: 'boolean' },
+  { key: 'project.cabinet.wiringDiameterMm2', label: 'Draaddiameter mm²', category: 'Zekeringkast' },
+  { key: 'project.cabinet.hasOutletNearFluvius', label: 'Stopcontact bij Fluvius-meter', category: 'Zekeringkast', type: 'boolean' },
+  { key: 'project.cabinet.hasWifiNearFluvius', label: 'Wifi bij Fluvius-meter', category: 'Zekeringkast', type: 'boolean' },
+  { key: 'project.cabinet.batteryPlacementRoom', label: 'Plaats batterij', category: 'Zekeringkast' },
+  { key: 'project.cabinet.hasWifiNearCabinet', label: 'Wifi bij zekeringkast', category: 'Zekeringkast', type: 'boolean' },
+  { key: 'project.cabinet.lineGroundChecked', label: 'Aarding/lijn gecontroleerd', category: 'Zekeringkast', type: 'boolean' },
+  { key: 'project.solar.inverters', label: 'Zonnepanelenomvormers', category: 'Zonnepanelen', type: 'json' },
+  { key: 'project.technical.earthResistanceMeasured', label: 'Aarding gemeten', category: 'Technisch', type: 'boolean' },
+  { key: 'project.technical.earthResistanceOhm', label: 'Aardingsweerstand Ω', category: 'Technisch' },
+  { key: 'project.technical.earthResistanceMeasuredDate', label: 'Datum aardingsmeting', category: 'Technisch', type: 'date' },
+  { key: 'project.technical.voltageMeasurements', label: 'Spanningsmetingen', category: 'Technisch', type: 'json' },
+  { key: 'project.technical.technicalNotes', label: 'Technische notities', category: 'Technisch' },
+  { key: 'project.inspection.company', label: 'Keuringsfirma', category: 'Keuring' },
+  { key: 'project.inspection.reference', label: 'Keuringsreferentie', category: 'Keuring' },
+  { key: 'project.inspection.notes', label: 'Keuring opmerkingen', category: 'Keuring' },
+  { key: 'project.supplier.name', label: 'Leveranciernaam', category: 'Energieprijs' },
+  { key: 'project.supplier.isSingleTariff', label: 'Enkel tarief', category: 'Energieprijs', type: 'boolean' },
+  { key: 'project.supplier.priceDay', label: 'Prijs dag/enkel €/kWh', category: 'Energieprijs' },
+  { key: 'project.supplier.priceNight', label: 'Prijs nacht €/kWh', category: 'Energieprijs' },
+  { key: 'project.calcDefaults.keuring', label: 'Keuring in calculatie', category: 'Calculatie' },
+  { key: 'project.csvUpload.uploadedAt', label: 'CSV geüpload op', category: 'Fluvius CSV', type: 'date' },
+  { key: 'project.csvUpload.eanCode', label: 'EAN-code', category: 'Fluvius CSV' },
+  { key: 'project.csvUpload.meterNr', label: 'Meternummer', category: 'Fluvius CSV' },
+  { key: 'project.csvUpload.meterType', label: 'Metertype', category: 'Fluvius CSV' },
+  { key: 'project.lastCalcRun', label: 'Laatste berekening', category: 'Calculatie', type: 'json' },
+  { key: 'project.offertes', label: 'Offertes', category: 'Offertes', type: 'json' },
+  { key: 'project.manualConfigs', label: 'Manuele configuraties', category: 'Offertes', type: 'json' },
+  { key: 'project.activities', label: 'Activiteiten', category: 'Backoffice', type: 'json' },
+  { key: 'project.tasks', label: 'Taken', category: 'Backoffice', type: 'json' },
+  { key: 'project.mailLinks', label: 'Gekoppelde mails', category: 'Backoffice', type: 'json' },
+  { key: 'project.filesInbox', label: 'Inbox bestanden', category: 'Backoffice', type: 'json' },
+  { key: 'project.batteryRegistry.bebatStatus', label: 'Bebat status algemeen', category: 'Bebat' },
+  { key: 'project.batteryRegistry.entries', label: 'Bebat entries', category: 'Bebat', type: 'json' },
+  { key: 'project.serialNumbers', label: 'Serienummers', category: 'Materiaal', type: 'json' },
+  { key: 'project.installedSolution.items', label: 'Geplaatste oplossing items', category: 'Geplaatste oplossing', type: 'json' },
+];
+
 export const DEFAULT_INTAKE_TEMPLATE = {
   id: 'intake-thuisbatterij',
   name: 'Intake thuisbatterij',
@@ -317,8 +384,62 @@ export function normalizeBlock(block = {}, index = 0) {
   };
 }
 
-export function replaceVariables(text, variables = []) {
+function getPathValue(source, path) {
+  const parts = String(path || '').split('.').filter(Boolean);
+  let current = source;
+  for (const part of parts) {
+    if (current == null || typeof current !== 'object' || !(part in current)) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function formatVariableValue(value, definition = {}) {
+  if (value == null || value === '') return '';
+  if (definition.type === 'boolean' || typeof value === 'boolean') return value ? 'ja' : 'nee';
+  if (definition.type === 'json' || Array.isArray(value) || typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function flattenScalarProjectValues(value, prefix = 'project', output = {}) {
+  if (value == null) return output;
+  if (Array.isArray(value)) {
+    output[prefix] = JSON.stringify(value);
+    return output;
+  }
+  if (typeof value === 'object') {
+    Object.entries(value).forEach(([key, child]) => flattenScalarProjectValues(child, `${prefix}.${key}`, output));
+    return output;
+  }
+  output[prefix] = formatVariableValue(value);
+  return output;
+}
+
+export function projectVariableDefinitionsByCategory() {
+  return PROJECT_VARIABLE_DEFINITIONS.reduce((groups, variable) => {
+    const category = variable.category || 'Overig';
+    groups[category] = groups[category] || [];
+    groups[category].push(variable);
+    return groups;
+  }, {});
+}
+
+export function projectVariableValues(project = {}) {
+  const dynamicValues = flattenScalarProjectValues(project || {}, 'project', {});
+  const explicitValues = {};
+  PROJECT_VARIABLE_DEFINITIONS.forEach(definition => {
+    const path = definition.key.replace(/^project\./, '');
+    explicitValues[definition.key] = formatVariableValue(getPathValue(project, path), definition);
+  });
+  return { ...dynamicValues, ...explicitValues };
+}
+
+export function replaceVariables(text, variables = [], project = null) {
   let output = String(text || '');
+  const values = project ? projectVariableValues(project) : {};
+  Object.entries(values).forEach(([key, value]) => {
+    output = output.replaceAll(`{{${key}}}`, value);
+  });
   variables.forEach(variable => {
     const key = variable && variable.key;
     if (!key) return;
@@ -328,8 +449,8 @@ export function replaceVariables(text, variables = []) {
   return output;
 }
 
-function paragraphsHtml(text, variables) {
-  return replaceVariables(text, variables)
+function paragraphsHtml(text, variables, project) {
+  return replaceVariables(text, variables, project)
     .split(/\n{2,}/)
     .map(part => part.trim())
     .filter(Boolean)
@@ -337,12 +458,12 @@ function paragraphsHtml(text, variables) {
     .join('');
 }
 
-function checklistHtml(block, style, variables) {
-  const intro = block.text ? paragraphsHtml(block.text, variables) : '';
+function checklistHtml(block, style, variables, project) {
+  const intro = block.text ? paragraphsHtml(block.text, variables, project) : '';
   const items = (block.items || []).map(item => `
     <tr>
       <td width="26" valign="top" style="padding:6px 8px 6px 0;color:${style.accentColor};font-weight:700;">✓</td>
-      <td valign="top" style="padding:6px 0;color:${style.textColor};line-height:1.48;">${escapeHtml(replaceVariables(item, variables))}</td>
+      <td valign="top" style="padding:6px 0;color:${style.textColor};line-height:1.48;">${escapeHtml(replaceVariables(item, variables, project))}</td>
     </tr>`).join('');
   return `${intro}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:4px;">${items}</table>`;
 }
@@ -355,12 +476,12 @@ function cssClassHandle(value) {
     .replace(/^-+|-+$/g, '') || 'block';
 }
 
-function blockHtml(block, style, variables) {
+function blockHtml(block, style, variables, project) {
   const blockClasses = `sp-mail-block sp-mail-block-${cssClassHandle(block.type)} sp-mail-block-${cssClassHandle(block.id)}`;
   if (block.type === 'spacer') return `<tr class="${blockClasses}" data-block-id="${escapeHtml(block.id)}"><td style="height:18px;font-size:18px;line-height:18px;">&nbsp;</td></tr>`;
   const body = block.type === 'checklist'
-    ? checklistHtml(block, style, variables)
-    : paragraphsHtml(block.text, variables);
+    ? checklistHtml(block, style, variables, project)
+    : paragraphsHtml(block.text, variables, project);
   const title = block.title ? `<h2 class="sp-mail-block-title" style="margin:0 0 12px;font-size:18px;line-height:1.25;color:${style.textColor};">${escapeHtml(block.title)}</h2>` : '';
   const isCallout = block.type === 'callout';
   const boxStyle = isCallout
@@ -377,11 +498,11 @@ function blockHtml(block, style, variables) {
     </tr>`;
 }
 
-export function renderTemplateHtml(templateInput) {
+export function renderTemplateHtml(templateInput, project = null) {
   const template = normalizeTemplate(templateInput);
   const style = template.style;
   const customCss = style.customCss ? `<style>${style.customCss}</style>` : '';
-  const blocks = template.blocks.map(block => blockHtml(block, style, template.variables)).join('');
+  const blocks = template.blocks.map(block => blockHtml(block, style, template.variables, project)).join('');
   return `<!doctype html>
 <html lang="nl">
 <head>
@@ -414,12 +535,12 @@ export function renderTemplateHtml(templateInput) {
 </html>`;
 }
 
-export function renderTemplatePlainText(templateInput) {
+export function renderTemplatePlainText(templateInput, project = null) {
   const template = normalizeTemplate(templateInput);
   return template.blocks.map(block => {
     const title = block.title ? `${block.title}\n` : '';
-    const text = replaceVariables(block.text, template.variables);
-    const items = block.items && block.items.length ? `\n${block.items.map(item => `- ${replaceVariables(item, template.variables)}`).join('\n')}` : '';
+    const text = replaceVariables(block.text, template.variables, project);
+    const items = block.items && block.items.length ? `\n${block.items.map(item => `- ${replaceVariables(item, template.variables, project)}`).join('\n')}` : '';
     return `${title}${text}${items}`.trim();
   }).filter(Boolean).join('\n\n');
 }

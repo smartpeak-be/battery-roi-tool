@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs';
 import {
   defaultCommunicationTemplates,
   normalizeTemplate,
+  projectVariableDefinitionsByCategory,
+  projectVariableValues,
+  replaceVariables,
   renderTemplateHtml,
   renderTemplatePlainText,
 } from '../assets/js/communication-templates.js';
@@ -75,13 +78,45 @@ describe('communicatie templates', () => {
     expect(template.blocks[0]).toMatchObject({ type: 'paragraph', text: 'Hallo', items: [] });
   });
 
+  it('maakt projectvariabelen beschikbaar en vervangt gekende en toekomstige projectvelden', () => {
+    const groups = projectVariableDefinitionsByCategory();
+    expect(groups.Project.map(v => v.key)).toContain('project.customerName');
+    expect(groups.Klant.map(v => v.key)).toContain('project.customer.email');
+    expect(groups.Planning.map(v => v.key)).toContain('project.planning.installationPlannedDate');
+    expect(groups.Bebat.map(v => v.key)).toContain('project.batteryRegistry.bebatStatus');
+
+    const project = {
+      customerName: 'Jan Peeters',
+      customer: { email: 'jan@example.test' },
+      planning: { installationPlannedDate: '2026-08-10' },
+      site: { houseAgeOver10Years: true },
+      customFutureField: 'later bruikbaar',
+    };
+    const values = projectVariableValues(project);
+    expect(values['project.customerName']).toBe('Jan Peeters');
+    expect(values['project.site.houseAgeOver10Years']).toBe('ja');
+    expect(values['project.customFutureField']).toBe('later bruikbaar');
+    expect(replaceVariables('Dag {{project.customerName}} — {{project.customFutureField}}', [], project)).toBe('Dag Jan Peeters — later bruikbaar');
+  });
+
+  it('kan projectvariabelen in HTML en platte tekst renderen', () => {
+    const template = normalizeTemplate({
+      blocks: [{ id: 'project-ref', type: 'paragraph', title: 'Project', text: 'Klant: {{project.customerName}}\nEmail: {{project.customer.email}}' }],
+    });
+    const project = { customerName: 'Evelien Test', customer: { email: 'evelien@example.test' } };
+    expect(renderTemplateHtml(template, project)).toContain('Klant: Evelien Test');
+    expect(renderTemplatePlainText(template, project)).toContain('Email: evelien@example.test');
+  });
+
   it('heeft een beheerpagina met blok-editor, CSS-sectie en preview/export-acties', () => {
     expect(pageSource).toContain('id="blockEditor"');
     expect(pageSource).toContain('id="styleCustomCss"');
     expect(pageSource).toContain('id="templatePreview"');
     expect(pageSource).toContain('id="btnExportHtml"');
     expect(pageSource).toContain('id="btnCopyText"');
+    expect(pageSource).toContain('id="projectVariableList"');
     expect(appSource).toContain('communicationTemplates');
+    expect(appSource).toContain('projectVariableDefinitionsByCategory');
     expect(appSource).toContain('renderTemplateHtml');
     expect(appSource).toContain('renderTemplatePlainText');
     expect(dashboardSource).toContain('communicatie-templates.html');
