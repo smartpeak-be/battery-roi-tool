@@ -17,6 +17,14 @@ const VOLTAGE_LABELS = {
   l1Pe: 'L1 - PE', l2Pe: 'L2 - PE', l3Pe: 'L3 - PE', nPe: 'N - PE',
 };
 
+const SMARTPEAK_CONTACT = {
+  name: 'SmartPeak',
+  address: 'Terwestvaart 11, 9180 Moerbeke-Waas (Lokeren)',
+  vat: 'BE0730696050',
+  email: 'info@smartpeak.be',
+  phone: '0469 76 23 60',
+};
+
 function text(value, fallback = '') {
   const s = String(value ?? '').trim();
   return s || fallback;
@@ -228,6 +236,10 @@ function buildPlacedItems(cfg, options = {}) {
   return [];
 }
 
+function reviewUrlFromOptions(options = {}) {
+  return text(options.reviewUrl || options.reviewRequest?.url || options.reviewRequest?.link || '');
+}
+
 function productDocumentsFromPlacedItems(items = []) {
   const seen = new Set();
   const docs = [];
@@ -309,6 +321,10 @@ export function buildClosingDossierModel(project, options = {}) {
       phone: text(project?.customer?.phone),
     },
     status: text(project?.status, 'Onbekend'),
+    company: { ...SMARTPEAK_CONTACT },
+    review: {
+      url: reviewUrlFromOptions(options),
+    },
     originalRequestSource: text(project?.situation || project?.description || project?.customerRequest || ''),
     planning: {
       visitDoneDate: formatDate(project?.planning?.visitDoneDate),
@@ -491,11 +507,12 @@ export function renderClosingDossierHtml(model, options = {}) {
       <h1>${escapeHtml(model.title)}</h1>
       <p class="spcd-lead">Een gebundeld overzicht van de installatie, technische gegevens, documenten, foto’s en praktische opvolging.</p>
       <div class="spcd-cover-card"><div class="spcd-meta-grid">
-        ${fact('Klant', model.customer.name)}${fact('Projectstatus', model.status)}${fact('Adres', model.customer.address)}${fact('Keuring gepland', model.planning.inspectionPlannedDate)}${fact('Contact', [model.customer.email, model.customer.phone].filter(Boolean).join(' · '))}${fact('Dossierdatum', generatedDate)}
+        ${fact('Klant', model.customer.name)}${fact('Projectstatus', model.status)}${fact('Adres', model.customer.address)}${fact('Keuring gepland', model.planning.inspectionPlannedDate)}${fact('Contact', [model.customer.email, model.customer.phone].filter(Boolean).join(' · '))}${linkedFact('Review', model.review.url ? 'Review invullen' : 'Nog niet beschikbaar', model.review.url)}${fact('Dossierdatum', generatedDate)}
       </div></div>
     </section>
     <main class="spcd-page">
-      ${section('Projectoverzicht', `${paragraph(texts.projectSummary)}<div class="spcd-grid">${fact('Klant', model.customer.name)}${fact('Adres', model.customer.address)}${fact('E-mail', model.customer.email)}${fact('Telefoon', model.customer.phone)}${fact('EAN-code', model.meter.eanCode)}${fact('Meter', `${model.meter.meterType}${model.meter.meterNumber ? ` · ${model.meter.meterNumber}` : ''}`)}</div>`)}
+      ${section('Projectoverzicht', `${paragraph(texts.projectSummary)}<div class="spcd-grid">${fact('Klant', model.customer.name)}${fact('Adres', model.customer.address)}${fact('E-mail', model.customer.email)}${fact('Telefoon', model.customer.phone)}${fact('EAN-code', model.meter.eanCode)}${fact('Meter', `${model.meter.meterType}${model.meter.meterNumber ? ` · ${model.meter.meterNumber}` : ''}`)}${linkedFact('Reviewlink', model.review.url ? 'Review invullen' : 'Nog niet beschikbaar', model.review.url)}</div>`)}
+      ${section('SmartPeak contactgegevens', `<div class="spcd-grid">${fact('Naam', model.company.name)}${fact('Adres', model.company.address)}${fact('BTW', model.company.vat)}${linkedFact('E-mail', model.company.email, `mailto:${model.company.email}`)}${linkedFact('Telefoon', model.company.phone, `tel:${model.company.phone.replace(/\s+/g, '')}`)}${linkedFact('Review', model.review.url ? 'Review invullen' : 'Nog niet beschikbaar', model.review.url)}</div>`)}
       ${texts.originalRequest && texts.originalRequest.trim() ? section('Originele aanvraag', paragraph(texts.originalRequest)) : ''}
       ${section('Geplaatste / voorziene oplossing', `${paragraph(texts.solutionSummary)}<div class="spcd-grid">${fact('Geplaatste oplossing', model.solution.description)}${fact('Batterijcapaciteit', model.solution.batteryCapacity)}${fact('Batterij-omvormer', model.solution.batteryInverter)}${fact('PV-omvormer', model.solution.pvInverter)}${linkedFact('Offerte', model.solution.offerte, model.solution.offerteUrl)}${fact('Keuring', model.planning.inspectionPlannedDate !== 'Nog niet ingevuld' || model.planning.inspectionDoneDate !== 'Nog niet ingevuld' ? 'Voorzien' : 'Nog te bevestigen')}</div><h3>Geplaatste onderdelen</h3>${placedItemsTable(model.placedItems)}`)}
       ${section('Technische gegevens en metingen', `${paragraph(texts.technicalSummary)}<table class="spcd-table"><tbody>${tableRows(model.technicalRows, 'Nog geen technische metingen geregistreerd.')}</tbody></table>`)}

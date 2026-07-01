@@ -1759,7 +1759,10 @@ function renderDrawer(project) {
             listProjectDocuments(project.id).catch(err => { console.warn('closing dossier documents failed', err); return []; }),
           ]);
           const dossierInputs = await loadClosingDossierInputs(dossierProject, rawDocuments);
-          const model = buildClosingDossierModel(dossierProject, { photos, ...dossierInputs });
+          const reviewRequest = typeof createReviewRequestForProject === 'function'
+            ? await createReviewRequestForProject(project.id)
+            : null;
+          const model = buildClosingDossierModel(dossierProject, { photos, reviewRequest, ...dossierInputs });
           const drafts = buildClosingDossierDraftTexts(model);
           document.getElementById('spClosingDossierModal')?.remove();
           document.body.insertAdjacentHTML('beforeend', renderClosingDossierEditorModalHtml(drafts));

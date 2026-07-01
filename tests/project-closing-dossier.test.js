@@ -339,6 +339,35 @@ describe('project closing dossier', () => {
     expect(html).not.toContain('99 kWh');
   });
 
+  it('neemt SmartPeak contactgegevens en reviewlink op in het dossier', () => {
+    const model = buildClosingDossierModel(baseProject, {
+      reviewRequest: { url: 'https://app.smartpeak.be/review.html?r=req-123' },
+      generatedAt: '2026-06-11T18:00:00.000Z',
+    });
+    const html = renderClosingDossierHtml(model);
+
+    expect(model.company.address).toBe('Terwestvaart 11, 9180 Moerbeke-Waas (Lokeren)');
+    expect(model.company.vat).toBe('BE0730696050');
+    expect(model.company.email).toBe('info@smartpeak.be');
+    expect(model.company.phone).toBe('0469 76 23 60');
+    expect(model.review.url).toBe('https://app.smartpeak.be/review.html?r=req-123');
+    expect(html).toContain('SmartPeak contactgegevens');
+    expect(html).toContain('Terwestvaart 11, 9180 Moerbeke-Waas (Lokeren)');
+    expect(html).toContain('BE0730696050');
+    expect(html).toContain('mailto:info@smartpeak.be');
+    expect(html).toContain('tel:0469762360');
+    expect(html).toContain('<a href="https://app.smartpeak.be/review.html?r=req-123" target="_blank" rel="noopener">Review invullen</a>');
+  });
+
+  it('genereert een reviewrequest voordat het dashboard het afsluitdossiermodel bouwt', async () => {
+    const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('../assets/js/pages/dashboard-app.js', import.meta.url), 'utf8'));
+    const reviewIdx = source.indexOf('await createReviewRequestForProject(project.id)');
+    const modelIdx = source.indexOf('buildClosingDossierModel(dossierProject, { photos, reviewRequest, ...dossierInputs })');
+
+    expect(reviewIdx).toBeGreaterThan(-1);
+    expect(modelIdx).toBeGreaterThan(reviewIdx);
+  });
+
   it('biedt vooraf ingevulde tekstvakken aan die voor generatie aangepast kunnen worden', () => {
     const model = buildClosingDossierModel({
       ...baseProject,
