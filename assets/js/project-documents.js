@@ -335,17 +335,19 @@ function openDocumentMetaModal(options = {}) {
   });
 }
 
-function promptMeta(files, parentTitle = '') {
+function promptMeta(files, parentTitle = '', defaults = {}) {
   const many = files.length > 1;
-  const fallback = many ? `Upload ${new Date().toLocaleDateString('nl-BE')}` : fileBaseName(files[0]);
+  const fallback = defaults.title || (many ? `Upload ${new Date().toLocaleDateString('nl-BE')}` : fileBaseName(files[0]));
   return openDocumentMetaModal({
     modalTitle: many ? 'Documenten uploaden' : 'Document uploaden',
     helpText: many
       ? `Meerdere bestanden worden als map opgeslagen${parentTitle ? ` in ${parentTitle}` : ''}.`
       : `Dit document wordt opgeslagen${parentTitle ? ` in ${parentTitle}` : ''}.`,
     title: fallback,
-    description: '',
-    documentKind: 'other',
+    description: defaults.description || '',
+    documentKind: defaults.documentKind || 'other',
+    includeInCloseoutPdf: 'includeInCloseoutPdf' in defaults ? !!defaults.includeInCloseoutPdf : null,
+    includeInInspectionPack: 'includeInInspectionPack' in defaults ? !!defaults.includeInInspectionPack : null,
     showDocumentFields: true,
     saveText: 'Uploaden',
   });
@@ -521,7 +523,8 @@ export function mountProjectDocuments(containerEl, opts = {}) {
   async function handleFiles(filesLike) {
     const files = Array.from(filesLike || []);
     if (!files.length) return;
-    const meta = presetUploadMeta || await promptMeta(files, uploadParentTitle);
+    const defaultMeta = presetUploadMeta || {};
+    const meta = await promptMeta(files, uploadParentTitle, defaultMeta);
     presetUploadMeta = null;
     if (!meta) return;
     const plan = documentUploadPlan(files, { ...meta, parentId: uploadParentId });

@@ -118,7 +118,10 @@ describe('project workflow quick menu', () => {
   it('laat de documentverkenner een workflowupload met vaste metadata starten', () => {
     expect(documentSource).toContain('startUploadWithMeta(meta = {}, parentId = null)');
     expect(documentSource).toContain('presetUploadMeta = { ...defaults, ...meta }');
-    expect(documentSource).toContain('const meta = presetUploadMeta || await promptMeta(files, uploadParentTitle)');
+    expect(documentSource).toContain('const defaultMeta = presetUploadMeta || {}');
+    expect(documentSource).toContain('const meta = await promptMeta(files, uploadParentTitle, defaultMeta)');
+    expect(documentSource).toContain("documentKind: defaults.documentKind || 'other'");
+    expect(documentSource).toContain("includeInInspectionPack: 'includeInInspectionPack' in defaults");
     expect(documentSource).toContain('options.onCountChange(state.entries.length, state.entries)');
   });
 
