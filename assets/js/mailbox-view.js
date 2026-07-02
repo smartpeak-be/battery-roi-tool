@@ -138,11 +138,31 @@ export async function listMessagesViaFirebaseFunction({ account, folder, limit }
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ accountKey: account.key, folderKey: folder.key, limit }),
+    body: JSON.stringify({ accountKey: account.key, folderKey: folder.key, folderPath: folder.providerFolder, limit }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'Mailbox ophalen mislukt.');
   return Array.isArray(data.messages) ? data.messages : [];
+}
+
+export async function listFoldersViaFirebaseFunction({ account }) {
+  if (!account || account.key !== 'kevin') return [];
+  if (typeof globalThis === 'undefined' || !globalThis.firebase) return [];
+  const user = globalThis.firebase.auth().currentUser;
+  if (!user) throw new Error('Niet ingelogd.');
+  const token = await user.getIdToken();
+  const projectId = globalThis.firebase.app().options.projectId;
+  const response = await globalThis.fetch(`https://europe-west1-${projectId}.cloudfunctions.net/mailboxListMessages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action: 'folders', accountKey: account.key }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Mailboxmappen ophalen mislukt.');
+  return Array.isArray(data.folders) ? data.folders : [];
 }
 
 export async function listMailboxMessages({ account, folder, query = '', limit = 50 }) {

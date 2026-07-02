@@ -1,6 +1,7 @@
 import { escapeHtml, showState, showToast } from '../shared-helpers.js';
 import {
   filterMailboxRows,
+  listFoldersViaFirebaseFunction,
   listMailboxMessages,
   mailboxProviderStatus,
   makeMailboxPlaceholderRows,
@@ -13,12 +14,28 @@ import {
 
 let _settings = normalizeMailboxSettings({});
 let _rows = [];
-let _filters = { mailboxKey: 'all', folderKey: 'all', query: '' };
+let _filters = { mailboxKey: 'all', folderKey: 'inbox', query: '' };
 let _selectedId = null;
 let _templates = [];
 
 function accountByKey(key) {
   return _settings.accounts.find(account => account.key === key) || {};
+}
+
+function mergeMailboxFolders(defaultFolders = [], serverFolders = []) {
+  const byKey = new Map(defaultFolders.map(folder => [folder.key, { ...folder }]));
+  (Array.isArray(serverFolders) ? serverFolders : []).forEach(folder => {
+    if (!folder || !folder.key) return;
+    byKey.set(folder.key, { ...(byKey.get(folder.key) || {}), ...folder });
+  });
+  return [...byKey.values()];
+}
+
+async function hydrateProviderFolders() {
+  const kevinAccount = _settings.accounts.find(account => account.key === 'kevin');
+  if (!kevinAccount) return;
+  const folders = await listFoldersViaFirebaseFunction({ account: kevinAccount });
+  if (folders.length) _settings.folders = mergeMailboxFolders(_settings.folders, folders);
 }
 
 function providerStatusHtml() {
@@ -176,11 +193,15 @@ async function loadSettingsAndMessages() {
     renderAll();
     return;
   }
+  await hydrateProviderFolders();
   const rows = [];
-  const foldersToLoad = _settings.folders;
+  const foldersToLoad = _filters.folderKey === 'all'
+    ? _settings.folders
+    : _settings.folders.filter(folder => folder.key === _filters.folderKey);
+  const perFolderLimit = foldersToLoad.length > 1 ? 10 : 50;
   for (const account of _settings.accounts) {
     for (const folder of foldersToLoad) {
-      const messages = await listMailboxMessages({ account, folder, query: _filters.query, limit: 50 });
+      const messages = await listMailboxMessages({ account, folder, query: _filters.query, limit: perFolderLimit });
       rows.push(...messages);
     }
   }
@@ -209,7 +230,8 @@ function wireEvents() {
   });
   document.getElementById('folderFilter').addEventListener('change', e => {
     _filters.folderKey = e.target.value;
-    renderAll();
+    _selectedId = null;
+    loadSettingsAndMessages().catch(err => showToast('Mailboxen laden mislukt: ' + err.message, 'danger'));
   });
   document.getElementById('mailboxSearch').addEventListener('input', e => {
     _filters.query = e.target.value;

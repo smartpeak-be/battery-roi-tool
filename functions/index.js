@@ -529,6 +529,10 @@ function cleanMailboxFolder(value) {
   return cleanString(value, 80).replace(/[^a-zA-Z0-9_-]/g, '');
 }
 
+function cleanMailboxFolderPath(value) {
+  return cleanString(value, 300).replace(/[\r\n\0]/g, '');
+}
+
 function addressListText(addresses = []) {
   return (Array.isArray(addresses) ? addresses : [])
     .map(address => {
@@ -581,10 +585,10 @@ async function normalizeImapMessage(message, accountKey, folderKey) {
   };
 }
 
-async function listHostingerMessages({ accountKey, folderKey, limit }) {
+async function listHostingerMessages({ accountKey, folderKey, folderPath: requestedFolderPath, limit }) {
   const account = SMARTPEAK_MAILBOX_ACCOUNTS[accountKey];
   if (!account) return [];
-  const folderPath = SMARTPEAK_MAILBOX_FOLDERS[folderKey] || SMARTPEAK_MAILBOX_FOLDERS.inbox;
+  const folderPath = cleanMailboxFolderPath(requestedFolderPath) || SMARTPEAK_MAILBOX_FOLDERS[folderKey] || SMARTPEAK_MAILBOX_FOLDERS.inbox;
   const password = account.passwordSecret.value();
   if (!password) throw new Error(`Mailbox secret ontbreekt voor ${accountKey}`);
   const client = new ImapFlow({
@@ -613,6 +617,37 @@ async function listHostingerMessages({ accountKey, folderKey, limit }) {
     return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
   } finally {
     lock.release();
+    await client.logout().catch(() => {});
+  }
+}
+
+async function listHostingerFolders({ accountKey }) {
+  const account = SMARTPEAK_MAILBOX_ACCOUNTS[accountKey];
+  if (!account) return [];
+  const password = account.passwordSecret.value();
+  if (!password) throw new Error(`Mailbox secret ontbreekt voor ${accountKey}`);
+  const client = new ImapFlow({
+    host: account.host,
+    port: account.port,
+    secure: account.secure,
+    auth: { user: account.email, pass: password },
+    logger: false,
+  });
+  await client.connect();
+  try {
+    const boxes = await client.list();
+    return boxes
+      .filter(box => box && box.path && !box.flags?.has?.('\\Noselect'))
+      .map(box => {
+        const knownFolder = Object.entries(SMARTPEAK_MAILBOX_FOLDERS).find(([, path]) => path === box.path);
+        return {
+          key: knownFolder ? knownFolder[0] : `imap-${Buffer.from(box.path).toString('base64url')}`,
+          label: cleanString(box.path.replace(/^INBOX\.?/, '') || 'Inbox', 180),
+          providerFolder: cleanMailboxFolderPath(box.path),
+          specialUse: box.specialUse || '',
+        };
+      });
+  } finally {
     await client.logout().catch(() => {});
   }
 }
@@ -820,9 +855,15 @@ export const mailboxListMessages = functions.https.onRequest(
     try {
       await requireWhitelistedUser(req);
       const accountKey = cleanMailboxKey(req.body && req.body.accountKey || '');
+      if (req.body && req.body.action === 'folders') {
+        const folders = await listHostingerFolders({ accountKey });
+        res.json({ ok: true, folders });
+        return;
+      }
       const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'inbox') || 'inbox';
+      const folderPath = cleanMailboxFolderPath(req.body && req.body.folderPath || '');
       const limit = Math.min(100, Math.max(1, cleanNumber(req.body && req.body.limit, 50)));
-      const messages = await listHostingerMessages({ accountKey, folderKey, limit });
+      const messages = await listHostingerMessages({ accountKey, folderKey, folderPath, limit });
       res.json({ ok: true, messages });
     } catch (err) {
       const status = err.status || 400;
