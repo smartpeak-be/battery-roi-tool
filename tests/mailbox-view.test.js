@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   DEFAULT_MAILBOX_ACCOUNTS,
   filterMailboxRows,
+  getMailboxMessageViaFirebaseFunction,
   listMailboxMessages,
   mailboxOpenUrl,
   mailboxProviderStatus,
@@ -146,13 +147,34 @@ describe('mailbox view', () => {
     expect(dashboardAppSource).toContain('normalizeProjectMailLink');
   });
 
+  it('opent dashboard-mails in een modal zonder nieuwe mailbox-tab', async () => {
+    expect(dashboardAppSource).toContain('data-dashboard-mail-open');
+    expect(dashboardAppSource).toContain('openDashboardMailModal');
+    expect(dashboardAppSource).toContain('dashboardMailModal');
+    expect(dashboardAppSource).toContain('getMailboxMessageViaFirebaseFunction');
+    expect(dashboardAppSource).not.toContain('target="_blank" rel="noopener">Open</a>');
+
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message: { id: 'inbox-1', subject: 'Vraag', body: 'Mailtekst' } }) });
+    vi.stubGlobal('firebase', {
+      auth: () => ({ currentUser: { getIdToken: vi.fn().mockResolvedValue('token') } }),
+      app: () => ({ options: { projectId: 'smartpeak-projects' } }),
+    });
+    vi.stubGlobal('fetch', fetch);
+    const message = await getMailboxMessageViaFirebaseFunction({ accountKey: 'kevin', folderKey: 'inbox', messageId: 'inbox-1' });
+    expect(message.subject).toBe('Vraag');
+    expect(fetch.mock.calls[0][1].body).toContain('getMessage');
+    vi.unstubAllGlobals();
+  });
+
   it('heeft backend sync die bestaande mailbox-cache aan projecten linkt', () => {
     expect(pageSource).toContain('btnLinkMailboxProjects');
     expect(appSource).toContain('linkMailboxToProjectsViaFirebaseFunction');
     expect(mailboxModuleSource).toContain("action: 'linkProjects'");
     expect(appSource).toContain("_initialParams.get('message')");
     expect(functionsSource).toContain('linkMailboxCacheToProjects');
+    expect(functionsSource).toContain('getCachedMessage');
     expect(functionsSource).toContain("action === 'linkProjects'");
+    expect(functionsSource).toContain("action === 'getMessage'");
     expect(functionsSource).toContain('projectMailLinkFromMessage');
     expect(functionsSource).toContain('subject: cleanString(message.subject');
   });

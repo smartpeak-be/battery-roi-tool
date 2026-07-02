@@ -247,6 +247,26 @@ export async function linkMailboxToProjectsViaFirebaseFunction({ account, folder
   return data;
 }
 
+export async function getMailboxMessageViaFirebaseFunction({ accountKey = 'kevin', folderKey = 'inbox', messageId }) {
+  if (!messageId) throw new Error('Geen mail-id meegegeven.');
+  if (typeof globalThis === 'undefined' || !globalThis.firebase) throw new Error('Firebase mailbox-provider ontbreekt.');
+  const user = globalThis.firebase.auth().currentUser;
+  if (!user) throw new Error('Niet ingelogd.');
+  const token = await user.getIdToken();
+  const projectId = globalThis.firebase.app().options.projectId;
+  const response = await globalThis.fetch(`https://europe-west1-${projectId}.cloudfunctions.net/mailboxListMessages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action: 'getMessage', accountKey, folderKey, messageId }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Mail ophalen mislukt.');
+  return data.message || null;
+}
+
 export async function listMailboxMessages({ account, folder, query = '', limit = 50 }) {
   const provider = getMailboxProvider();
   const messages = provider
