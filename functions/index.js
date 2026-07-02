@@ -13,14 +13,62 @@ import {
 import { defineSecret } from 'firebase-functions/params';
 import admin from 'firebase-admin';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
+import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
+import sanitizeHtml from 'sanitize-html';
 
 if (!admin.apps.length) admin.initializeApp();
+const db = admin.firestore();
 
 const billitApiKey = defineSecret('BILLIT_API_KEY');
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
+const hostingerSmartpeakKevinPassword = defineSecret('HOSTINGER_SMARTPEAK_KEVIN_PASSWORD');
 const BILLIT_BASE_URL = 'https://api.sandbox.billit.be';
 const TASKS_URL = 'https://smartpeak-battery-roi.netlify.app/tasks.html';
 const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be']);
+
+const SMARTPEAK_MAILBOX_ACCOUNTS = {
+  kevin: {
+    email: 'kevin@smartpeak.be',
+    host: 'imap.hostinger.com',
+    port: 993,
+    secure: true,
+    passwordSecret: hostingerSmartpeakKevinPassword,
+  },
+};
+
+const SMARTPEAK_MAILBOX_FOLDERS = {
+  inbox: 'INBOX',
+  'follow-up': 'INBOX.Opvolgen',
+  'to-answer': 'INBOX.Te Beantwoorden',
+  review: 'INBOX.Te Bekijken',
+  sent: 'INBOX.Sent',
+};
+
+const MAILBOX_CACHE_RETENTION_DAYS = 92;
+const MAILBOX_SYNC_MAX_PER_FOLDER = 500;
+const MAILBOX_CACHE_COLLECTION = 'mailboxCache';
+
+function mailboxRetentionCutoff() {
+  return new Date(Date.now() - MAILBOX_CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function mailboxFolderKeyForPath(path) {
+  const knownFolder = Object.entries(SMARTPEAK_MAILBOX_FOLDERS).find(([, knownPath]) => knownPath === path);
+  return knownFolder ? knownFolder[0] : `imap-${Buffer.from(path).toString('base64url')}`;
+}
+
+function mailboxFolderLabel(path) {
+  return cleanString(String(path || '').replace(/^INBOX\.?/, '') || 'Inbox', 180);
+}
+
+function mailboxFolderDoc(accountKey, folderKey) {
+  return db.collection(MAILBOX_CACHE_COLLECTION).doc(accountKey).collection('folders').doc(folderKey);
+}
+
+function mailboxMessageDoc(accountKey, folderKey, messageId) {
+  return mailboxFolderDoc(accountKey, folderKey).collection('messages').doc(String(messageId));
+}
 
 // Vision client — lazy singleton. Firebase CLI loads this module during deploy
 // analysis; constructing the client eagerly can trigger local ADC/metadata
@@ -500,6 +548,281 @@ function cleanString(value, max = 4000) {
   return String(value == null ? '' : value).trim().slice(0, max);
 }
 
+function cleanMailboxKey(value) {
+  return cleanString(value, 80).replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+function cleanMailboxFolder(value) {
+  return cleanString(value, 80).replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+function cleanMailboxFolderPath(value) {
+  return cleanString(value, 300).replace(/[\r\n\0]/g, '');
+}
+
+function addressListText(addresses = []) {
+  return (Array.isArray(addresses) ? addresses : [])
+    .map(address => {
+      if (!address) return '';
+      const name = cleanString(address.name || '', 120);
+      const addr = cleanString(address.address || '', 180);
+      if (name && addr) return `${name} <${addr}>`;
+      return name || addr;
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+function formatMailboxDate(date) {
+  if (!date) return '';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString();
+}
+
+function cleanMailboxBody(value, max = 12000) {
+  return cleanString(value || '', max);
+}
+
+async function parseMailboxSource(source) {
+  if (!source) return { text: '', preview: '' };
+  const parsed = await simpleParser(source, { skipImageLinks: true, skipHtmlToText: false });
+  const text = cleanMailboxBody(parsed.text || parsed.textAsHtml || '');
+  const preview = text.replace(/\s+/g, ' ').trim().slice(0, 280);
+  const html = sanitizeMailboxHtml(parsed.html || parsed.textAsHtml || '');
+  return { text, preview, html };
+}
+
+function sanitizeMailboxHtml(html) {
+  if (!html || typeof html !== 'string') return '';
+  return sanitizeHtml(html, {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+      'img', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'colgroup', 'col',
+      'span', 'div', 'center', 'font', 'hr', 'br', 'p', 'h1', 'h2', 'h3', 'h4',
+    ]),
+    allowedAttributes: {
+      a: ['href', 'name', 'target', 'rel'],
+      img: ['src', 'alt', 'title', 'width', 'height'],
+      table: ['width', 'height', 'border', 'cellpadding', 'cellspacing', 'align', 'bgcolor'],
+      td: ['width', 'height', 'align', 'valign', 'colspan', 'rowspan', 'bgcolor'],
+      th: ['width', 'height', 'align', 'valign', 'colspan', 'rowspan', 'bgcolor'],
+      div: ['align'],
+      p: ['align'],
+      span: [],
+      font: ['color', 'face', 'size'],
+      '*': ['style'],
+    },
+    allowedStyles: {
+      '*': {
+        color: [/^#(0x)?[0-9a-f]+$/i, /^rgb\(/, /^[a-z]+$/i],
+        'background-color': [/^#(0x)?[0-9a-f]+$/i, /^rgb\(/, /^[a-z]+$/i],
+        'font-size': [/^\d+(?:px|em|rem|%)$/],
+        'font-family': [/^[a-z0-9 ,.'"-]+$/i],
+        'font-weight': [/^\d+$/, /^(bold|normal)$/],
+        'font-style': [/^(italic|normal)$/],
+        'text-align': [/^(left|right|center|justify)$/],
+        'text-decoration': [/^(none|underline)$/],
+        'line-height': [/^\d+(?:\.\d+)?(?:px|em|rem|%)?$/],
+        width: [/^\d+(?:px|%)$/],
+        height: [/^\d+(?:px|%)$/],
+        margin: [/^[0-9px emrem%.-]+$/],
+        padding: [/^[0-9px emrem%.-]+$/],
+        border: [/^[#a-z0-9 ,.()%-]+$/i],
+        'border-radius': [/^\d+(?:px|%)$/],
+      },
+    },
+    allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+    transformTags: {
+      a: sanitizeHtml.simpleTransform('a', { target: '_blank', rel: 'noopener noreferrer' }),
+    },
+  });
+}
+
+async function normalizeImapMessage(message, accountKey, folderKey) {
+  const envelope = message.envelope || {};
+  const flags = Array.isArray(message.flags) ? message.flags : [...(message.flags || [])];
+  const body = await parseMailboxSource(message.source);
+  return {
+    id: String(message.uid || message.seq || ''),
+    uid: message.uid || null,
+    mailboxKey: accountKey,
+    folderKey,
+    from: addressListText(envelope.from),
+    to: addressListText(envelope.to),
+    subject: cleanString(envelope.subject || '(geen onderwerp)', 500),
+    preview: body.preview,
+    body: body.text,
+    bodyHtml: body.html,
+    date: formatMailboxDate(envelope.date || message.internalDate),
+    unread: !flags.includes('\\Seen'),
+    flagged: flags.includes('\\Flagged'),
+  };
+}
+
+async function listHostingerMessages({ accountKey, folderKey, folderPath: requestedFolderPath, limit, since }) {
+  const account = SMARTPEAK_MAILBOX_ACCOUNTS[accountKey];
+  if (!account) return [];
+  const folderPath = cleanMailboxFolderPath(requestedFolderPath) || SMARTPEAK_MAILBOX_FOLDERS[folderKey] || SMARTPEAK_MAILBOX_FOLDERS.inbox;
+  const password = account.passwordSecret.value();
+  if (!password) throw new Error(`Mailbox secret ontbreekt voor ${accountKey}`);
+  const client = new ImapFlow({
+    host: account.host,
+    port: account.port,
+    secure: account.secure,
+    auth: { user: account.email, pass: password },
+    logger: false,
+  });
+  await client.connect();
+  const lock = await client.getMailboxLock(folderPath);
+  try {
+    const searchQuery = since ? { since } : { all: true };
+    const uids = await client.search(searchQuery, { uid: true });
+    const selected = uids.slice(-limit).reverse();
+    if (!selected.length) return [];
+    const rows = [];
+    for await (const message of client.fetch(selected, {
+      uid: true,
+      envelope: true,
+      flags: true,
+      internalDate: true,
+      source: true,
+    }, { uid: true })) {
+      rows.push(await normalizeImapMessage(message, accountKey, folderKey));
+    }
+    return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  } finally {
+    lock.release();
+    await client.logout().catch(() => {});
+  }
+}
+
+async function listHostingerFolders({ accountKey }) {
+  const account = SMARTPEAK_MAILBOX_ACCOUNTS[accountKey];
+  if (!account) return [];
+  const password = account.passwordSecret.value();
+  if (!password) throw new Error(`Mailbox secret ontbreekt voor ${accountKey}`);
+  const client = new ImapFlow({
+    host: account.host,
+    port: account.port,
+    secure: account.secure,
+    auth: { user: account.email, pass: password },
+    logger: false,
+  });
+  await client.connect();
+  try {
+    const boxes = await client.list();
+    return normalizeHostingerFolders(boxes);
+  } finally {
+    await client.logout().catch(() => {});
+  }
+}
+
+function normalizeHostingerFolders(boxes = []) {
+  return boxes
+    .filter(box => box && box.path && !box.flags?.has?.('\\Noselect'))
+    .map(box => ({
+      key: mailboxFolderKeyForPath(box.path),
+      label: mailboxFolderLabel(box.path),
+      providerFolder: cleanMailboxFolderPath(box.path),
+      specialUse: box.specialUse || '',
+    }));
+}
+
+async function upsertMailboxFolders(accountKey, folders = []) {
+  const writer = db.bulkWriter();
+  for (const folder of folders) {
+    writer.set(mailboxFolderDoc(accountKey, folder.key), {
+      ...folder,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+  await writer.close();
+}
+
+async function listCachedFolders({ accountKey }) {
+  const snap = await db.collection(MAILBOX_CACHE_COLLECTION).doc(accountKey).collection('folders').orderBy('label').get();
+  return snap.docs.map(doc => ({ key: doc.id, ...doc.data() }));
+}
+
+function serializeMailboxMessageForCache(message, folder) {
+  const date = message.date ? new Date(message.date) : new Date();
+  return {
+    ...message,
+    id: `${folder.key}-${message.uid || message.id}`,
+    cacheId: `${folder.key}-${message.uid || message.id}`,
+    providerUid: message.uid || null,
+    folderKey: folder.key,
+    folderLabel: folder.label,
+    providerFolder: folder.providerFolder,
+    dateTs: admin.firestore.Timestamp.fromDate(Number.isNaN(date.getTime()) ? new Date() : date),
+    syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: admin.firestore.Timestamp.fromDate(mailboxRetentionCutoff()),
+  };
+}
+
+async function storeMailboxMessages(accountKey, folder, messages = []) {
+  if (!messages.length) return 0;
+  const writer = db.bulkWriter();
+  for (const message of messages) {
+    const cached = serializeMailboxMessageForCache(message, folder);
+    writer.set(mailboxMessageDoc(accountKey, folder.key, cached.cacheId), cached, { merge: true });
+  }
+  await writer.close();
+  return messages.length;
+}
+
+async function listCachedMessages({ accountKey, folderKey, limit }) {
+  const folders = folderKey === 'all'
+    ? await listCachedFolders({ accountKey })
+    : [{ key: folderKey }];
+  const rows = [];
+  for (const folder of folders) {
+    const snap = await mailboxFolderDoc(accountKey, folder.key)
+      .collection('messages')
+      .orderBy('dateTs', 'desc')
+      .limit(Math.max(1, Math.min(100, limit || 50)))
+      .get();
+    rows.push(...snap.docs.map(doc => ({ id: doc.id, ...doc.data(), date: doc.data().date || doc.data().dateTs?.toDate?.().toISOString?.() || '' })));
+  }
+  return rows.sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, Math.max(1, Math.min(500, (limit || 50) * Math.max(1, folders.length))));
+}
+
+async function cleanupMailboxCache(accountKey) {
+  const cutoff = admin.firestore.Timestamp.fromDate(mailboxRetentionCutoff());
+  const folders = await listCachedFolders({ accountKey });
+  let deleted = 0;
+  for (const folder of folders) {
+    const snap = await mailboxFolderDoc(accountKey, folder.key).collection('messages').where('dateTs', '<', cutoff).limit(500).get();
+    if (snap.empty) continue;
+    const writer = db.bulkWriter();
+    snap.docs.forEach(doc => writer.delete(doc.ref));
+    await writer.close();
+    deleted += snap.size;
+  }
+  return deleted;
+}
+
+async function syncMailboxCache({ accountKey = 'kevin', folderKey = 'all', mode = 'recent' } = {}) {
+  const folders = await listHostingerFolders({ accountKey });
+  await upsertMailboxFolders(accountKey, folders);
+  const selectedFolders = folderKey === 'all' ? folders : folders.filter(folder => folder.key === folderKey);
+  const cutoff = mailboxRetentionCutoff();
+  const results = [];
+  for (const folder of selectedFolders) {
+    const messages = await listHostingerMessages({
+      accountKey,
+      folderKey: folder.key,
+      folderPath: folder.providerFolder,
+      limit: mode === 'all' ? MAILBOX_SYNC_MAX_PER_FOLDER : 75,
+      since: cutoff,
+    });
+    const stored = await storeMailboxMessages(accountKey, folder, messages);
+    results.push({ folderKey: folder.key, label: folder.label, stored });
+  }
+  const deleted = await cleanupMailboxCache(accountKey);
+  return { accountKey, folderCount: selectedFolders.length, stored: results.reduce((sum, item) => sum + item.stored, 0), deleted, results };
+}
+
 function cleanNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -681,6 +1004,64 @@ export const createBillitOffer = functions.https.onRequest(
         return;
       }
       res.json({ ok: true, billit: billit.data, orderId: extractBillitOrderId(billit.data), order });
+    } catch (err) {
+      const status = err.status || 400;
+      res.status(status).json({ error: err.message || String(err) });
+    }
+  },
+);
+
+export const mailboxSyncScheduled = functions.scheduler.onSchedule(
+  { schedule: 'every 30 minutes', timeZone: 'Europe/Brussels', region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword], timeoutSeconds: 540, memory: '512MiB' },
+  async () => syncMailboxCache({ accountKey: 'kevin', folderKey: 'all', mode: 'recent' }),
+);
+
+export const mailboxListMessages = functions.https.onRequest(
+  { region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword], timeoutSeconds: 540, memory: '512MiB' },
+  async (req, res) => {
+    setCors(req, res);
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+    try {
+      await requireWhitelistedUser(req);
+      const accountKey = cleanMailboxKey(req.body && req.body.accountKey || '');
+      if (req.body && req.body.action === 'sync') {
+        const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'all') || 'all';
+        const mode = cleanString(req.body.mode || 'recent', 20) === 'all' ? 'all' : 'recent';
+        const result = await syncMailboxCache({ accountKey, folderKey, mode });
+        res.json({ ok: true, ...result });
+        return;
+      }
+      if (req.body && req.body.action === 'folders') {
+        let folders = await listCachedFolders({ accountKey });
+        if (!folders.length || req.body.refresh === true) {
+          folders = await listHostingerFolders({ accountKey });
+          await upsertMailboxFolders(accountKey, folders);
+        }
+        res.json({ ok: true, folders });
+        return;
+      }
+      const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'inbox') || 'inbox';
+      const folderPath = cleanMailboxFolderPath(req.body && req.body.folderPath || '');
+      const limit = Math.min(100, Math.max(1, cleanNumber(req.body && req.body.limit, 50)));
+      let messages = await listCachedMessages({ accountKey, folderKey, limit });
+      if (!messages.length) {
+        const folder = folderPath ? { key: folderKey, label: mailboxFolderLabel(folderPath), providerFolder: folderPath } : null;
+        if (folder) {
+          const liveMessages = await listHostingerMessages({ accountKey, folderKey, folderPath, limit, since: mailboxRetentionCutoff() });
+          await storeMailboxMessages(accountKey, folder, liveMessages);
+        } else {
+          await syncMailboxCache({ accountKey, folderKey, mode: 'recent' });
+        }
+        messages = await listCachedMessages({ accountKey, folderKey, limit });
+      }
+      res.json({ ok: true, cached: true, messages });
     } catch (err) {
       const status = err.status || 400;
       res.status(status).json({ error: err.message || String(err) });
