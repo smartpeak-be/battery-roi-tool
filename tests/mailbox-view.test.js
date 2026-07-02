@@ -4,7 +4,10 @@ import {
   DEFAULT_MAILBOX_ACCOUNTS,
   filterMailboxRows,
   getMailboxMessageViaFirebaseFunction,
+  linkMailboxToProjectsViaFirebaseFunction,
+  listFoldersViaFirebaseFunction,
   listMailboxMessages,
+  listMessagesViaFirebaseFunction,
   mailboxOpenUrl,
   mailboxProviderStatus,
   makeMailboxPlaceholderRows,
@@ -12,6 +15,7 @@ import {
   normalizeMailboxMessage,
   normalizeMailboxSettings,
   normalizeProjectMailLink,
+  syncMailboxViaFirebaseFunction,
 } from '../assets/js/mailbox-view.js';
 
 const pageSource = readFileSync(new URL('../mailbox-view.html', import.meta.url), 'utf8');
@@ -75,6 +79,25 @@ describe('mailbox view', () => {
     const folder = { key: 'inbox', label: 'Inbox' };
     const rows = await listMailboxMessages({ account, folder });
     expect(rows[0]).toMatchObject({ id: 'm1', mailboxKey: 'kevin', folderKey: 'inbox', body: 'Hallo', unread: true });
+    vi.unstubAllGlobals();
+  });
+
+  it('roept de Firebase mailbox-provider ook aan voor Ruben en contact', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ messages: [], folders: [], ok: true }) });
+    vi.stubGlobal('firebase', {
+      auth: () => ({ currentUser: { getIdToken: vi.fn().mockResolvedValue('token') } }),
+      app: () => ({ options: { projectId: 'smartpeak-projects' } }),
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await listMessagesViaFirebaseFunction({ account: { key: 'ruben' }, folder: { key: 'inbox', providerFolder: 'INBOX' }, limit: 25 });
+    await listFoldersViaFirebaseFunction({ account: { key: 'contact' } });
+    await syncMailboxViaFirebaseFunction({ account: { key: 'ruben' }, folderKey: 'all' });
+    await linkMailboxToProjectsViaFirebaseFunction({ account: { key: 'contact' }, folderKey: 'all' });
+
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch.mock.calls.map(call => JSON.parse(call[1].body).accountKey)).toEqual(['ruben', 'contact', 'ruben', 'contact']);
+    expect(fetch.mock.calls.map(call => JSON.parse(call[1].body).action || 'list')).toEqual(['list', 'folders', 'sync', 'linkProjects']);
     vi.unstubAllGlobals();
   });
 
@@ -180,6 +203,7 @@ describe('mailbox view', () => {
     expect(functionsSource).toContain('projectMailLinkFromMessage');
     expect(functionsSource).toContain('hostingerSmartpeakRubenPassword');
     expect(functionsSource).toContain('hostingerSmartpeakContactPassword');
+    expect(mailboxModuleSource).not.toContain("account.key !== 'kevin'");
     expect(functionsSource).toContain("email: 'ruben@smartpeak.be'");
     expect(functionsSource).toContain("email: 'contact@smartpeak.be'");
     expect(functionsSource).toContain('subject: cleanString(message.subject');

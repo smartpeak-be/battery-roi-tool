@@ -168,7 +168,7 @@ export function normalizeMailboxMessage(message = {}, account = {}, folder = {})
 }
 
 export async function listMessagesViaFirebaseFunction({ account, folder, limit }) {
-  if (!account || account.key !== 'kevin') return [];
+  if (!account || !account.key) return [];
   if (typeof globalThis === 'undefined' || !globalThis.firebase) return [];
   const user = globalThis.firebase.auth().currentUser;
   if (!user) throw new Error('Niet ingelogd.');
@@ -188,7 +188,7 @@ export async function listMessagesViaFirebaseFunction({ account, folder, limit }
 }
 
 export async function listFoldersViaFirebaseFunction({ account }) {
-  if (!account || account.key !== 'kevin') return [];
+  if (!account || !account.key) return [];
   if (typeof globalThis === 'undefined' || !globalThis.firebase) return [];
   const user = globalThis.firebase.auth().currentUser;
   if (!user) throw new Error('Niet ingelogd.');
@@ -208,7 +208,7 @@ export async function listFoldersViaFirebaseFunction({ account }) {
 }
 
 export async function syncMailboxViaFirebaseFunction({ account, folderKey = 'all', mode = 'recent' }) {
-  if (!account || account.key !== 'kevin') return { ok: true, stored: 0, deleted: 0 };
+  if (!account || !account.key) return { ok: true, stored: 0, deleted: 0 };
   if (typeof globalThis === 'undefined' || !globalThis.firebase) return { ok: false, stored: 0, deleted: 0 };
   const user = globalThis.firebase.auth().currentUser;
   if (!user) throw new Error('Niet ingelogd.');
@@ -228,7 +228,7 @@ export async function syncMailboxViaFirebaseFunction({ account, folderKey = 'all
 }
 
 export async function linkMailboxToProjectsViaFirebaseFunction({ account, folderKey = 'all' }) {
-  if (!account || account.key !== 'kevin') return { ok: true, linkedProjects: 0, linkedMessages: 0 };
+  if (!account || !account.key) return { ok: true, linkedProjects: 0, linkedMessages: 0 };
   if (typeof globalThis === 'undefined' || !globalThis.firebase) return { ok: false, linkedProjects: 0, linkedMessages: 0 };
   const user = globalThis.firebase.auth().currentUser;
   if (!user) throw new Error('Niet ingelogd.');
