@@ -25,11 +25,11 @@ const mailboxModuleSource = readFileSync(new URL('../assets/js/mailbox-view.js',
 
 describe('mailbox view', () => {
   it('voorziet Kevin, Ruben en algemene SmartPeak mailbox als defaults', () => {
-    expect(DEFAULT_MAILBOX_ACCOUNTS.map(account => account.key)).toEqual(['kevin', 'ruben', 'smartpeak']);
+    expect(DEFAULT_MAILBOX_ACCOUNTS.map(account => account.key)).toEqual(['kevin', 'ruben', 'contact']);
     expect(DEFAULT_MAILBOX_ACCOUNTS.map(account => account.email)).toEqual([
       'kevin@smartpeak.be',
       'ruben@smartpeak.be',
-      'info@smartpeak.be',
+      'contact@smartpeak.be',
     ]);
   });
 
@@ -40,11 +40,11 @@ describe('mailbox view', () => {
         { key: 'planning', label: 'Planning', email: 'planning@smartpeak.be' },
       ],
     });
-    expect(settings.accounts.map(account => account.key)).toEqual(['kevin', 'ruben', 'smartpeak', 'planning']);
+    expect(settings.accounts.map(account => account.key)).toEqual(['kevin', 'ruben', 'contact', 'planning']);
     expect(settings.accounts.find(account => account.key === 'kevin').label).toBe('Kevin B.');
     expect(settings.folders.map(folder => folder.key)).toContain('to-answer');
     expect(settings.folders.map(folder => folder.key)).toContain('sent');
-    expect(normalizeMailboxAccounts([{ key: 'smartpeak', enabled: false }]).map(account => account.key)).not.toContain('smartpeak');
+    expect(normalizeMailboxAccounts([{ key: 'contact', enabled: false }]).map(account => account.key)).not.toContain('contact');
   });
 
   it('heeft een veilige plugin/provider boundary en placeholders zonder provider', () => {
@@ -176,6 +176,10 @@ describe('mailbox view', () => {
     expect(functionsSource).toContain("action === 'linkProjects'");
     expect(functionsSource).toContain("action === 'getMessage'");
     expect(functionsSource).toContain('projectMailLinkFromMessage');
+    expect(functionsSource).toContain('hostingerSmartpeakRubenPassword');
+    expect(functionsSource).toContain('hostingerSmartpeakContactPassword');
+    expect(functionsSource).toContain("email: 'ruben@smartpeak.be'");
+    expect(functionsSource).toContain("email: 'contact@smartpeak.be'");
     expect(functionsSource).toContain('subject: cleanString(message.subject');
   });
 
