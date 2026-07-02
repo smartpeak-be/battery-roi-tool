@@ -2,6 +2,7 @@ import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, with
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 import { mountProjectDocuments, mergeProjectDocuments, resolveDocumentDownloadUrls } from '../project-documents.js';
 import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
+import { normalizeProjectMailLink } from '../mailbox-view.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
@@ -1678,6 +1679,25 @@ function renderDrawer(project) {
       <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Opvolging</h6>
       <div class="mb-2"><strong class="small">Volgende acties</strong>${nextActionsHtml}</div>
       <div><strong class="small">Open taken</strong>${tasksHtml}</div>
+    </section>
+  `);
+  const mailLinks = (m.mailLinks || []).map(normalizeProjectMailLink)
+    .sort((a, b) => String(b.date || b.dateLabel).localeCompare(String(a.date || a.dateLabel)))
+    .slice(0, 8);
+  const mailsHtml = mailLinks.length
+    ? `<div class="d-flex flex-column gap-2">${mailLinks.map(link => `
+      <div class="d-flex align-items-center gap-2 border rounded p-2">
+        <div class="flex-grow-1 min-w-0">
+          <div class="small fw-semibold text-truncate">${escapeHtml(link.subject)}</div>
+          <div class="small text-muted">${escapeHtml(link.dateLabel || link.date || 'geen datum')} · ${escapeHtml(link.directionLabel)}</div>
+        </div>
+        <a class="btn btn-sm btn-outline-primary" href="${escapeHtml(link.openUrl)}" target="_blank" rel="noopener">Open</a>
+      </div>`).join('')}</div>`
+    : '<p class="text-muted small mb-0">Nog geen mails gekoppeld.</p>';
+  sections.push(`
+    <section class="border-bottom pb-3 mb-3">
+      <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Mails</h6>
+      ${mailsHtml}
     </section>
   `);
   sections.push(`

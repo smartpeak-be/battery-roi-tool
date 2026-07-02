@@ -7,6 +7,7 @@ import {
   normalizeInstalledSolution,
   solutionProductOptions,
 } from '../project-solution.js';
+import { normalizeProjectMailLink } from '../mailbox-view.js';
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 const URL_PARAMS = new URLSearchParams(window.location.search);
@@ -1428,6 +1429,18 @@ function sectionOps() {
       <div class="small text-muted">${escapeHtml(a.type)} · ${escapeHtml(a.occurredAt || 'geen datum')} · bron: ${escapeHtml(a.source || 'manual')} · ${escapeHtml(a.confidence || 'zeker')}</div>
       <div>${escapeHtml(a.title || a.notes || 'Activiteit')}</div>
     </div>`).join('') : '<p class="text-muted mb-0">Nog geen gestructureerde activiteiten.</p>';
+  const mailLinks = (_project.mailLinks || []).map(normalizeProjectMailLink)
+    .sort((a, b) => String(b.date || b.dateLabel).localeCompare(String(a.date || a.dateLabel)));
+  const mailRows = mailLinks.length ? mailLinks.map(link => `
+    <div class="border rounded p-2 d-flex flex-column flex-md-row align-items-md-center gap-2" data-project-mail-link="${escapeHtml(link.messageId)}">
+      <div class="flex-grow-1 min-w-0">
+        <div class="fw-semibold text-truncate">${escapeHtml(link.subject)}</div>
+        <div class="small text-muted">${escapeHtml(link.dateLabel || link.date || 'geen datum')} · ${escapeHtml(link.directionLabel)}</div>
+      </div>
+      <a class="btn btn-sm btn-outline-primary" href="${escapeHtml(link.openUrl)}" target="_blank" rel="noopener">
+        <i class="fa-solid fa-envelope-open-text me-1"></i>Open
+      </a>
+    </div>`).join('') : '<p class="text-muted mb-0">Nog geen mails gekoppeld.</p>';
   const suggestedRows = nextActions.length ? nextActions.map(a => `
     <span class="d-inline-flex gap-1 me-1 mb-1">
       <button type="button" class="btn btn-sm btn-outline-primary" data-add-suggested-task="${escapeHtml(a.type)}" data-title="${escapeHtml(a.label)}" data-assignee="${escapeHtml(a.assignee || '')}">
@@ -1451,6 +1464,12 @@ function sectionOps() {
         <h6 class="text-muted">Taken</h6>
         <div class="d-flex flex-column gap-2 mb-2" id="opsTaskList">${taskRows}</div>
         <button type="button" class="btn btn-sm btn-outline-primary" id="opsAddTask"><i class="fa-solid fa-plus me-1"></i>Taak toevoegen</button>
+        <hr />
+        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+          <h6 class="text-muted mb-0">Gekoppelde mails</h6>
+          <a class="btn btn-sm btn-outline-secondary" href="mailbox-view.html" target="_blank" rel="noopener"><i class="fa-solid fa-inbox me-1"></i>Mailbox</a>
+        </div>
+        <div class="d-flex flex-column gap-2 mt-2 mb-2" id="opsMailLinkList">${mailRows}</div>
         <hr />
         <h6 class="text-muted">Tijdlijn / activiteiten</h6>
         <div class="d-flex flex-column gap-2 mb-2" id="opsActivityList">${activityRows}</div>

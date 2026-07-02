@@ -106,13 +106,52 @@ export function makeMailboxPlaceholderRows(accounts = [], folders = []) {
   }));
 }
 
-export function normalizeMailboxMessage(message = {}, account = {}, folder = {}) {
+export function mailboxDirectionForFolder(folderKey = '') {
+  return String(folderKey || '').toLowerCase().includes('sent') ? 'sent' : 'received';
+}
+
+export function mailboxDirectionLabel(direction = '') {
+  return direction === 'sent' ? 'Verstuurd' : 'Ontvangen';
+}
+
+export function mailboxOpenUrl(link = {}) {
+  const account = encodeURIComponent(link.mailboxKey || 'kevin');
+  const folder = encodeURIComponent(link.folderKey || 'inbox');
+  const message = encodeURIComponent(link.messageId || link.cacheId || link.id || '');
+  return `mailbox-view.html?account=${account}&folder=${folder}&message=${message}`;
+}
+
+export function normalizeProjectMailLink(link = {}) {
+  const folderKey = link.folderKey || 'inbox';
+  const direction = link.direction || mailboxDirectionForFolder(folderKey);
+  const messageId = String(link.messageId || link.cacheId || link.id || '');
   return {
-    id: String(message.id || message.uid || `${account.key}-${folder.key}-${Date.now()}`),
-    mailboxKey: account.key,
-    mailboxLabel: account.label,
-    folderKey: folder.key,
-    folderLabel: folder.label,
+    messageId,
+    cacheId: String(link.cacheId || messageId),
+    mailboxKey: link.mailboxKey || 'kevin',
+    mailboxLabel: link.mailboxLabel || '',
+    folderKey,
+    folderLabel: link.folderLabel || '',
+    direction,
+    directionLabel: mailboxDirectionLabel(direction),
+    subject: link.subject || '(geen onderwerp)',
+    date: link.date || link.dateLabel || '',
+    dateLabel: link.dateLabel || link.date || '',
+    openUrl: link.openUrl || mailboxOpenUrl({ ...link, messageId }),
+  };
+}
+
+export function normalizeMailboxMessage(message = {}, account = {}, folder = {}) {
+  const id = String(message.id || message.cacheId || message.uid || `${account.key}-${folder.key}-${Date.now()}`);
+  const folderKey = message.folderKey || folder.key;
+  const direction = message.direction || mailboxDirectionForFolder(folderKey);
+  return {
+    id,
+    cacheId: String(message.cacheId || id),
+    mailboxKey: account.key || message.mailboxKey || 'kevin',
+    mailboxLabel: account.label || message.mailboxLabel || '',
+    folderKey,
+    folderLabel: message.folderLabel || folder.label,
     from: message.from || '',
     to: message.to || '',
     subject: message.subject || '(geen onderwerp)',
@@ -120,6 +159,8 @@ export function normalizeMailboxMessage(message = {}, account = {}, folder = {})
     body: message.body || message.text || message.preview || message.snippet || '',
     bodyHtml: message.bodyHtml || message.html || '',
     dateLabel: message.dateLabel || message.date || '',
+    direction,
+    directionLabel: mailboxDirectionLabel(direction),
     unread: Boolean(message.unread),
     flagged: Boolean(message.flagged),
     raw: message,
@@ -183,6 +224,26 @@ export async function syncMailboxViaFirebaseFunction({ account, folderKey = 'all
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'Mailbox synchroniseren mislukt.');
+  return data;
+}
+
+export async function linkMailboxToProjectsViaFirebaseFunction({ account, folderKey = 'all' }) {
+  if (!account || account.key !== 'kevin') return { ok: true, linkedProjects: 0, linkedMessages: 0 };
+  if (typeof globalThis === 'undefined' || !globalThis.firebase) return { ok: false, linkedProjects: 0, linkedMessages: 0 };
+  const user = globalThis.firebase.auth().currentUser;
+  if (!user) throw new Error('Niet ingelogd.');
+  const token = await user.getIdToken();
+  const projectId = globalThis.firebase.app().options.projectId;
+  const response = await globalThis.fetch(`https://europe-west1-${projectId}.cloudfunctions.net/mailboxListMessages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action: 'linkProjects', accountKey: account.key, folderKey }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Mailboxen aan projecten koppelen mislukt.');
   return data;
 }
 

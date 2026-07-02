@@ -4,17 +4,23 @@ import {
   DEFAULT_MAILBOX_ACCOUNTS,
   filterMailboxRows,
   listMailboxMessages,
+  mailboxOpenUrl,
   mailboxProviderStatus,
   makeMailboxPlaceholderRows,
   normalizeMailboxAccounts,
   normalizeMailboxMessage,
   normalizeMailboxSettings,
+  normalizeProjectMailLink,
 } from '../assets/js/mailbox-view.js';
 
 const pageSource = readFileSync(new URL('../mailbox-view.html', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../assets/js/pages/mailbox-view-app.js', import.meta.url), 'utf8');
 const dashboardSource = readFileSync(new URL('../dashboard.html', import.meta.url), 'utf8');
 const cssSource = readFileSync(new URL('../assets/css/smartpeak.css', import.meta.url), 'utf8');
+const projectEditSource = readFileSync(new URL('../assets/js/pages/project-edit-app.js', import.meta.url), 'utf8');
+const dashboardAppSource = readFileSync(new URL('../assets/js/pages/dashboard-app.js', import.meta.url), 'utf8');
+const functionsSource = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+const mailboxModuleSource = readFileSync(new URL('../assets/js/mailbox-view.js', import.meta.url), 'utf8');
 
 describe('mailbox view', () => {
   it('voorziet Kevin, Ruben en algemene SmartPeak mailbox als defaults', () => {
@@ -118,4 +124,37 @@ describe('mailbox view', () => {
     expect(dashboardSource).toContain('mailbox-view.html');
     expect(cssSource).toContain('.mailbox-view-page');
   });
+  it('koppelt mailboxlinks projectvriendelijk zonder bodytekst te bewaren', () => {
+    const received = normalizeProjectMailLink({ cacheId: 'inbox-123', folderKey: 'inbox', subject: 'Vraag batterij', date: '2026-07-01T10:00:00.000Z' });
+    const sent = normalizeProjectMailLink({ messageId: 'sent-456', folderKey: 'sent', subject: 'Offerte', dateLabel: '2026-07-02' });
+    expect(received).toMatchObject({ messageId: 'inbox-123', direction: 'received', directionLabel: 'Ontvangen' });
+    expect(sent).toMatchObject({ direction: 'sent', directionLabel: 'Verstuurd' });
+    expect(mailboxOpenUrl(sent)).toBe('mailbox-view.html?account=kevin&folder=sent&message=sent-456');
+    expect(Object.keys(received)).not.toContain('body');
+    expect(Object.keys(received)).not.toContain('bodyHtml');
+  });
+
+  it('toont gekoppelde mails in project en dashboard met enkel onderwerp, datum, richting en open-knop', () => {
+    expect(projectEditSource).toContain('Gekoppelde mails');
+    expect(projectEditSource).toContain('normalizeProjectMailLink');
+    expect(projectEditSource).toContain('link.subject');
+    expect(projectEditSource).toContain('link.directionLabel');
+    expect(projectEditSource).toContain('link.openUrl');
+    expect(projectEditSource).not.toContain('link.body');
+    expect(projectEditSource).not.toContain('link.bodyHtml');
+    expect(dashboardAppSource).toContain('> Mails</h6>');
+    expect(dashboardAppSource).toContain('normalizeProjectMailLink');
+  });
+
+  it('heeft backend sync die bestaande mailbox-cache aan projecten linkt', () => {
+    expect(pageSource).toContain('btnLinkMailboxProjects');
+    expect(appSource).toContain('linkMailboxToProjectsViaFirebaseFunction');
+    expect(mailboxModuleSource).toContain("action: 'linkProjects'");
+    expect(appSource).toContain("_initialParams.get('message')");
+    expect(functionsSource).toContain('linkMailboxCacheToProjects');
+    expect(functionsSource).toContain("action === 'linkProjects'");
+    expect(functionsSource).toContain('projectMailLinkFromMessage');
+    expect(functionsSource).toContain('subject: cleanString(message.subject');
+  });
+
 });
