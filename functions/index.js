@@ -15,6 +15,7 @@ import admin from 'firebase-admin';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
+import sanitizeHtml from 'sanitize-html';
 
 if (!admin.apps.length) admin.initializeApp();
 
@@ -562,7 +563,53 @@ async function parseMailboxSource(source) {
   const parsed = await simpleParser(source, { skipImageLinks: true, skipHtmlToText: false });
   const text = cleanMailboxBody(parsed.text || parsed.textAsHtml || '');
   const preview = text.replace(/\s+/g, ' ').trim().slice(0, 280);
-  return { text, preview };
+  const html = sanitizeMailboxHtml(parsed.html || parsed.textAsHtml || '');
+  return { text, preview, html };
+}
+
+function sanitizeMailboxHtml(html) {
+  if (!html || typeof html !== 'string') return '';
+  return sanitizeHtml(html, {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+      'img', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'colgroup', 'col',
+      'span', 'div', 'center', 'font', 'hr', 'br', 'p', 'h1', 'h2', 'h3', 'h4',
+    ]),
+    allowedAttributes: {
+      a: ['href', 'name', 'target', 'rel'],
+      img: ['src', 'alt', 'title', 'width', 'height'],
+      table: ['width', 'height', 'border', 'cellpadding', 'cellspacing', 'align', 'bgcolor'],
+      td: ['width', 'height', 'align', 'valign', 'colspan', 'rowspan', 'bgcolor'],
+      th: ['width', 'height', 'align', 'valign', 'colspan', 'rowspan', 'bgcolor'],
+      div: ['align'],
+      p: ['align'],
+      span: [],
+      font: ['color', 'face', 'size'],
+      '*': ['style'],
+    },
+    allowedStyles: {
+      '*': {
+        color: [/^#(0x)?[0-9a-f]+$/i, /^rgb\(/, /^[a-z]+$/i],
+        'background-color': [/^#(0x)?[0-9a-f]+$/i, /^rgb\(/, /^[a-z]+$/i],
+        'font-size': [/^\d+(?:px|em|rem|%)$/],
+        'font-family': [/^[a-z0-9 ,.'"-]+$/i],
+        'font-weight': [/^\d+$/, /^(bold|normal)$/],
+        'font-style': [/^(italic|normal)$/],
+        'text-align': [/^(left|right|center|justify)$/],
+        'text-decoration': [/^(none|underline)$/],
+        'line-height': [/^\d+(?:\.\d+)?(?:px|em|rem|%)?$/],
+        width: [/^\d+(?:px|%)$/],
+        height: [/^\d+(?:px|%)$/],
+        margin: [/^[0-9px emrem%.-]+$/],
+        padding: [/^[0-9px emrem%.-]+$/],
+        border: [/^[#a-z0-9 ,.()%-]+$/i],
+        'border-radius': [/^\d+(?:px|%)$/],
+      },
+    },
+    allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+    transformTags: {
+      a: sanitizeHtml.simpleTransform('a', { target: '_blank', rel: 'noopener noreferrer' }),
+    },
+  });
 }
 
 async function normalizeImapMessage(message, accountKey, folderKey) {
@@ -579,6 +626,7 @@ async function normalizeImapMessage(message, accountKey, folderKey) {
     subject: cleanString(envelope.subject || '(geen onderwerp)', 500),
     preview: body.preview,
     body: body.text,
+    bodyHtml: body.html,
     date: formatMailboxDate(envelope.date || message.internalDate),
     unread: !flags.includes('\\Seen'),
     flagged: flags.includes('\\Flagged'),

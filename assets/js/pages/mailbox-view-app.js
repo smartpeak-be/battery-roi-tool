@@ -127,6 +127,7 @@ function renderSelectedMessage(row) {
     return;
   }
   const bodyText = row.body || row.preview || '';
+  const hasHtml = Boolean(row.bodyHtml);
   panel.innerHTML = `
     <div class="mailbox-message-header">
       <div class="d-flex justify-content-between gap-2 align-items-start">
@@ -146,9 +147,15 @@ function renderSelectedMessage(row) {
       ${row.placeholder ? `
         <p>Deze mailbox-view is voorbereid voor meerdere mailboxen, maar de echte mailbox-provider is nog niet gekoppeld.</p>
         <p>Er worden bewust geen IMAP/SMTP credentials of tokens in deze frontend opgeslagen. Koppel later een veilige backend/plugin die <code>window.SmartPeakMailboxPlugin.listMessages()</code> aanbiedt.</p>
-      ` : `<p>${escapeHtml(bodyText).replaceAll('\n', '<br>')}</p>`}
+      ` : hasHtml
+        ? '<iframe class="mailbox-html-frame" title="Mailinhoud" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>'
+        : `<p>${escapeHtml(bodyText).replaceAll('\n', '<br>')}</p>`}
     </div>
   `;
+  const frame = panel.querySelector('.mailbox-html-frame');
+  if (frame && row.bodyHtml) {
+    frame.srcdoc = `<!doctype html><html><head><base target="_blank"><style>body{margin:0;padding:16px;background:#fff;color:#111827;font-family:Arial,sans-serif;overflow-wrap:anywhere;}img{max-width:100%;height:auto;}table{max-width:100%;}a{color:#0d6efd;}</style></head><body>${row.bodyHtml}</body></html>`;
+  }
 }
 
 function renderTemplateSelect() {

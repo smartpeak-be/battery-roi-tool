@@ -78,10 +78,14 @@ describe('mailbox view', () => {
       { key: 'sent', label: 'Verzonden' },
     );
     expect(row.body).toBe('Volledige mailbody');
+    expect(normalizeMailboxMessage({ bodyHtml: '<strong>HTML</strong>' }, { key: 'kevin', label: 'Kevin' }, { key: 'inbox', label: 'Inbox' }).bodyHtml).toContain('<strong>HTML</strong>');
     expect(appSource).toContain('listFoldersViaFirebaseFunction');
     expect(appSource).toContain('hydrateProviderFolders');
     expect(appSource).toContain("_filters.folderKey === 'all'");
     expect(appSource).toContain('const bodyText = row.body || row.preview ||');
+    expect(appSource).toContain('mailbox-html-frame');
+    expect(appSource).toContain('frame.srcdoc');
+    expect(cssSource).toContain('.mailbox-html-frame');
     expect(appSource).not.toContain("['inbox', 'follow-up', 'to-answer'].includes");
     expect(appSource).toContain('loadSettingsAndMessages().catch');
   });
