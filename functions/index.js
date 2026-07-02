@@ -787,6 +787,22 @@ async function listCachedMessages({ accountKey, folderKey, limit }) {
   return rows.sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, Math.max(1, Math.min(500, (limit || 50) * Math.max(1, folders.length))));
 }
 
+async function getCachedMessage({ accountKey, folderKey, messageId }) {
+  const safeMessageId = cleanString(messageId, 240);
+  if (!safeMessageId) return null;
+  const folderKeys = folderKey === 'all'
+    ? (await listCachedFolders({ accountKey })).map(folder => folder.key)
+    : [folderKey];
+  for (const key of folderKeys) {
+    const snap = await mailboxMessageDoc(accountKey, key, safeMessageId).get();
+    if (snap.exists) {
+      const data = snap.data();
+      return { id: snap.id, ...data, date: data.date || data.dateTs?.toDate?.().toISOString?.() || '' };
+    }
+  }
+  return null;
+}
+
 function mailboxDirectionForFolder(folderKey = '') {
   return String(folderKey || '').toLowerCase().includes('sent') ? 'sent' : 'received';
 }
@@ -1170,6 +1186,17 @@ export const mailboxListMessages = functions.https.onRequest(
         const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'all') || 'all';
         const result = await linkMailboxCacheToProjects({ accountKey, folderKey });
         res.json({ ok: true, ...result });
+        return;
+      }
+      if (req.body && req.body.action === 'getMessage') {
+        const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'inbox') || 'inbox';
+        const messageId = cleanString(req.body && req.body.messageId || '', 240);
+        const message = await getCachedMessage({ accountKey, folderKey, messageId });
+        if (!message) {
+          res.status(404).json({ error: 'Mail niet gevonden in cache.' });
+          return;
+        }
+        res.json({ ok: true, cached: true, message });
         return;
       }
       if (req.body && req.body.action === 'folders') {

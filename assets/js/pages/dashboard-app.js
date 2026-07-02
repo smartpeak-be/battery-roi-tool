@@ -2,7 +2,7 @@ import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, with
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 import { mountProjectDocuments, mergeProjectDocuments, resolveDocumentDownloadUrls } from '../project-documents.js';
 import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
-import { normalizeProjectMailLink } from '../mailbox-view.js';
+import { getMailboxMessageViaFirebaseFunction, normalizeMailboxMessage, normalizeProjectMailLink } from '../mailbox-view.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
@@ -745,6 +745,62 @@ function closeDrawer() {
   }
   const el = document.getElementById('drawer');
   bootstrap.Offcanvas.getOrCreateInstance(el).hide();
+}
+
+function dashboardMailFrameSrcdoc(row) {
+  return `<!doctype html><html><head><base target="_blank"><style>body{margin:0;padding:16px;background:#fff;color:#111827;font-family:Arial,sans-serif;overflow-wrap:anywhere;}img{max-width:100%;height:auto;}table{max-width:100%;}a{color:#0d6efd;}</style></head><body>${row.bodyHtml || ''}</body></html>`;
+}
+
+function ensureDashboardMailModal() {
+  let modal = document.getElementById('dashboardMailModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.className = 'modal fade mailbox-fullscreen-modal';
+  modal.id = 'dashboardMailModal';
+  modal.tabIndex = -1;
+  modal.setAttribute('aria-labelledby', 'dashboardMailModalTitle');
+  modal.setAttribute('aria-hidden', 'true');
+  modal.innerHTML = `
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <div class="small text-muted" id="dashboardMailModalMeta">Mail</div>
+            <h2 class="modal-title h5" id="dashboardMailModalTitle">Bericht</h2>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+        </div>
+        <div class="modal-body p-0" id="dashboardMailModalBody"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function renderDashboardMailModal(row) {
+  const modal = ensureDashboardMailModal();
+  modal.querySelector('#dashboardMailModalTitle').textContent = row.subject || 'Bericht';
+  modal.querySelector('#dashboardMailModalMeta').textContent = `${row.mailboxLabel || 'Kevin'} · ${row.folderLabel || ''} · ${row.dateLabel || ''}`;
+  const body = modal.querySelector('#dashboardMailModalBody');
+  if (row.bodyHtml) {
+    body.innerHTML = '<iframe class="mailbox-html-frame mailbox-html-frame-full" title="Mailinhoud" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>';
+    body.querySelector('.mailbox-html-frame').srcdoc = dashboardMailFrameSrcdoc(row);
+  } else {
+    body.innerHTML = `<div class="p-4">${escapeHtml(row.body || row.preview || '').replaceAll('\n', '<br>')}</div>`;
+  }
+  bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+
+async function openDashboardMailModal(link) {
+  const normalized = normalizeProjectMailLink(link);
+  const message = await getMailboxMessageViaFirebaseFunction({
+    accountKey: normalized.mailboxKey || 'kevin',
+    folderKey: normalized.folderKey || 'inbox',
+    messageId: normalized.messageId || normalized.cacheId,
+  });
+  const account = { key: normalized.mailboxKey || 'kevin', label: normalized.mailboxLabel || 'Kevin' };
+  const folder = { key: normalized.folderKey || 'inbox', label: normalized.folderLabel || '' };
+  renderDashboardMailModal(normalizeMailboxMessage(message || normalized, account, folder));
 }
 
 function setDrawerDocumentsCount(count, entries = []) {
@@ -1691,7 +1747,7 @@ function renderDrawer(project) {
           <div class="small fw-semibold text-truncate">${escapeHtml(link.subject)}</div>
           <div class="small text-muted">${escapeHtml(link.dateLabel || link.date || 'geen datum')} · ${escapeHtml(link.directionLabel)}</div>
         </div>
-        <a class="btn btn-sm btn-outline-primary" href="${escapeHtml(link.openUrl)}" target="_blank" rel="noopener">Open</a>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-dashboard-mail-open="${escapeHtml(link.messageId || link.cacheId)}" data-mailbox-key="${escapeHtml(link.mailboxKey || 'kevin')}" data-folder-key="${escapeHtml(link.folderKey || 'inbox')}">Open</button>
       </div>`).join('')}</div>`
     : '<p class="text-muted small mb-0">Nog geen mails gekoppeld.</p>';
   sections.push(`
@@ -1871,6 +1927,29 @@ function renderDrawer(project) {
       });
     });
   }
+
+  document.querySelectorAll('[data-dashboard-mail-open]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const mailLinks = (mergeProjectMetadata(project).mailLinks || []).map(normalizeProjectMailLink);
+      const id = btn.getAttribute('data-dashboard-mail-open');
+      const link = mailLinks.find(item => item.messageId === id || item.cacheId === id) || {
+        messageId: id,
+        mailboxKey: btn.getAttribute('data-mailbox-key'),
+        folderKey: btn.getAttribute('data-folder-key'),
+      };
+      btn.disabled = true;
+      const oldText = btn.textContent;
+      btn.textContent = 'Laden…';
+      try {
+        await openDashboardMailModal(link);
+      } catch (err) {
+        showToast('Mail openen mislukt: ' + (err && err.message ? err.message : err), 'danger');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = oldText;
+      }
+    });
+  });
 
   const reviewBtn = document.getElementById('drawerReviewLinkBtn');
   if (reviewBtn) {
