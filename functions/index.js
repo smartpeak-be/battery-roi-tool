@@ -18,6 +18,7 @@ import { simpleParser } from 'mailparser';
 import sanitizeHtml from 'sanitize-html';
 
 if (!admin.apps.length) admin.initializeApp();
+const db = admin.firestore();
 
 const billitApiKey = defineSecret('BILLIT_API_KEY');
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
@@ -43,6 +44,31 @@ const SMARTPEAK_MAILBOX_FOLDERS = {
   review: 'INBOX.Te Bekijken',
   sent: 'INBOX.Sent',
 };
+
+const MAILBOX_CACHE_RETENTION_DAYS = 92;
+const MAILBOX_SYNC_MAX_PER_FOLDER = 500;
+const MAILBOX_CACHE_COLLECTION = 'mailboxCache';
+
+function mailboxRetentionCutoff() {
+  return new Date(Date.now() - MAILBOX_CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function mailboxFolderKeyForPath(path) {
+  const knownFolder = Object.entries(SMARTPEAK_MAILBOX_FOLDERS).find(([, knownPath]) => knownPath === path);
+  return knownFolder ? knownFolder[0] : `imap-${Buffer.from(path).toString('base64url')}`;
+}
+
+function mailboxFolderLabel(path) {
+  return cleanString(String(path || '').replace(/^INBOX\.?/, '') || 'Inbox', 180);
+}
+
+function mailboxFolderDoc(accountKey, folderKey) {
+  return db.collection(MAILBOX_CACHE_COLLECTION).doc(accountKey).collection('folders').doc(folderKey);
+}
+
+function mailboxMessageDoc(accountKey, folderKey, messageId) {
+  return mailboxFolderDoc(accountKey, folderKey).collection('messages').doc(String(messageId));
+}
 
 // Vision client — lazy singleton. Firebase CLI loads this module during deploy
 // analysis; constructing the client eagerly can trigger local ADC/metadata
@@ -633,7 +659,7 @@ async function normalizeImapMessage(message, accountKey, folderKey) {
   };
 }
 
-async function listHostingerMessages({ accountKey, folderKey, folderPath: requestedFolderPath, limit }) {
+async function listHostingerMessages({ accountKey, folderKey, folderPath: requestedFolderPath, limit, since }) {
   const account = SMARTPEAK_MAILBOX_ACCOUNTS[accountKey];
   if (!account) return [];
   const folderPath = cleanMailboxFolderPath(requestedFolderPath) || SMARTPEAK_MAILBOX_FOLDERS[folderKey] || SMARTPEAK_MAILBOX_FOLDERS.inbox;
@@ -649,7 +675,8 @@ async function listHostingerMessages({ accountKey, folderKey, folderPath: reques
   await client.connect();
   const lock = await client.getMailboxLock(folderPath);
   try {
-    const uids = await client.search({ all: true }, { uid: true });
+    const searchQuery = since ? { since } : { all: true };
+    const uids = await client.search(searchQuery, { uid: true });
     const selected = uids.slice(-limit).reverse();
     if (!selected.length) return [];
     const rows = [];
@@ -684,20 +711,116 @@ async function listHostingerFolders({ accountKey }) {
   await client.connect();
   try {
     const boxes = await client.list();
-    return boxes
-      .filter(box => box && box.path && !box.flags?.has?.('\\Noselect'))
-      .map(box => {
-        const knownFolder = Object.entries(SMARTPEAK_MAILBOX_FOLDERS).find(([, path]) => path === box.path);
-        return {
-          key: knownFolder ? knownFolder[0] : `imap-${Buffer.from(box.path).toString('base64url')}`,
-          label: cleanString(box.path.replace(/^INBOX\.?/, '') || 'Inbox', 180),
-          providerFolder: cleanMailboxFolderPath(box.path),
-          specialUse: box.specialUse || '',
-        };
-      });
+    return normalizeHostingerFolders(boxes);
   } finally {
     await client.logout().catch(() => {});
   }
+}
+
+function normalizeHostingerFolders(boxes = []) {
+  return boxes
+    .filter(box => box && box.path && !box.flags?.has?.('\\Noselect'))
+    .map(box => ({
+      key: mailboxFolderKeyForPath(box.path),
+      label: mailboxFolderLabel(box.path),
+      providerFolder: cleanMailboxFolderPath(box.path),
+      specialUse: box.specialUse || '',
+    }));
+}
+
+async function upsertMailboxFolders(accountKey, folders = []) {
+  const writer = db.bulkWriter();
+  for (const folder of folders) {
+    writer.set(mailboxFolderDoc(accountKey, folder.key), {
+      ...folder,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+  await writer.close();
+}
+
+async function listCachedFolders({ accountKey }) {
+  const snap = await db.collection(MAILBOX_CACHE_COLLECTION).doc(accountKey).collection('folders').orderBy('label').get();
+  return snap.docs.map(doc => ({ key: doc.id, ...doc.data() }));
+}
+
+function serializeMailboxMessageForCache(message, folder) {
+  const date = message.date ? new Date(message.date) : new Date();
+  return {
+    ...message,
+    id: `${folder.key}-${message.uid || message.id}`,
+    cacheId: `${folder.key}-${message.uid || message.id}`,
+    providerUid: message.uid || null,
+    folderKey: folder.key,
+    folderLabel: folder.label,
+    providerFolder: folder.providerFolder,
+    dateTs: admin.firestore.Timestamp.fromDate(Number.isNaN(date.getTime()) ? new Date() : date),
+    syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: admin.firestore.Timestamp.fromDate(mailboxRetentionCutoff()),
+  };
+}
+
+async function storeMailboxMessages(accountKey, folder, messages = []) {
+  if (!messages.length) return 0;
+  const writer = db.bulkWriter();
+  for (const message of messages) {
+    const cached = serializeMailboxMessageForCache(message, folder);
+    writer.set(mailboxMessageDoc(accountKey, folder.key, cached.cacheId), cached, { merge: true });
+  }
+  await writer.close();
+  return messages.length;
+}
+
+async function listCachedMessages({ accountKey, folderKey, limit }) {
+  const folders = folderKey === 'all'
+    ? await listCachedFolders({ accountKey })
+    : [{ key: folderKey }];
+  const rows = [];
+  for (const folder of folders) {
+    const snap = await mailboxFolderDoc(accountKey, folder.key)
+      .collection('messages')
+      .orderBy('dateTs', 'desc')
+      .limit(Math.max(1, Math.min(100, limit || 50)))
+      .get();
+    rows.push(...snap.docs.map(doc => ({ id: doc.id, ...doc.data(), date: doc.data().date || doc.data().dateTs?.toDate?.().toISOString?.() || '' })));
+  }
+  return rows.sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, Math.max(1, Math.min(500, (limit || 50) * Math.max(1, folders.length))));
+}
+
+async function cleanupMailboxCache(accountKey) {
+  const cutoff = admin.firestore.Timestamp.fromDate(mailboxRetentionCutoff());
+  const folders = await listCachedFolders({ accountKey });
+  let deleted = 0;
+  for (const folder of folders) {
+    const snap = await mailboxFolderDoc(accountKey, folder.key).collection('messages').where('dateTs', '<', cutoff).limit(500).get();
+    if (snap.empty) continue;
+    const writer = db.bulkWriter();
+    snap.docs.forEach(doc => writer.delete(doc.ref));
+    await writer.close();
+    deleted += snap.size;
+  }
+  return deleted;
+}
+
+async function syncMailboxCache({ accountKey = 'kevin', folderKey = 'all', mode = 'recent' } = {}) {
+  const folders = await listHostingerFolders({ accountKey });
+  await upsertMailboxFolders(accountKey, folders);
+  const selectedFolders = folderKey === 'all' ? folders : folders.filter(folder => folder.key === folderKey);
+  const cutoff = mailboxRetentionCutoff();
+  const results = [];
+  for (const folder of selectedFolders) {
+    const messages = await listHostingerMessages({
+      accountKey,
+      folderKey: folder.key,
+      folderPath: folder.providerFolder,
+      limit: mode === 'all' ? MAILBOX_SYNC_MAX_PER_FOLDER : 75,
+      since: cutoff,
+    });
+    const stored = await storeMailboxMessages(accountKey, folder, messages);
+    results.push({ folderKey: folder.key, label: folder.label, stored });
+  }
+  const deleted = await cleanupMailboxCache(accountKey);
+  return { accountKey, folderCount: selectedFolders.length, stored: results.reduce((sum, item) => sum + item.stored, 0), deleted, results };
 }
 
 function cleanNumber(value, fallback = 0) {
@@ -888,8 +1011,13 @@ export const createBillitOffer = functions.https.onRequest(
   },
 );
 
+export const mailboxSyncScheduled = functions.scheduler.onSchedule(
+  { schedule: 'every 30 minutes', timeZone: 'Europe/Brussels', region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword], timeoutSeconds: 540, memory: '512MiB' },
+  async () => syncMailboxCache({ accountKey: 'kevin', folderKey: 'all', mode: 'recent' }),
+);
+
 export const mailboxListMessages = functions.https.onRequest(
-  { region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword], timeoutSeconds: 30, memory: '256MiB' },
+  { region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword], timeoutSeconds: 540, memory: '512MiB' },
   async (req, res) => {
     setCors(req, res);
     if (req.method === 'OPTIONS') {
@@ -903,16 +1031,37 @@ export const mailboxListMessages = functions.https.onRequest(
     try {
       await requireWhitelistedUser(req);
       const accountKey = cleanMailboxKey(req.body && req.body.accountKey || '');
+      if (req.body && req.body.action === 'sync') {
+        const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'all') || 'all';
+        const mode = cleanString(req.body.mode || 'recent', 20) === 'all' ? 'all' : 'recent';
+        const result = await syncMailboxCache({ accountKey, folderKey, mode });
+        res.json({ ok: true, ...result });
+        return;
+      }
       if (req.body && req.body.action === 'folders') {
-        const folders = await listHostingerFolders({ accountKey });
+        let folders = await listCachedFolders({ accountKey });
+        if (!folders.length || req.body.refresh === true) {
+          folders = await listHostingerFolders({ accountKey });
+          await upsertMailboxFolders(accountKey, folders);
+        }
         res.json({ ok: true, folders });
         return;
       }
       const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'inbox') || 'inbox';
       const folderPath = cleanMailboxFolderPath(req.body && req.body.folderPath || '');
       const limit = Math.min(100, Math.max(1, cleanNumber(req.body && req.body.limit, 50)));
-      const messages = await listHostingerMessages({ accountKey, folderKey, folderPath, limit });
-      res.json({ ok: true, messages });
+      let messages = await listCachedMessages({ accountKey, folderKey, limit });
+      if (!messages.length) {
+        const folder = folderPath ? { key: folderKey, label: mailboxFolderLabel(folderPath), providerFolder: folderPath } : null;
+        if (folder) {
+          const liveMessages = await listHostingerMessages({ accountKey, folderKey, folderPath, limit, since: mailboxRetentionCutoff() });
+          await storeMailboxMessages(accountKey, folder, liveMessages);
+        } else {
+          await syncMailboxCache({ accountKey, folderKey, mode: 'recent' });
+        }
+        messages = await listCachedMessages({ accountKey, folderKey, limit });
+      }
+      res.json({ ok: true, cached: true, messages });
     } catch (err) {
       const status = err.status || 400;
       res.status(status).json({ error: err.message || String(err) });

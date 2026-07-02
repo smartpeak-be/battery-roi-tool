@@ -166,6 +166,26 @@ export async function listFoldersViaFirebaseFunction({ account }) {
   return Array.isArray(data.folders) ? data.folders : [];
 }
 
+export async function syncMailboxViaFirebaseFunction({ account, folderKey = 'all', mode = 'recent' }) {
+  if (!account || account.key !== 'kevin') return { ok: true, stored: 0, deleted: 0 };
+  if (typeof globalThis === 'undefined' || !globalThis.firebase) return { ok: false, stored: 0, deleted: 0 };
+  const user = globalThis.firebase.auth().currentUser;
+  if (!user) throw new Error('Niet ingelogd.');
+  const token = await user.getIdToken();
+  const projectId = globalThis.firebase.app().options.projectId;
+  const response = await globalThis.fetch(`https://europe-west1-${projectId}.cloudfunctions.net/mailboxListMessages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action: 'sync', accountKey: account.key, folderKey, mode }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Mailbox synchroniseren mislukt.');
+  return data;
+}
+
 export async function listMailboxMessages({ account, folder, query = '', limit = 50 }) {
   const provider = getMailboxProvider();
   const messages = provider

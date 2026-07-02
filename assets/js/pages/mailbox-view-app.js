@@ -6,6 +6,7 @@ import {
   mailboxProviderStatus,
   makeMailboxPlaceholderRows,
   normalizeMailboxSettings,
+  syncMailboxViaFirebaseFunction,
 } from '../mailbox-view.js';
 import {
   defaultCommunicationTemplates,
@@ -20,6 +21,32 @@ let _templates = [];
 
 function accountByKey(key) {
   return _settings.accounts.find(account => account.key === key) || {};
+}
+
+function selectedMessage() {
+  return _rows.find(row => row.id === _selectedId) || null;
+}
+
+function mailboxFrameSrcdoc(row) {
+  return `<!doctype html><html><head><base target="_blank"><style>body{margin:0;padding:16px;background:#fff;color:#111827;font-family:Arial,sans-serif;overflow-wrap:anywhere;}img{max-width:100%;height:auto;}table{max-width:100%;}a{color:#0d6efd;}</style></head><body>${row.bodyHtml}</body></html>`;
+}
+
+function setMailboxFrame(frame, row) {
+  if (frame && row && row.bodyHtml) frame.srcdoc = mailboxFrameSrcdoc(row);
+}
+
+function openFullMessage(row = selectedMessage()) {
+  if (!row) return;
+  document.getElementById('mailboxFullModalTitle').textContent = row.subject || 'Bericht';
+  document.getElementById('mailboxFullModalMeta').textContent = `${row.mailboxLabel || ''} · ${row.folderLabel || ''} · ${row.dateLabel || ''}`;
+  const body = document.getElementById('mailboxFullModalBody');
+  if (row.bodyHtml) {
+    body.innerHTML = '<iframe class="mailbox-html-frame mailbox-html-frame-full" title="Mailinhoud" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>';
+    setMailboxFrame(body.querySelector('.mailbox-html-frame'), row);
+  } else {
+    body.innerHTML = `<div class="p-4">${escapeHtml(row.body || row.preview || '').replaceAll('\n', '<br>')}</div>`;
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('mailboxFullModal')).show();
 }
 
 function mergeMailboxFolders(defaultFolders = [], serverFolders = []) {
@@ -135,7 +162,7 @@ function renderSelectedMessage(row) {
           <div class="small text-muted">${escapeHtml(row.mailboxLabel)} · ${escapeHtml(row.folderLabel)}</div>
           <h2 class="h5 mb-1">${escapeHtml(row.subject)}</h2>
         </div>
-        ${row.placeholder ? '<span class="badge text-bg-warning">Placeholder</span>' : ''}
+        ${row.placeholder ? '<span class="badge text-bg-warning">Placeholder</span>' : '<button type="button" class="btn btn-sm btn-outline-primary" id="btnOpenFullMessage"><i class="fa-solid fa-up-right-and-down-left-from-center me-1"></i> Volle breedte</button>'}
       </div>
       <dl class="row small mb-0 mt-3">
         <dt class="col-sm-2">Van</dt><dd class="col-sm-10">${escapeHtml(row.from || '—')}</dd>
@@ -153,9 +180,8 @@ function renderSelectedMessage(row) {
     </div>
   `;
   const frame = panel.querySelector('.mailbox-html-frame');
-  if (frame && row.bodyHtml) {
-    frame.srcdoc = `<!doctype html><html><head><base target="_blank"><style>body{margin:0;padding:16px;background:#fff;color:#111827;font-family:Arial,sans-serif;overflow-wrap:anywhere;}img{max-width:100%;height:auto;}table{max-width:100%;}a{color:#0d6efd;}</style></head><body>${row.bodyHtml}</body></html>`;
-  }
+  setMailboxFrame(frame, row);
+  panel.querySelector('#btnOpenFullMessage')?.addEventListener('click', () => openFullMessage(row));
 }
 
 function renderTemplateSelect() {
@@ -189,6 +215,31 @@ function renderAll() {
   renderMailboxCards();
   renderTemplateSelect();
   renderRows();
+}
+
+function updateSyncStatus(message, variant = 'light') {
+  const el = document.getElementById('mailboxSyncStatus');
+  if (!el) return;
+  el.className = `alert alert-${variant} border small d-flex align-items-center gap-2 mb-3`;
+  el.querySelector('span').textContent = message;
+}
+
+async function syncAllMailboxes() {
+  const btn = document.getElementById('btnSyncAllMailboxes');
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Synchroniseren…';
+  updateSyncStatus('Volledige mailbox-sync gestart. Dit kan even duren; alleen mails van de laatste 3 maanden worden bewaard.', 'info');
+  try {
+    const account = _settings.accounts.find(item => item.key === 'kevin');
+    const result = await syncMailboxViaFirebaseFunction({ account, folderKey: 'all', mode: 'all' });
+    updateSyncStatus(`Mailbox-cache bijgewerkt: ${result.stored || 0} mails opgeslagen/bijgewerkt, ${result.deleted || 0} oude mails opgeruimd.`, 'success');
+    showToast('Mailbox-cache bijgewerkt', 'success');
+    await loadSettingsAndMessages();
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
 }
 
 async function loadSettingsAndMessages() {
@@ -230,6 +281,12 @@ function wireEvents() {
   document.getElementById('btnSignOutNW').addEventListener('click', () => signOut());
   document.getElementById('btnRefreshMailboxes').addEventListener('click', () => {
     loadSettingsAndMessages().catch(e => showToast('Mailboxen laden mislukt: ' + e.message, 'danger'));
+  });
+  document.getElementById('btnSyncAllMailboxes').addEventListener('click', () => {
+    syncAllMailboxes().catch(e => {
+      updateSyncStatus('Mailbox-sync mislukt: ' + e.message, 'danger');
+      showToast('Mailbox-sync mislukt: ' + e.message, 'danger');
+    });
   });
   document.getElementById('mailboxFilter').addEventListener('change', e => {
     _filters.mailboxKey = e.target.value;

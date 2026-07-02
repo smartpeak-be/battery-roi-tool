@@ -85,7 +85,12 @@ describe('mailbox view', () => {
     expect(appSource).toContain('const bodyText = row.body || row.preview ||');
     expect(appSource).toContain('mailbox-html-frame');
     expect(appSource).toContain('frame.srcdoc');
+    expect(appSource).toContain('openFullMessage');
+    expect(appSource).toContain('syncMailboxViaFirebaseFunction');
     expect(cssSource).toContain('.mailbox-html-frame');
+    expect(cssSource).toContain('.mailbox-html-frame-full');
+    expect(pageSource).toContain('btnSyncAllMailboxes');
+    expect(pageSource).toContain('mailboxFullModal');
     expect(appSource).not.toContain("['inbox', 'follow-up', 'to-answer'].includes");
     expect(appSource).toContain('loadSettingsAndMessages().catch');
   });

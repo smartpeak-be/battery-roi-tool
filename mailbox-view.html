@@ -56,11 +56,16 @@
       </div>
       <div class="d-flex gap-2 flex-wrap">
         <a class="btn btn-outline-secondary" href="communicatie-templates.html"><i class="fa-solid fa-envelope-open-text me-1"></i> Templates beheren</a>
+        <button class="btn btn-outline-primary" id="btnSyncAllMailboxes"><i class="fa-solid fa-cloud-arrow-down me-1"></i> Alles synchroniseren</button>
         <button class="btn btn-primary" id="btnRefreshMailboxes"><i class="fa-solid fa-rotate me-1"></i> Vernieuwen</button>
       </div>
     </div>
 
     <div id="providerStatusSlot"></div>
+    <div class="alert alert-light border small d-flex align-items-center gap-2 mb-3" id="mailboxSyncStatus">
+      <i class="fa-solid fa-database text-primary"></i>
+      <span>Mailbox-cache wordt gebruikt zodra beschikbaar. Automatische sync loopt elke 30 minuten; mails ouder dan 3 maanden worden opgeruimd.</span>
+    </div>
 
     <div class="row g-3">
       <aside class="col-12 col-xl-3">
@@ -125,6 +130,21 @@
       </section>
     </div>
   </main>
+</div>
+
+<div class="modal fade mailbox-fullscreen-modal" id="mailboxFullModal" tabindex="-1" aria-labelledby="mailboxFullModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <div class="small text-muted" id="mailboxFullModalMeta">Mail</div>
+          <h2 class="modal-title h5" id="mailboxFullModalTitle">Bericht</h2>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+      <div class="modal-body p-0" id="mailboxFullModalBody"></div>
+    </div>
+  </div>
 </div>
 
 <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index:1080"></div>
