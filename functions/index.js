@@ -53,6 +53,12 @@ const SMARTPEAK_MAILBOX_ACCOUNTS = {
   },
 };
 
+const SMARTPEAK_MAILBOX_LABELS = {
+  kevin: 'Kevin',
+  ruben: 'Ruben',
+  contact: 'SmartPeak contact',
+};
+
 const SMARTPEAK_MAILBOX_FOLDERS = {
   inbox: 'INBOX',
   'follow-up': 'INBOX.Opvolgen',
@@ -862,15 +868,20 @@ function mailboxMessageMatchesProject(message = {}, keys = {}) {
   return keys.addressKeys && keys.addressKeys.some(address => previewText.includes(address));
 }
 
-function projectMailLinkFromMessage(message = {}) {
+function mailboxLinkKey(link = {}) {
+  return `${link.mailboxKey || 'kevin'}:${link.messageId || link.cacheId || link.id || ''}`;
+}
+
+function projectMailLinkFromMessage(message = {}, accountKey = 'kevin') {
   const folderKey = message.folderKey || 'inbox';
   const direction = mailboxDirectionForFolder(folderKey);
   const messageId = String(message.cacheId || message.id || `${folderKey}-${message.uid || ''}`);
+  const mailboxKey = message.mailboxKey || accountKey || 'kevin';
   return {
     messageId,
     cacheId: messageId,
-    mailboxKey: message.mailboxKey || 'kevin',
-    mailboxLabel: message.mailboxLabel || 'Kevin',
+    mailboxKey,
+    mailboxLabel: message.mailboxLabel || SMARTPEAK_MAILBOX_LABELS[mailboxKey] || mailboxKey,
     folderKey,
     folderLabel: message.folderLabel || mailboxFolderLabel(message.providerFolder || folderKey),
     direction,
@@ -910,13 +921,14 @@ async function linkMailboxCacheToProjects({ accountKey = 'kevin', folderKey = 'a
     const keys = projectKeys.find(item => item.projectId === project.id);
     if (!keys) continue;
     const existing = Array.isArray(project.mailLinks) ? project.mailLinks : [];
-    const byId = new Map(existing.map(link => [String(link.messageId || link.cacheId || link.id || ''), link]));
+    const byId = new Map(existing.map(link => [mailboxLinkKey(link), link]));
     let added = 0;
     for (const message of messages) {
       if (!mailboxMessageMatchesProject(message, keys)) continue;
-      const link = projectMailLinkFromMessage(message);
-      if (!link.messageId || byId.has(link.messageId)) continue;
-      byId.set(link.messageId, link);
+      const link = projectMailLinkFromMessage(message, accountKey);
+      const linkKey = mailboxLinkKey(link);
+      if (!link.messageId || byId.has(linkKey)) continue;
+      byId.set(linkKey, link);
       added += 1;
     }
     if (!added) continue;

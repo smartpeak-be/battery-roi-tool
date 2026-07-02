@@ -16,6 +16,7 @@ import {
 
 let _settings = normalizeMailboxSettings({});
 let _rows = [];
+let _accountFolderKeys = new Map();
 const _initialParams = new URLSearchParams(window.location.search);
 let _filters = {
   mailboxKey: _initialParams.get('account') || 'all',
@@ -65,10 +66,17 @@ function mergeMailboxFolders(defaultFolders = [], serverFolders = []) {
 }
 
 async function hydrateProviderFolders() {
-  const kevinAccount = _settings.accounts.find(account => account.key === 'kevin');
-  if (!kevinAccount) return;
-  const folders = await listFoldersViaFirebaseFunction({ account: kevinAccount });
-  if (folders.length) _settings.folders = mergeMailboxFolders(_settings.folders, folders);
+  _accountFolderKeys = new Map();
+  for (const account of activeMailboxAccounts()) {
+    try {
+      const folders = await listFoldersViaFirebaseFunction({ account });
+      if (!folders.length) continue;
+      _accountFolderKeys.set(account.key, new Set(folders.map(folder => folder.key)));
+      _settings.folders = mergeMailboxFolders(_settings.folders, folders);
+    } catch (err) {
+      console.warn(`Mailboxmappen laden mislukt voor ${account.key}`, err);
+    }
+  }
 }
 
 function providerStatusHtml() {
@@ -298,9 +306,17 @@ async function loadSettingsAndMessages() {
     : _settings.folders.filter(folder => folder.key === _filters.folderKey);
   const perFolderLimit = foldersToLoad.length > 1 ? 10 : 50;
   for (const account of _settings.accounts) {
-    for (const folder of foldersToLoad) {
-      const messages = await listMailboxMessages({ account, folder, query: _filters.query, limit: perFolderLimit });
-      rows.push(...messages);
+    const availableFolderKeys = _accountFolderKeys.get(account.key);
+    const accountFoldersToLoad = availableFolderKeys
+      ? foldersToLoad.filter(folder => availableFolderKeys.has(folder.key))
+      : foldersToLoad;
+    for (const folder of accountFoldersToLoad) {
+      try {
+        const messages = await listMailboxMessages({ account, folder, query: _filters.query, limit: perFolderLimit });
+        rows.push(...messages);
+      } catch (err) {
+        console.warn(`Mailboxberichten laden mislukt voor ${account.key}/${folder.key}`, err);
+      }
     }
   }
   _rows = rows;

@@ -111,6 +111,10 @@ describe('mailbox view', () => {
     expect(normalizeMailboxMessage({ bodyHtml: '<strong>HTML</strong>' }, { key: 'kevin', label: 'Kevin' }, { key: 'inbox', label: 'Inbox' }).bodyHtml).toContain('<strong>HTML</strong>');
     expect(appSource).toContain('listFoldersViaFirebaseFunction');
     expect(appSource).toContain('hydrateProviderFolders');
+    expect(appSource).toContain('for (const account of activeMailboxAccounts())');
+    expect(appSource).toContain('_accountFolderKeys.set(account.key');
+    expect(appSource).toContain('accountFoldersToLoad');
+    expect(appSource).toContain('Mailboxberichten laden mislukt voor');
     expect(appSource).toContain("_filters.folderKey === 'all'");
     expect(appSource).toContain('const bodyText = row.body || row.preview ||');
     expect(appSource).toContain('mailbox-html-frame');
@@ -201,6 +205,9 @@ describe('mailbox view', () => {
     expect(functionsSource).toContain("action === 'linkProjects'");
     expect(functionsSource).toContain("action === 'getMessage'");
     expect(functionsSource).toContain('projectMailLinkFromMessage');
+    expect(functionsSource).toContain('mailboxLinkKey');
+    expect(functionsSource).toContain('projectMailLinkFromMessage(message, accountKey)');
+    expect(functionsSource).toContain('SMARTPEAK_MAILBOX_LABELS');
     expect(functionsSource).toContain('hostingerSmartpeakRubenPassword');
     expect(functionsSource).toContain('hostingerSmartpeakContactPassword');
     expect(mailboxModuleSource).not.toContain("account.key !== 'kevin'");
