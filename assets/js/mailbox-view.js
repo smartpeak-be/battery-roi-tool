@@ -117,6 +117,7 @@ export function normalizeMailboxMessage(message = {}, account = {}, folder = {})
     to: message.to || '',
     subject: message.subject || '(geen onderwerp)',
     preview: message.preview || message.snippet || message.text || '',
+    body: message.body || message.text || message.preview || message.snippet || '',
     dateLabel: message.dateLabel || message.date || '',
     unread: Boolean(message.unread),
     flagged: Boolean(message.flagged),

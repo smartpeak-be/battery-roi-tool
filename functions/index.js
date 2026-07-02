@@ -14,6 +14,7 @@ import { defineSecret } from 'firebase-functions/params';
 import admin from 'firebase-admin';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
 
 if (!admin.apps.length) admin.initializeApp();
 
@@ -548,9 +549,22 @@ function formatMailboxDate(date) {
   return d.toISOString();
 }
 
-function normalizeImapMessage(message, accountKey, folderKey) {
+function cleanMailboxBody(value, max = 12000) {
+  return cleanString(value || '', max);
+}
+
+async function parseMailboxSource(source) {
+  if (!source) return { text: '', preview: '' };
+  const parsed = await simpleParser(source, { skipImageLinks: true, skipHtmlToText: false });
+  const text = cleanMailboxBody(parsed.text || parsed.textAsHtml || '');
+  const preview = text.replace(/\s+/g, ' ').trim().slice(0, 280);
+  return { text, preview };
+}
+
+async function normalizeImapMessage(message, accountKey, folderKey) {
   const envelope = message.envelope || {};
   const flags = Array.isArray(message.flags) ? message.flags : [...(message.flags || [])];
+  const body = await parseMailboxSource(message.source);
   return {
     id: String(message.uid || message.seq || ''),
     uid: message.uid || null,
@@ -559,7 +573,8 @@ function normalizeImapMessage(message, accountKey, folderKey) {
     from: addressListText(envelope.from),
     to: addressListText(envelope.to),
     subject: cleanString(envelope.subject || '(geen onderwerp)', 500),
-    preview: '',
+    preview: body.preview,
+    body: body.text,
     date: formatMailboxDate(envelope.date || message.internalDate),
     unread: !flags.includes('\\Seen'),
     flagged: flags.includes('\\Flagged'),
@@ -591,8 +606,9 @@ async function listHostingerMessages({ accountKey, folderKey, limit }) {
       envelope: true,
       flags: true,
       internalDate: true,
+      source: true,
     }, { uid: true })) {
-      rows.push(normalizeImapMessage(message, accountKey, folderKey));
+      rows.push(await normalizeImapMessage(message, accountKey, folderKey));
     }
     return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
   } finally {

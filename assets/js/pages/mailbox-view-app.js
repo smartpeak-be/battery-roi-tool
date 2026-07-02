@@ -109,6 +109,7 @@ function renderSelectedMessage(row) {
     panel.innerHTML = '<div class="text-muted p-4">Selecteer een bericht.</div>';
     return;
   }
+  const bodyText = row.body || row.preview || '';
   panel.innerHTML = `
     <div class="mailbox-message-header">
       <div class="d-flex justify-content-between gap-2 align-items-start">
@@ -128,7 +129,7 @@ function renderSelectedMessage(row) {
       ${row.placeholder ? `
         <p>Deze mailbox-view is voorbereid voor meerdere mailboxen, maar de echte mailbox-provider is nog niet gekoppeld.</p>
         <p>Er worden bewust geen IMAP/SMTP credentials of tokens in deze frontend opgeslagen. Koppel later een veilige backend/plugin die <code>window.SmartPeakMailboxPlugin.listMessages()</code> aanbiedt.</p>
-      ` : `<p>${escapeHtml(row.preview || '').replaceAll('\n', '<br>')}</p>`}
+      ` : `<p>${escapeHtml(bodyText).replaceAll('\n', '<br>')}</p>`}
     </div>
   `;
 }
@@ -176,8 +177,9 @@ async function loadSettingsAndMessages() {
     return;
   }
   const rows = [];
+  const foldersToLoad = _settings.folders;
   for (const account of _settings.accounts) {
-    for (const folder of _settings.folders.filter(f => ['inbox', 'follow-up', 'to-answer'].includes(f.key))) {
+    for (const folder of foldersToLoad) {
       const messages = await listMailboxMessages({ account, folder, query: _filters.query, limit: 50 });
       rows.push(...messages);
     }

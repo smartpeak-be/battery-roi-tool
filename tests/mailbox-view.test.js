@@ -36,6 +36,7 @@ describe('mailbox view', () => {
     expect(settings.accounts.map(account => account.key)).toEqual(['kevin', 'ruben', 'smartpeak', 'planning']);
     expect(settings.accounts.find(account => account.key === 'kevin').label).toBe('Kevin B.');
     expect(settings.folders.map(folder => folder.key)).toContain('to-answer');
+    expect(settings.folders.map(folder => folder.key)).toContain('sent');
     expect(normalizeMailboxAccounts([{ key: 'smartpeak', enabled: false }]).map(account => account.key)).not.toContain('smartpeak');
   });
 
@@ -66,8 +67,20 @@ describe('mailbox view', () => {
     const account = { key: 'kevin', label: 'Kevin' };
     const folder = { key: 'inbox', label: 'Inbox' };
     const rows = await listMailboxMessages({ account, folder });
-    expect(rows[0]).toMatchObject({ id: 'm1', mailboxKey: 'kevin', folderKey: 'inbox', unread: true });
+    expect(rows[0]).toMatchObject({ id: 'm1', mailboxKey: 'kevin', folderKey: 'inbox', body: 'Hallo', unread: true });
     vi.unstubAllGlobals();
+  });
+
+  it('toont de echte body en laadt alle standaardmappen inclusief verzonden', () => {
+    const row = normalizeMailboxMessage(
+      { id: 'm2', from: 'klant@example.test', subject: 'Vraag', preview: 'Korte preview', body: 'Volledige mailbody' },
+      { key: 'kevin', label: 'Kevin' },
+      { key: 'sent', label: 'Verzonden' },
+    );
+    expect(row.body).toBe('Volledige mailbody');
+    expect(appSource).toContain('const foldersToLoad = _settings.folders');
+    expect(appSource).toContain('const bodyText = row.body || row.preview ||');
+    expect(appSource).not.toContain("['inbox', 'follow-up', 'to-answer'].includes");
   });
 
   it('filtert mailboxrijen op mailbox, map en zoekterm', () => {
