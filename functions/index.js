@@ -23,6 +23,8 @@ const db = admin.firestore();
 const billitApiKey = defineSecret('BILLIT_API_KEY');
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
 const hostingerSmartpeakKevinPassword = defineSecret('HOSTINGER_SMARTPEAK_KEVIN_PASSWORD');
+const hostingerSmartpeakRubenPassword = defineSecret('HOSTINGER_SMARTPEAK_RUBEN_PASSWORD');
+const hostingerSmartpeakContactPassword = defineSecret('HOSTINGER_SMARTPEAK_CONTACT_PASSWORD');
 const BILLIT_BASE_URL = 'https://api.sandbox.billit.be';
 const TASKS_URL = 'https://smartpeak-battery-roi.netlify.app/tasks.html';
 const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be']);
@@ -34,6 +36,20 @@ const SMARTPEAK_MAILBOX_ACCOUNTS = {
     port: 993,
     secure: true,
     passwordSecret: hostingerSmartpeakKevinPassword,
+  },
+  ruben: {
+    email: 'ruben@smartpeak.be',
+    host: 'imap.hostinger.com',
+    port: 993,
+    secure: true,
+    passwordSecret: hostingerSmartpeakRubenPassword,
+  },
+  contact: {
+    email: 'contact@smartpeak.be',
+    host: 'imap.hostinger.com',
+    port: 993,
+    secure: true,
+    passwordSecret: hostingerSmartpeakContactPassword,
   },
 };
 
@@ -1152,15 +1168,17 @@ export const createBillitOffer = functions.https.onRequest(
 );
 
 export const mailboxSyncScheduled = functions.scheduler.onSchedule(
-  { schedule: 'every 30 minutes', timeZone: 'Europe/Brussels', region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword], timeoutSeconds: 540, memory: '512MiB' },
+  { schedule: 'every 30 minutes', timeZone: 'Europe/Brussels', region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword, hostingerSmartpeakRubenPassword, hostingerSmartpeakContactPassword], timeoutSeconds: 540, memory: '512MiB' },
   async () => {
-    await syncMailboxCache({ accountKey: 'kevin', folderKey: 'all', mode: 'recent' });
-    await linkMailboxCacheToProjects({ accountKey: 'kevin', folderKey: 'all' });
+    for (const accountKey of Object.keys(SMARTPEAK_MAILBOX_ACCOUNTS)) {
+      await syncMailboxCache({ accountKey, folderKey: 'all', mode: 'recent' });
+      await linkMailboxCacheToProjects({ accountKey, folderKey: 'all' });
+    }
   },
 );
 
 export const mailboxListMessages = functions.https.onRequest(
-  { region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword], timeoutSeconds: 540, memory: '512MiB' },
+  { region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword, hostingerSmartpeakRubenPassword, hostingerSmartpeakContactPassword], timeoutSeconds: 540, memory: '512MiB' },
   async (req, res) => {
     setCors(req, res);
     if (req.method === 'OPTIONS') {

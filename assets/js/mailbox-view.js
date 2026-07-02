@@ -18,9 +18,9 @@ export const DEFAULT_MAILBOX_ACCOUNTS = [
     enabled: true,
   },
   {
-    key: 'smartpeak',
-    label: 'SmartPeak algemeen',
-    email: 'info@smartpeak.be',
+    key: 'contact',
+    label: 'SmartPeak contact',
+    email: 'contact@smartpeak.be',
     role: 'algemeen',
     color: '#f59e0b',
     enabled: true,
