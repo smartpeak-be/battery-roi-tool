@@ -1,6 +1,7 @@
 import { escapeHtml, showState, showToast } from '../shared-helpers.js';
 import {
   filterMailboxRows,
+  linkMailboxToProjectsViaFirebaseFunction,
   listFoldersViaFirebaseFunction,
   listMailboxMessages,
   mailboxProviderStatus,
@@ -15,8 +16,13 @@ import {
 
 let _settings = normalizeMailboxSettings({});
 let _rows = [];
-let _filters = { mailboxKey: 'all', folderKey: 'inbox', query: '' };
-let _selectedId = null;
+const _initialParams = new URLSearchParams(window.location.search);
+let _filters = {
+  mailboxKey: _initialParams.get('account') || 'all',
+  folderKey: _initialParams.get('folder') || 'inbox',
+  query: '',
+};
+let _selectedId = _initialParams.get('message') || null;
 let _templates = [];
 
 function accountByKey(key) {
@@ -242,6 +248,23 @@ async function syncAllMailboxes() {
   }
 }
 
+async function linkAllMailboxMessagesToProjects() {
+  const btn = document.getElementById('btnLinkMailboxProjects');
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Koppelen…';
+  updateSyncStatus('Mailbox-cache wordt gekoppeld aan projecten op basis van klantmailadres/naam. In projecten bewaren we alleen onderwerp, datum, richting en open-link.', 'info');
+  try {
+    const account = _settings.accounts.find(item => item.key === 'kevin');
+    const result = await linkMailboxToProjectsViaFirebaseFunction({ account, folderKey: 'all' });
+    updateSyncStatus(`Projectkoppeling klaar: ${result.linkedMessages || 0} mails bij ${result.linkedProjects || 0} projecten.`, 'success');
+    showToast('Mails gekoppeld aan projecten', 'success');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+}
+
 async function loadSettingsAndMessages() {
   const settings = await getSettings();
   _settings = normalizeMailboxSettings(settings || {});
@@ -265,6 +288,14 @@ async function loadSettingsAndMessages() {
   }
   _rows = rows;
   renderAll();
+  if (_selectedId && _initialParams.get('message')) {
+    const row = _rows.find(item => item.id === _selectedId || item.cacheId === _selectedId);
+    if (row) {
+      _selectedId = row.id;
+      renderRows();
+      setTimeout(() => openFullMessage(row), 0);
+    }
+  }
 }
 
 function wireEvents() {
@@ -286,6 +317,12 @@ function wireEvents() {
     syncAllMailboxes().catch(e => {
       updateSyncStatus('Mailbox-sync mislukt: ' + e.message, 'danger');
       showToast('Mailbox-sync mislukt: ' + e.message, 'danger');
+    });
+  });
+  document.getElementById('btnLinkMailboxProjects').addEventListener('click', () => {
+    linkAllMailboxMessagesToProjects().catch(e => {
+      updateSyncStatus('Projectkoppeling mislukt: ' + e.message, 'danger');
+      showToast('Projectkoppeling mislukt: ' + e.message, 'danger');
     });
   });
   document.getElementById('mailboxFilter').addEventListener('change', e => {

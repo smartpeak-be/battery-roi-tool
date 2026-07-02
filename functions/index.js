@@ -787,6 +787,130 @@ async function listCachedMessages({ accountKey, folderKey, limit }) {
   return rows.sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, Math.max(1, Math.min(500, (limit || 50) * Math.max(1, folders.length))));
 }
 
+function mailboxDirectionForFolder(folderKey = '') {
+  return String(folderKey || '').toLowerCase().includes('sent') ? 'sent' : 'received';
+}
+
+function extractMailboxEmails(value = '') {
+  return [...new Set(String(value || '').toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) || [])];
+}
+
+function normalizeMatchText(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function projectMailboxMatchKeys(project = {}) {
+  const customer = project.customer && typeof project.customer === 'object' ? project.customer : {};
+  const emailKeys = [customer.email, customer.contactEmail, project.email]
+    .flatMap(extractMailboxEmails);
+  const nameKeys = [project.customerName, project.projectName, customer.name]
+    .map(normalizeMatchText)
+    .filter(value => value.length >= 6 && value.split(' ').filter(Boolean).length >= 2);
+  const address = normalizeMatchText(customer.address || '');
+  const addressKeys = address.length >= 8 ? [address] : [];
+  return {
+    projectId: project.id,
+    emailKeys: [...new Set(emailKeys)],
+    nameKeys: [...new Set(nameKeys)],
+    addressKeys,
+  };
+}
+
+function mailboxMessageMatchesProject(message = {}, keys = {}) {
+  const participants = extractMailboxEmails(`${message.from || ''} ${message.to || ''}`);
+  if (keys.emailKeys && keys.emailKeys.some(email => participants.includes(email))) return true;
+  const headerText = normalizeMatchText(`${message.from || ''} ${message.to || ''} ${message.subject || ''}`);
+  if (keys.nameKeys && keys.nameKeys.some(name => headerText.includes(name))) return true;
+  const previewText = normalizeMatchText(`${message.subject || ''} ${message.preview || ''}`);
+  return keys.addressKeys && keys.addressKeys.some(address => previewText.includes(address));
+}
+
+function projectMailLinkFromMessage(message = {}) {
+  const folderKey = message.folderKey || 'inbox';
+  const direction = mailboxDirectionForFolder(folderKey);
+  const messageId = String(message.cacheId || message.id || `${folderKey}-${message.uid || ''}`);
+  return {
+    messageId,
+    cacheId: messageId,
+    mailboxKey: message.mailboxKey || 'kevin',
+    mailboxLabel: message.mailboxLabel || 'Kevin',
+    folderKey,
+    folderLabel: message.folderLabel || mailboxFolderLabel(message.providerFolder || folderKey),
+    direction,
+    subject: cleanString(message.subject || '(geen onderwerp)', 500),
+    date: message.date || message.dateTs?.toDate?.().toISOString?.() || '',
+    dateLabel: message.date || message.dateTs?.toDate?.().toISOString?.() || '',
+    linkedAt: new Date().toISOString(),
+  };
+}
+
+async function listCachedMessagesForProjectLinking({ accountKey, folderKey = 'all' }) {
+  const folders = folderKey === 'all'
+    ? await listCachedFolders({ accountKey })
+    : [{ key: folderKey }];
+  const rows = [];
+  for (const folder of folders) {
+    const snap = await mailboxFolderDoc(accountKey, folder.key)
+      .collection('messages')
+      .orderBy('dateTs', 'desc')
+      .limit(MAILBOX_SYNC_MAX_PER_FOLDER)
+      .get();
+    rows.push(...snap.docs.map(doc => ({ id: doc.id, ...doc.data(), date: doc.data().date || doc.data().dateTs?.toDate?.().toISOString?.() || '' })));
+  }
+  return rows;
+}
+
+async function linkMailboxCacheToProjects({ accountKey = 'kevin', folderKey = 'all' } = {}) {
+  const [messages, projectSnap] = await Promise.all([
+    listCachedMessagesForProjectLinking({ accountKey, folderKey }),
+    db.collection('projects').where('deletedAt', '==', null).get(),
+  ]);
+  const projects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const projectKeys = projects.map(projectMailboxMatchKeys)
+    .filter(keys => keys.emailKeys.length || keys.nameKeys.length || keys.addressKeys.length);
+  const updates = [];
+  for (const project of projects) {
+    const keys = projectKeys.find(item => item.projectId === project.id);
+    if (!keys) continue;
+    const existing = Array.isArray(project.mailLinks) ? project.mailLinks : [];
+    const byId = new Map(existing.map(link => [String(link.messageId || link.cacheId || link.id || ''), link]));
+    let added = 0;
+    for (const message of messages) {
+      if (!mailboxMessageMatchesProject(message, keys)) continue;
+      const link = projectMailLinkFromMessage(message);
+      if (!link.messageId || byId.has(link.messageId)) continue;
+      byId.set(link.messageId, link);
+      added += 1;
+    }
+    if (!added) continue;
+    const mailLinks = [...byId.values()]
+      .sort((a, b) => String(b.date || b.dateLabel).localeCompare(String(a.date || a.dateLabel)))
+      .slice(0, 100);
+    updates.push({ projectId: project.id, mailLinks, added });
+  }
+  const writer = db.bulkWriter();
+  for (const update of updates) {
+    writer.update(db.collection('projects').doc(update.projectId), {
+      mailLinks: update.mailLinks,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  await writer.close();
+  return {
+    accountKey,
+    folderKey,
+    scannedMessages: messages.length,
+    scannedProjects: projects.length,
+    linkedProjects: updates.length,
+    linkedMessages: updates.reduce((sum, item) => sum + item.added, 0),
+  };
+}
+
 async function cleanupMailboxCache(accountKey) {
   const cutoff = admin.firestore.Timestamp.fromDate(mailboxRetentionCutoff());
   const folders = await listCachedFolders({ accountKey });
@@ -1013,7 +1137,10 @@ export const createBillitOffer = functions.https.onRequest(
 
 export const mailboxSyncScheduled = functions.scheduler.onSchedule(
   { schedule: 'every 30 minutes', timeZone: 'Europe/Brussels', region: 'europe-west1', secrets: [hostingerSmartpeakKevinPassword], timeoutSeconds: 540, memory: '512MiB' },
-  async () => syncMailboxCache({ accountKey: 'kevin', folderKey: 'all', mode: 'recent' }),
+  async () => {
+    await syncMailboxCache({ accountKey: 'kevin', folderKey: 'all', mode: 'recent' });
+    await linkMailboxCacheToProjects({ accountKey: 'kevin', folderKey: 'all' });
+  },
 );
 
 export const mailboxListMessages = functions.https.onRequest(
@@ -1035,6 +1162,13 @@ export const mailboxListMessages = functions.https.onRequest(
         const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'all') || 'all';
         const mode = cleanString(req.body.mode || 'recent', 20) === 'all' ? 'all' : 'recent';
         const result = await syncMailboxCache({ accountKey, folderKey, mode });
+        const linked = await linkMailboxCacheToProjects({ accountKey, folderKey });
+        res.json({ ok: true, ...result, linked });
+        return;
+      }
+      if (req.body && req.body.action === 'linkProjects') {
+        const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'all') || 'all';
+        const result = await linkMailboxCacheToProjects({ accountKey, folderKey });
         res.json({ ok: true, ...result });
         return;
       }
