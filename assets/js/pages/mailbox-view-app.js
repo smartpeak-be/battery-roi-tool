@@ -230,16 +230,27 @@ function updateSyncStatus(message, variant = 'light') {
   el.querySelector('span').textContent = message;
 }
 
+function activeMailboxAccounts() {
+  return _settings.accounts.filter(account => account && account.key && account.enabled !== false);
+}
+
 async function syncAllMailboxes() {
   const btn = document.getElementById('btnSyncAllMailboxes');
   const original = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Synchroniseren…';
-  updateSyncStatus('Volledige mailbox-sync gestart. Dit kan even duren; alleen mails van de laatste 3 maanden worden bewaard.', 'info');
+  const accounts = activeMailboxAccounts();
+  updateSyncStatus(`Volledige sync gestart voor ${accounts.length} mailboxen. Dit kan even duren; alleen mails van de laatste 3 maanden worden bewaard.`, 'info');
   try {
-    const account = _settings.accounts.find(item => item.key === 'kevin');
-    const result = await syncMailboxViaFirebaseFunction({ account, folderKey: 'all', mode: 'all' });
-    updateSyncStatus(`Mailbox-cache bijgewerkt: ${result.stored || 0} mails opgeslagen/bijgewerkt, ${result.deleted || 0} oude mails opgeruimd.`, 'success');
+    const results = [];
+    for (const account of accounts) {
+      const result = await syncMailboxViaFirebaseFunction({ account, folderKey: 'all', mode: 'all' });
+      results.push({ account, result });
+    }
+    const stored = results.reduce((sum, item) => sum + (item.result.stored || 0), 0);
+    const deleted = results.reduce((sum, item) => sum + (item.result.deleted || 0), 0);
+    const labels = results.map(item => `${item.account.label || item.account.key}: ${item.result.stored || 0}`).join(' · ');
+    updateSyncStatus(`Mailbox-cache bijgewerkt: ${stored} mails opgeslagen/bijgewerkt, ${deleted} oude mails opgeruimd. ${labels}`, 'success');
     showToast('Mailbox-cache bijgewerkt', 'success');
     await loadSettingsAndMessages();
   } finally {
@@ -253,11 +264,17 @@ async function linkAllMailboxMessagesToProjects() {
   const original = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Koppelen…';
-  updateSyncStatus('Mailbox-cache wordt gekoppeld aan projecten op basis van klantmailadres/naam. In projecten bewaren we alleen onderwerp, datum, richting en open-link.', 'info');
+  const accounts = activeMailboxAccounts();
+  updateSyncStatus(`Mailbox-cache van ${accounts.length} mailboxen wordt gekoppeld aan projecten op basis van klantmailadres/naam. In projecten bewaren we alleen onderwerp, datum, richting en open-link.`, 'info');
   try {
-    const account = _settings.accounts.find(item => item.key === 'kevin');
-    const result = await linkMailboxToProjectsViaFirebaseFunction({ account, folderKey: 'all' });
-    updateSyncStatus(`Projectkoppeling klaar: ${result.linkedMessages || 0} mails bij ${result.linkedProjects || 0} projecten.`, 'success');
+    const results = [];
+    for (const account of accounts) {
+      const result = await linkMailboxToProjectsViaFirebaseFunction({ account, folderKey: 'all' });
+      results.push(result);
+    }
+    const linkedMessages = results.reduce((sum, item) => sum + (item.linkedMessages || 0), 0);
+    const linkedProjects = results.reduce((sum, item) => sum + (item.linkedProjects || 0), 0);
+    updateSyncStatus(`Projectkoppeling klaar: ${linkedMessages} mails bij ${linkedProjects} projecten.`, 'success');
     showToast('Mails gekoppeld aan projecten', 'success');
   } finally {
     btn.disabled = false;

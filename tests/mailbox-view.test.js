@@ -169,6 +169,8 @@ describe('mailbox view', () => {
   it('heeft backend sync die bestaande mailbox-cache aan projecten linkt', () => {
     expect(pageSource).toContain('btnLinkMailboxProjects');
     expect(appSource).toContain('linkMailboxToProjectsViaFirebaseFunction');
+    expect(appSource).toContain('function activeMailboxAccounts');
+    expect(appSource).not.toContain("_settings.accounts.find(item => item.key === 'kevin')");
     expect(mailboxModuleSource).toContain("action: 'linkProjects'");
     expect(appSource).toContain("_initialParams.get('message')");
     expect(functionsSource).toContain('linkMailboxCacheToProjects');
