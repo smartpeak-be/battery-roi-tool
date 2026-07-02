@@ -591,7 +591,7 @@ async function listHostingerMessages({ accountKey, folderKey, limit }) {
       envelope: true,
       flags: true,
       internalDate: true,
-    })) {
+    }, { uid: true })) {
       rows.push(normalizeImapMessage(message, accountKey, folderKey));
     }
     return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
