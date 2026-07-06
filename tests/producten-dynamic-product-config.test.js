@@ -24,4 +24,13 @@ describe('producten.html dynamic product config specs', () => {
     expect(html).toContain('renderMarstek(parseInt');
     expect(html).toContain('renderZendure(parseInt');
   });
+
+  test('initializes Firebase before touching Auth on standalone specs page', () => {
+    expect(html).toContain('function ensureFirebaseReady()');
+    expect(html).toContain("if (typeof initFirebase === 'function')");
+    expect(html).toContain('initFirebase();');
+    expect(html).toContain('const auth = ensureFirebaseReady();');
+    expect(html).toContain('const stop = auth.onAuthStateChanged');
+    expect(html).toContain('await auth.signInWithPopup(provider)');
+  });
 });

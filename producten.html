@@ -319,10 +319,19 @@ function renderDynamicProductCard({ item, product, category, photos = [], datash
   `;
 }
 
+function ensureFirebaseReady() {
+  if (typeof initFirebase === 'function') {
+    initFirebase();
+  }
+  if (!window.firebase || !firebase.auth) return null;
+  return firebase.auth();
+}
+
 function waitForAuthReady() {
-  if (!window.firebase || !firebase.auth) return Promise.resolve(null);
+  const auth = ensureFirebaseReady();
+  if (!auth) return Promise.resolve(null);
   return new Promise(resolve => {
-    const stop = firebase.auth().onAuthStateChanged(user => {
+    const stop = auth.onAuthStateChanged(user => {
       stop();
       resolve(user || null);
     });
@@ -632,8 +641,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   const loginBtn = document.getElementById('productSpecsLogin');
   if (loginBtn) {
     loginBtn.addEventListener('click', async () => {
+      const auth = ensureFirebaseReady();
+      if (!auth) throw new Error('Firebase Auth niet beschikbaar.');
       const provider = new firebase.auth.GoogleAuthProvider();
-      await firebase.auth().signInWithPopup(provider);
+      await auth.signInWithPopup(provider);
       window.location.reload();
     });
   }
