@@ -1792,24 +1792,18 @@ async function loadShareAndEngageReadOnly(id) {
   }, { message: 'Deellink laden...' });
 }
 
-// Engage read-only mode: called after a ?data=<b64> share-link has been
-// successfully restored. Adds the body class that drives the CSS, and
-// replaces the loaded-banner content with a clear customer-facing message.
+// Engage read-only mode: called after a ?data=<b64> or ?s=<id> share-link has been
+// successfully restored. Keeps the customer view clean: no edit/save/share affordances
+// and no read-only warning banner.
 function engageReadOnly() {
   document.body.classList.add('readonly-mode');
   const banner = document.getElementById('loadedBanner');
   if (banner) {
-    banner.innerHTML = `
-      <div class="alert alert-warning" style="display:flex;gap:10px;align-items:flex-start;">
-        🔒
-        <div>
-          <strong>Gedeelde berekening — alleen-lezen.</strong><br>
-          Dit is een voorstel dat je van je contactpersoon ontving.
-          Heb je vragen of wil je aanpassingen? Neem contact op met je contactpersoon.
-        </div>
-      </div>`;
-    banner.style.display = '';
+    banner.innerHTML = '';
+    banner.style.display = 'none';
   }
+  const saveCard = document.getElementById('saveCard');
+  if (saveCard) saveCard.style.display = 'none';
 }
 // ─── PROJECT MODE (?project=<id>) ────────────────────────────────────────────
 let _projectId   = null;

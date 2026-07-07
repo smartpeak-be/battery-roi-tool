@@ -57,4 +57,16 @@ describe('index custom composition UI', () => {
     expect(source).toContain('if (_projectId && _projectDoc && !_suppressProjectCalcAutoSave)');
     expect(source).not.toContain('_projectDoc = null;\n      _applyLoadedState(restored, /*showBanner*/ false);');
   });
+
+  it('keeps shared read-only result pages clean without save/share card or warning banner', () => {
+    const readOnlyBlock = source.slice(source.indexOf('function engageReadOnly'), source.indexOf('// ─── PROJECT MODE'));
+    expect(readOnlyBlock).toContain("document.body.classList.add('readonly-mode');");
+    expect(readOnlyBlock).toContain("banner.innerHTML = '';");
+    expect(readOnlyBlock).toContain("banner.style.display = 'none';");
+    expect(readOnlyBlock).toContain("const saveCard = document.getElementById('saveCard');");
+    expect(readOnlyBlock).toContain("if (saveCard) saveCard.style.display = 'none';");
+    expect(readOnlyBlock).not.toContain('Gedeelde berekening');
+    expect(readOnlyBlock).not.toContain('alleen-lezen');
+    expect(readOnlyBlock).not.toContain('Bewaar / Deel resultaten');
+  });
 });
