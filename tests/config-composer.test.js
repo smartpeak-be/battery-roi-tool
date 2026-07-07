@@ -74,6 +74,34 @@ describe('config composer', () => {
     expect(resolved.composition.lines).toHaveLength(4);
   });
 
+  it('preserves the customer-facing composition explanation on resolved configs', () => {
+    const resolved = resolveCompositionToCalculatorConfig({
+      ...baseConfig,
+      type: 'CUSTOM_1',
+      compositionDescription: 'Extra uitleg uit basisconfig',
+    }, {
+      type: 'CUSTOM_1',
+      description: 'Deze uitleg komt op de klant-view.',
+      lines: [],
+    }, products, { btwPercent: 6 });
+
+    expect(resolved.compositionDescription).toBe('Extra uitleg uit basisconfig');
+  });
+
+  it('falls back to the composition explanation when the base config has none', () => {
+    const resolved = resolveCompositionToCalculatorConfig({
+      ...baseConfig,
+      type: 'CUSTOM_2',
+      compositionDescription: '',
+    }, {
+      type: 'CUSTOM_2',
+      description: 'Deze uitleg komt op de klant-view.',
+      lines: [],
+    }, products, { btwPercent: 6 });
+
+    expect(resolved.compositionDescription).toBe('Deze uitleg komt op de klant-view.');
+  });
+
   it('serializes only meaningful adjustable composition lines and blocks inspection products', () => {
     const lines = serializeCompositionLines([
       { id: 'auto-inspection', kind: 'inspection', productId: 'inspection', amountExVat: 150, vat: 21, automatic: true },

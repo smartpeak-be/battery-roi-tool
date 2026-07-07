@@ -62,11 +62,14 @@ function _serializeState() {
   const meerkostLines = {};
   const compositionLines = {};
   const compositionNames = {};
+  const compositionDescriptions = {};
   (d.configResults || []).forEach(cr => {
     if (!cr.cfg) return;
     if (typeof cr.cfg.type === 'string' && cr.cfg.type.startsWith('CUSTOM_')) {
       const name = String(cr.cfg.omschrijving || cr.cfg.description || cr.cfg.name || '').trim();
       if (name) compositionNames[cr.cfg.type] = name;
+      const description = String(cr.cfg.compositionDescription || '').trim();
+      if (description) compositionDescriptions[cr.cfg.type] = description;
     }
     if (Array.isArray(cr.cfg.compositionLines)) {
       const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
@@ -96,6 +99,7 @@ function _serializeState() {
     meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
     compositionLines: Object.keys(compositionLines).length > 0 ? compositionLines : null,
     compositionNames: Object.keys(compositionNames).length > 0 ? compositionNames : null,
+    compositionDescriptions: Object.keys(compositionDescriptions).length > 0 ? compositionDescriptions : null,
     r: {
       isFullYear: d.isFullYear,
       windowStart: d.windowStart.toISOString().slice(0,10),
@@ -223,6 +227,9 @@ function _applyLoadedState(state, showBanner) {
   _restoredCompositionNames = state.v === 6 && state.compositionNames && typeof state.compositionNames === 'object'
     ? { ...state.compositionNames }
     : {};
+  _restoredCompositionDescriptions = state.v === 6 && state.compositionDescriptions && typeof state.compositionDescriptions === 'object'
+    ? { ...state.compositionDescriptions }
+    : {};
   const f = state.form || {};
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val != null ? val : ''; };
   set('pvInverter',    f.pvInv);
@@ -280,6 +287,7 @@ let _suppressProjectCalcAutoSave = false;
 let _compositionLinesByType = {};
 let _customCompositions = {};
 let _restoredCompositionNames = {};
+let _restoredCompositionDescriptions = {};
 
 // Manual configs — keyed by type ('MANUAL_<timestamp>'). Same resolved shape as sheet configs.
 let _manualConfigs = {};
@@ -317,6 +325,7 @@ function _baseConfigForCustomComposition(comp) {
     productConfigId: '',
     productConfigName: comp.sourceName || '',
     omschrijving: comp.name || _compositionNameFromLines(_compositionLinesByType[comp.type] || []),
+    compositionDescription: comp.description || '',
     batCap: 0,
     batInv: 0,
     eff: 0.90,
@@ -325,7 +334,7 @@ function _baseConfigForCustomComposition(comp) {
   };
 }
 
-function _createCustomComposition({ name = '', sourceName = '', baseProductConfigId = '', lines = [] } = {}) {
+function _createCustomComposition({ name = '', description = '', sourceName = '', baseProductConfigId = '', lines = [] } = {}) {
   const type = _customCompositionType();
   const serialized = serializeCompositionLines(lines, {
     inspectionProductId: _inspectionProduct && _inspectionProduct.id,
@@ -333,6 +342,7 @@ function _createCustomComposition({ name = '', sourceName = '', baseProductConfi
   _customCompositions[type] = {
     type,
     name: name || _compositionNameFromLines(serialized),
+    description: description || '',
     sourceName,
     baseProductConfigId,
   };
@@ -494,6 +504,7 @@ function readAllSelectedConfigObjects() {
       return resolveCompositionToCalculatorConfig(_baseConfigForCustomComposition(comp), {
         type,
         baseProductConfigId: comp.baseProductConfigId || '',
+        description: comp.description || '',
         lines: resolveCompositionLinesFor(type),
       }, _sheetProducts, {
         btwPercent,
@@ -544,13 +555,14 @@ function _readMeerkostLinesFromDom() {
   return out;
 }
 
-function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositionLines = {}, compositionNames = {}) {
+function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositionLines = {}, compositionNames = {}, compositionDescriptions = {}) {
   selectedTypes.filter(Boolean).forEach(type => {
     if (_customCompositions[type]) return;
     if (type.startsWith('CUSTOM_')) {
       _customCompositions[type] = {
         type,
         name: compositionNames[type] || 'Samenstelling uit opgeslagen berekening',
+        description: compositionDescriptions[type] || '',
         baseProductConfigId: '',
       };
       return;
@@ -565,6 +577,7 @@ function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositi
     _customCompositions[customType] = {
       type: customType,
       name: cfg.omschrijving || cfg.productConfigName || 'Samenstelling',
+      description: compositionDescriptions[type] || '',
       sourceName: cfg.productConfigName || '',
       baseProductConfigId: cfg.productConfigId || '',
     };
@@ -586,12 +599,14 @@ function _customCompositionCardHtml(comp) {
   if (installExtraCount) bits.push(`${installExtraCount} installatiekost${installExtraCount === 1 ? '' : 'en'}`);
   if (discountCount) bits.push(`${discountCount} korting${discountCount === 1 ? '' : 'en'}`);
   const summary = bits.length ? bits.join(' · ') : 'nog leeg';
+  const description = String(comp.description || '').trim();
   return `
     <div class="custom-composition-card" data-config-type="${escapeHtml(comp.type)}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px;background:var(--card-bg);">
       <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
         <div>
           <strong>${escapeHtml(comp.name || 'Samenstelling')}</strong>
           ${comp.sourceName ? `<span class="meerkost-summary-sum">gestart van ${escapeHtml(comp.sourceName)}</span>` : '<span class="meerkost-summary-sum">from scratch</span>'}<br>
+          ${description ? `<span class="meerkost-summary-sum">${escapeHtml(description)}</span><br>` : ''}
           <span class="meerkost-summary-sum">${escapeHtml(summary)}</span>
         </div>
         <div style="display:flex;gap:8px;">
@@ -609,7 +624,7 @@ function renderConfigPickers(selectedTypes = null, _meerkostLines = null, compos
   if (compositionLines && typeof compositionLines === 'object') {
     _compositionLinesByType = { ..._compositionLinesByType, ...compositionLines };
   }
-  if (selectedTypes) _restoreSelectedTypesAsCustomCompositions(selectedTypes, compositionLines || {}, _restoredCompositionNames || {});
+  if (selectedTypes) _restoreSelectedTypesAsCustomCompositions(selectedTypes, compositionLines || {}, _restoredCompositionNames || {}, _restoredCompositionDescriptions || {});
   const cards = Object.values(_customCompositions).map(_customCompositionCardHtml).join('');
   list.innerHTML = `
     <div class="composition-start-panel" style="border:1px solid var(--border);border-radius:10px;padding:12px;background:rgba(59,130,246,.06);">
@@ -731,7 +746,8 @@ function _openComposerModal(type) {
     : `Basis: <strong>${escapeHtml(cfg.omschrijving || cfg.type)}</strong>.`;
   body.innerHTML = `
     <p style="margin-top:0;color:var(--muted);">${intro} Keuring wordt automatisch bepaald door de keuring-keuze buiten dit venster en staat hier bewust niet tussen de producten.</p>
-    ${comp ? `<div class="form-group" style="margin:0 0 14px;"><label>Naam samenstelling</label><input type="text" id="composerCompositionName" value="${escapeHtml(comp.name || '')}" placeholder="Bijv. 2x AB3000X + Solarflow"></div>` : ''}
+    ${comp ? `<div class="form-group" style="margin:0 0 14px;"><label>Naam samenstelling</label><input type="text" id="composerCompositionName" value="${escapeHtml(comp.name || '')}" placeholder="Bijv. 2x AB3000X + Solarflow"></div>
+    <div class="form-group" style="margin:0 0 14px;"><label>Uitleg voor klant</label><textarea id="composerCompositionDescription" rows="3" placeholder="Kort woordje uitleg over waarom deze samenstelling gekozen is of wat erin zit.">${escapeHtml(comp.description || '')}</textarea></div>` : ''}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 8px;"><h4 style="margin:0;">Producten</h4><button type="button" class="btn btn-secondary" id="configComposerAddProduct">+ Product toevoegen</button></div>
     <div id="configComposerProducts">${productRows || ''}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px;"><h4 style="margin:0;">Manuele lijnen en kortingen</h4><button type="button" class="btn btn-secondary" id="configComposerAddManual">+ Lijn toevoegen</button></div>
@@ -798,6 +814,7 @@ function _saveComposerModal() {
   if (_customCompositions[type]) {
     const explicitName = (modal.querySelector('#composerCompositionName')?.value || '').trim();
     _customCompositions[type].name = explicitName || _compositionNameFromLines(_compositionLinesByType[type]);
+    _customCompositions[type].description = (modal.querySelector('#composerCompositionDescription')?.value || '').trim();
   }
   _closeComposerModal();
   renderConfigPickers();
@@ -1246,6 +1263,12 @@ function quotePreviewUrlForCalculatedConfig(d, configType) {
   return buildQuoteContextUrl(context, 'producten-beheer.html');
 }
 
+function renderCompositionDescriptionHtml(cfg) {
+  const text = String(cfg?.compositionDescription || '').trim();
+  if (!text) return '';
+  return `<div class="composition-description" style="grid-column:1/-1;margin:6px 0 4px;padding:10px 12px;border-left:3px solid var(--primary);background:rgba(44,123,229,.08);border-radius:8px;color:var(--text);font-size:.92rem;line-height:1.45;white-space:pre-line;">${escapeHtml(text)}</div>`;
+}
+
 function renderScenarioGrid(d) {
   let gridHTML = '';
   d.configResults.forEach((cr, idx) => {
@@ -1268,6 +1291,7 @@ function renderScenarioGrid(d) {
         ${specsBtn}
         ${quoteBtn}
       </div>
+      ${renderCompositionDescriptionHtml(cfg)}
     </div>`;
     const subWC = pvGtBat
       ? `ZP (${d.pvInv} kW) > bat-omv. (${fmt2(cfg.batInv)} kW) — laaddrempel ×${fmt2(d.pvInv/cfg.batInv)}. Verbruikscap toegepast (besparing begrensd door dagelijkse afname).`
@@ -1454,11 +1478,14 @@ async function saveProjectCalcRun(d) {
   const meerkostLines = {};
   const compositionLines = {};
   const compositionNames = {};
+  const compositionDescriptions = {};
   (d.configResults || []).forEach(cr => {
     if (!cr.cfg) return;
     if (typeof cr.cfg.type === 'string' && cr.cfg.type.startsWith('CUSTOM_')) {
       const name = String(cr.cfg.omschrijving || cr.cfg.description || cr.cfg.name || '').trim();
       if (name) compositionNames[cr.cfg.type] = name;
+      const description = String(cr.cfg.compositionDescription || '').trim();
+      if (description) compositionDescriptions[cr.cfg.type] = description;
     }
     if (Array.isArray(cr.cfg.compositionLines)) {
       const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
@@ -1505,6 +1532,7 @@ async function saveProjectCalcRun(d) {
       meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
       compositionLines: Object.keys(compositionLines).length > 0 ? compositionLines : null,
       compositionNames: Object.keys(compositionNames).length > 0 ? compositionNames : null,
+      compositionDescriptions: Object.keys(compositionDescriptions).length > 0 ? compositionDescriptions : null,
     },
     results,
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
@@ -2191,6 +2219,9 @@ function buildSavedFromProject(proj) {
   const compositionNames = (inputs.compositionNames && Object.keys(inputs.compositionNames).length > 0)
     ? inputs.compositionNames
     : null;
+  const compositionDescriptions = (inputs.compositionDescriptions && Object.keys(inputs.compositionDescriptions).length > 0)
+    ? inputs.compositionDescriptions
+    : null;
   return {
     v: 6,
     form: {
@@ -2203,6 +2234,7 @@ function buildSavedFromProject(proj) {
     meerkostLines: meerkostLines || null,
     compositionLines,
     compositionNames,
+    compositionDescriptions,
     r,
   };
 }

@@ -224,6 +224,7 @@ export function resolveCompositionToCalculatorConfig(baseConfig, composition, pr
     source: baseConfig.source,
     productConfigId: baseConfig.productConfigId,
     productConfigName: baseConfig.productConfigName,
+    compositionDescription: String(baseConfig.compositionDescription || composition?.description || '').trim(),
     items: baseItems,
     compositionTotalInclBtw,
     compositionLines: allLines,
