@@ -1,15 +1,4 @@
 import * as functions from 'firebase-functions/v2';
-import {
-  SMARTPEAK_TASK_USERS,
-  REMINDER_TYPES,
-  buildDueDateReminderEmail,
-  buildTaskOverviewEmail,
-  dueDateReminderTypesForDate,
-  hasReminderBeenSent,
-  isOpenTask,
-  markReminderSent,
-  reminderRecipientsForTask,
-} from './task-reminders.js';
 import { defineSecret } from 'firebase-functions/params';
 import admin from 'firebase-admin';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
@@ -26,7 +15,6 @@ const hostingerSmartpeakKevinPassword = defineSecret('HOSTINGER_SMARTPEAK_KEVIN_
 const hostingerSmartpeakRubenPassword = defineSecret('HOSTINGER_SMARTPEAK_RUBEN_PASSWORD');
 const hostingerSmartpeakContactPassword = defineSecret('HOSTINGER_SMARTPEAK_CONTACT_PASSWORD');
 const BILLIT_BASE_URL = 'https://api.sandbox.billit.be';
-const TASKS_URL = 'https://smartpeak-battery-roi.netlify.app/tasks.html';
 const WHITELISTED_EMAILS = new Set(['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be']);
 
 const SMARTPEAK_MAILBOX_ACCOUNTS = {
@@ -51,12 +39,6 @@ const SMARTPEAK_MAILBOX_ACCOUNTS = {
     secure: true,
     passwordSecret: hostingerSmartpeakContactPassword,
   },
-};
-
-const SMARTPEAK_MAILBOX_LABELS = {
-  kevin: 'Kevin',
-  ruben: 'Ruben',
-  contact: 'SmartPeak contact',
 };
 
 const SMARTPEAK_MAILBOX_FOLDERS = {
@@ -421,121 +403,6 @@ async function cleanupSerialEntry(projectId, photoId, serialEntryId) {
   } catch { /* photo deleted */ }
 }
 
-function projectLabel(project) {
-  return cleanString(project.projectName || project.customerName || project.name || project.id || 'Project', 160);
-}
-
-function normalizeTaskForMail(project, task) {
-  return {
-    ...task,
-    status: task.status || 'open',
-    projectId: project.id,
-    projectLabel: projectLabel(project),
-  };
-}
-
-function mailDocId(parts) {
-  return parts.map(part => cleanString(part, 80).replace(/[^a-z0-9_-]+/gi, '_')).join('_').slice(0, 240);
-}
-
-async function createMail(db, id, envelope, kind, createdAt) {
-  await db.collection('mail').doc(id).set({
-    kind,
-    to: envelope.to,
-    message: envelope.message,
-    createdAt,
-  }, { merge: false });
-}
-
-async function sendDueDateRemindersForProject(db, projectRef, project, today, now) {
-  const tasks = Array.isArray(project.tasks) ? project.tasks : [];
-  let changed = false;
-  const updatedTasks = [];
-  for (const rawTask of tasks) {
-    let task = rawTask && typeof rawTask === 'object' ? { ...rawTask } : rawTask;
-    if (!task || typeof task !== 'object' || !isOpenTask(task) || !task.dueDate) {
-      updatedTasks.push(task);
-      continue;
-    }
-    const reminderTypes = dueDateReminderTypesForDate(today, task.dueDate);
-    for (const reminderType of reminderTypes) {
-      for (const user of reminderRecipientsForTask(task)) {
-        if (hasReminderBeenSent(task, reminderType, user.email, today)) continue;
-        const id = mailDocId(['task', projectRef.id, task.id || task.title, reminderType, user.key, today]);
-        const envelope = buildDueDateReminderEmail({
-          user,
-          task: normalizeTaskForMail({ ...project, id: projectRef.id }, task),
-          reminderType,
-          tasksUrl: TASKS_URL,
-        });
-        await createMail(db, id, envelope, 'task_due_reminder', now);
-        task = markReminderSent(task, reminderType, user.email, today, id);
-        changed = true;
-      }
-    }
-    updatedTasks.push(task);
-  }
-  if (changed) {
-    await projectRef.update({ tasks: updatedTasks, updatedAt: now });
-  }
-}
-
-async function sendWeeklyTaskOverview(db, projects, user, today, now) {
-  const assignedTasks = [];
-  const generalTasks = [];
-  const touched = [];
-  for (const item of projects) {
-    const tasks = Array.isArray(item.project.tasks) ? item.project.tasks : [];
-    const nextTasks = [];
-    let changed = false;
-    for (const rawTask of tasks) {
-      let task = rawTask && typeof rawTask === 'object' ? { ...rawTask } : rawTask;
-      if (!task || typeof task !== 'object' || !isOpenTask(task)) {
-        nextTasks.push(task);
-        continue;
-      }
-      const normalized = normalizeTaskForMail({ ...item.project, id: item.ref.id }, task);
-      if (task.assignee === user.key) assignedTasks.push(normalized);
-      if (!task.assignee) generalTasks.push(normalized);
-      if ((task.assignee === user.key || !task.assignee) && !hasReminderBeenSent(task, REMINDER_TYPES.WEEKLY_OVERVIEW, user.email, today)) {
-        const mailId = mailDocId(['weekly', user.key, today]);
-        task = markReminderSent(task, REMINDER_TYPES.WEEKLY_OVERVIEW, user.email, today, mailId);
-        changed = true;
-      }
-      nextTasks.push(task);
-    }
-    if (changed) touched.push({ ref: item.ref, tasks: nextTasks });
-  }
-  if (!assignedTasks.length && !generalTasks.length) return;
-  const id = mailDocId(['weekly', user.key, today]);
-  const envelope = buildTaskOverviewEmail({ user, assignedTasks, generalTasks, tasksUrl: TASKS_URL });
-  await createMail(db, id, envelope, 'task_weekly_overview', now);
-  await Promise.all(touched.map(item => item.ref.update({ tasks: item.tasks, updatedAt: now })));
-}
-
-export async function runTaskReminderJob(today = new Date().toISOString().slice(0, 10)) {
-  const db = admin.firestore();
-  const now = admin.firestore.Timestamp.now();
-  const snap = await db.collection('projects').get();
-  const projects = snap.docs
-    .map(refSnap => ({ ref: refSnap.ref, project: refSnap.data() || {} }))
-    .filter(item => !item.project.deletedAt);
-
-  await Promise.all(projects.map(item => sendDueDateRemindersForProject(db, item.ref, item.project, today, now)));
-
-  const day = new Date(`${today}T00:00:00Z`).getUTCDay();
-  if (day === 0) {
-    for (const user of SMARTPEAK_TASK_USERS) {
-      await sendWeeklyTaskOverview(db, projects, user, today, now);
-    }
-  }
-}
-
-export const taskRemindersDaily = functions.scheduler.onSchedule(
-  { schedule: '0 8 * * *', timeZone: 'Europe/Brussels', region: 'europe-west1' },
-  async () => runTaskReminderJob(),
-);
-
 export const ocrSerial = functions.firestore.onDocumentWritten(
   { document: 'projects/{projectId}/photos/{photoId}', region: 'europe-west1' },
   handleOcrSerial,
@@ -825,136 +692,6 @@ async function getCachedMessage({ accountKey, folderKey, messageId }) {
   return null;
 }
 
-function mailboxDirectionForFolder(folderKey = '') {
-  return String(folderKey || '').toLowerCase().includes('sent') ? 'sent' : 'received';
-}
-
-function extractMailboxEmails(value = '') {
-  return [...new Set(String(value || '').toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) || [])];
-}
-
-function normalizeMatchText(value = '') {
-  return String(value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function projectMailboxMatchKeys(project = {}) {
-  const customer = project.customer && typeof project.customer === 'object' ? project.customer : {};
-  const emailKeys = [customer.email, customer.contactEmail, project.email]
-    .flatMap(extractMailboxEmails);
-  const nameKeys = [project.customerName, project.projectName, customer.name]
-    .map(normalizeMatchText)
-    .filter(value => value.length >= 6 && value.split(' ').filter(Boolean).length >= 2);
-  const address = normalizeMatchText(customer.address || '');
-  const addressKeys = address.length >= 8 ? [address] : [];
-  return {
-    projectId: project.id,
-    emailKeys: [...new Set(emailKeys)],
-    nameKeys: [...new Set(nameKeys)],
-    addressKeys,
-  };
-}
-
-function mailboxMessageMatchesProject(message = {}, keys = {}) {
-  const participants = extractMailboxEmails(`${message.from || ''} ${message.to || ''}`);
-  if (keys.emailKeys && keys.emailKeys.some(email => participants.includes(email))) return true;
-  const headerText = normalizeMatchText(`${message.from || ''} ${message.to || ''} ${message.subject || ''}`);
-  if (keys.nameKeys && keys.nameKeys.some(name => headerText.includes(name))) return true;
-  const previewText = normalizeMatchText(`${message.subject || ''} ${message.preview || ''}`);
-  return keys.addressKeys && keys.addressKeys.some(address => previewText.includes(address));
-}
-
-function mailboxLinkKey(link = {}) {
-  return `${link.mailboxKey || 'kevin'}:${link.messageId || link.cacheId || link.id || ''}`;
-}
-
-function projectMailLinkFromMessage(message = {}, accountKey = 'kevin') {
-  const folderKey = message.folderKey || 'inbox';
-  const direction = mailboxDirectionForFolder(folderKey);
-  const messageId = String(message.cacheId || message.id || `${folderKey}-${message.uid || ''}`);
-  const mailboxKey = message.mailboxKey || accountKey || 'kevin';
-  return {
-    messageId,
-    cacheId: messageId,
-    mailboxKey,
-    mailboxLabel: message.mailboxLabel || SMARTPEAK_MAILBOX_LABELS[mailboxKey] || mailboxKey,
-    folderKey,
-    folderLabel: message.folderLabel || mailboxFolderLabel(message.providerFolder || folderKey),
-    direction,
-    subject: cleanString(message.subject || '(geen onderwerp)', 500),
-    date: message.date || message.dateTs?.toDate?.().toISOString?.() || '',
-    dateLabel: message.date || message.dateTs?.toDate?.().toISOString?.() || '',
-    linkedAt: new Date().toISOString(),
-  };
-}
-
-async function listCachedMessagesForProjectLinking({ accountKey, folderKey = 'all' }) {
-  const folders = folderKey === 'all'
-    ? await listCachedFolders({ accountKey })
-    : [{ key: folderKey }];
-  const rows = [];
-  for (const folder of folders) {
-    const snap = await mailboxFolderDoc(accountKey, folder.key)
-      .collection('messages')
-      .orderBy('dateTs', 'desc')
-      .limit(MAILBOX_SYNC_MAX_PER_FOLDER)
-      .get();
-    rows.push(...snap.docs.map(doc => ({ id: doc.id, ...doc.data(), date: doc.data().date || doc.data().dateTs?.toDate?.().toISOString?.() || '' })));
-  }
-  return rows;
-}
-
-async function linkMailboxCacheToProjects({ accountKey = 'kevin', folderKey = 'all' } = {}) {
-  const [messages, projectSnap] = await Promise.all([
-    listCachedMessagesForProjectLinking({ accountKey, folderKey }),
-    db.collection('projects').where('deletedAt', '==', null).get(),
-  ]);
-  const projects = projectSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  const projectKeys = projects.map(projectMailboxMatchKeys)
-    .filter(keys => keys.emailKeys.length || keys.nameKeys.length || keys.addressKeys.length);
-  const updates = [];
-  for (const project of projects) {
-    const keys = projectKeys.find(item => item.projectId === project.id);
-    if (!keys) continue;
-    const existing = Array.isArray(project.mailLinks) ? project.mailLinks : [];
-    const byId = new Map(existing.map(link => [mailboxLinkKey(link), link]));
-    let added = 0;
-    for (const message of messages) {
-      if (!mailboxMessageMatchesProject(message, keys)) continue;
-      const link = projectMailLinkFromMessage(message, accountKey);
-      const linkKey = mailboxLinkKey(link);
-      if (!link.messageId || byId.has(linkKey)) continue;
-      byId.set(linkKey, link);
-      added += 1;
-    }
-    if (!added) continue;
-    const mailLinks = [...byId.values()]
-      .sort((a, b) => String(b.date || b.dateLabel).localeCompare(String(a.date || a.dateLabel)))
-      .slice(0, 100);
-    updates.push({ projectId: project.id, mailLinks, added });
-  }
-  const writer = db.bulkWriter();
-  for (const update of updates) {
-    writer.update(db.collection('projects').doc(update.projectId), {
-      mailLinks: update.mailLinks,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  }
-  await writer.close();
-  return {
-    accountKey,
-    folderKey,
-    scannedMessages: messages.length,
-    scannedProjects: projects.length,
-    linkedProjects: updates.length,
-    linkedMessages: updates.reduce((sum, item) => sum + item.added, 0),
-  };
-}
-
 async function cleanupMailboxCache(accountKey) {
   const cutoff = admin.firestore.Timestamp.fromDate(mailboxRetentionCutoff());
   const folders = await listCachedFolders({ accountKey });
@@ -1184,7 +921,6 @@ export const mailboxSyncScheduled = functions.scheduler.onSchedule(
   async () => {
     for (const accountKey of Object.keys(SMARTPEAK_MAILBOX_ACCOUNTS)) {
       await syncMailboxCache({ accountKey, folderKey: 'all', mode: 'recent' });
-      await linkMailboxCacheToProjects({ accountKey, folderKey: 'all' });
     }
   },
 );
@@ -1208,13 +944,6 @@ export const mailboxListMessages = functions.https.onRequest(
         const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'all') || 'all';
         const mode = cleanString(req.body.mode || 'recent', 20) === 'all' ? 'all' : 'recent';
         const result = await syncMailboxCache({ accountKey, folderKey, mode });
-        const linked = await linkMailboxCacheToProjects({ accountKey, folderKey });
-        res.json({ ok: true, ...result, linked });
-        return;
-      }
-      if (req.body && req.body.action === 'linkProjects') {
-        const folderKey = cleanMailboxFolder(req.body && req.body.folderKey || 'all') || 'all';
-        const result = await linkMailboxCacheToProjects({ accountKey, folderKey });
         res.json({ ok: true, ...result });
         return;
       }

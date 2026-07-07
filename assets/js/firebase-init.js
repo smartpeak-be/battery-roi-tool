@@ -18,7 +18,9 @@ const FIREBASE_CONFIG = {
 // in Firebase Console exactly. Replace RUBEN_EMAIL_PLACEHOLDER with Ruben's actual email.
 const WHITELISTED_EMAILS = [
   'kevin@bloxit.be',
+  'kevin@smartpeak.be',
   'ledsrepair@gmail.com',
+  'ruben@smartpeak.be',
 ];
 
 // ─── STATUS ENUM ─────────────────────────────────────────────────────────────
@@ -134,11 +136,6 @@ function newEmptyProjectMetadata() {
     calcDefaults: {
       keuring: 'yes',
     },
-    // Operationele backoffice-laag: gestructureerd naast comments zodat
-    // AmaAi/Kevin/Ruben later betrouwbaar kunnen zoeken, opvolgen en automatiseren.
-    activities: [],
-    tasks: [],
-    mailLinks: [],
     filesInbox: [],
     batteryRegistry: {
       bebatStatus: 'not_needed',
@@ -175,9 +172,6 @@ function mergeProjectMetadata(project) {
     ...((project.technical && project.technical.voltageMeasurements) || {}),
   };
   merged.offertes      = project.offertes || {};
-  merged.activities    = Array.isArray(project.activities) ? project.activities.map(normalizeProjectActivity) : [];
-  merged.tasks         = Array.isArray(project.tasks) ? project.tasks.map(normalizeProjectTask) : [];
-  merged.mailLinks     = Array.isArray(project.mailLinks) ? project.mailLinks : [];
   merged.filesInbox    = Array.isArray(project.filesInbox) ? project.filesInbox : [];
   merged.batteryRegistry = {
     ...empty.batteryRegistry,
@@ -197,81 +191,6 @@ function mergeProjectMetadata(project) {
   merged.manualConfigs = project.manualConfigs || {};
   merged.installedSolution = project.installedSolution || empty.installedSolution;
   return merged;
-}
-
-const SMARTPEAK_TASK_ASSIGNEES = ['kevin', 'ruben'];
-const SMARTPEAK_ASSIGNEE_LABELS = { kevin: 'Kevin', ruben: 'Ruben' };
-const SMARTPEAK_ASSIGNEE_EMAILS = {
-  'kevin@bloxit.be': 'kevin',
-  'kevin@smartpeak.be': 'kevin',
-  'ledsrepair@gmail.com': 'ruben',
-  'ruben@smartpeak.be': 'ruben',
-};
-const SMARTPEAK_TASK_STATUSES = ['open', 'in_progress', 'done', 'cancelled'];
-const SMARTPEAK_ACTIVITY_TYPES = [
-  'phone_call', 'mail_received', 'mail_sent', 'appointment_scheduled',
-  'site_visit', 'offer_sent', 'offer_accepted', 'installation_planned',
-  'installation_done', 'inspection', 'invoice', 'follow_up', 'internal_note',
-];
-
-function _cleanString(value) {
-  return String(value == null ? '' : value).trim();
-}
-
-function _normalizeAssignee(value) {
-  const v = _cleanString(value).toLowerCase();
-  if (!v) return null;
-  if (SMARTPEAK_TASK_ASSIGNEES.includes(v)) return v;
-  // Future team members must not be destroyed by today's Kevin/Ruben-only UI.
-  return v;
-}
-
-function assigneeForEmail(email) {
-  const key = _cleanString(email).toLowerCase();
-  return SMARTPEAK_ASSIGNEE_EMAILS[key] || 'all';
-}
-
-function assigneeLabel(value) {
-  const key = _normalizeAssignee(value);
-  return key ? (SMARTPEAK_ASSIGNEE_LABELS[key] || key) : 'Niet toegewezen';
-}
-
-function normalizeProjectTask(task = {}) {
-  return {
-    id: task.id || `task_${Math.random().toString(36).slice(2, 10)}`,
-    title: _cleanString(task.title),
-    type: task.type || 'follow_up',
-    status: SMARTPEAK_TASK_STATUSES.includes(task.status) ? task.status : 'open',
-    assignee: _normalizeAssignee(task.assignee),
-    dueDate: task.dueDate || null,
-    source: task.source || 'manual',
-    confidence: task.confidence || 'zeker',
-    linkedActivityId: task.linkedActivityId || null,
-    linkedMailId: task.linkedMailId || null,
-    createdAt: task.createdAt || null,
-    updatedAt: task.updatedAt || null,
-    completedAt: task.completedAt || null,
-    cancelledAt: task.cancelledAt || null,
-    notes: task.notes || null,
-    reminderLog: Array.isArray(task.reminderLog) ? task.reminderLog : [],
-  };
-}
-
-function normalizeProjectActivity(activity = {}) {
-  const type = SMARTPEAK_ACTIVITY_TYPES.includes(activity.type) ? activity.type : 'internal_note';
-  return {
-    id: activity.id || `act_${Math.random().toString(36).slice(2, 10)}`,
-    type,
-    title: activity.title || activity.label || '',
-    occurredAt: activity.occurredAt || activity.date || activity.createdAt || null,
-    source: activity.source || 'manual',
-    confidence: activity.confidence || 'zeker',
-    assignee: _normalizeAssignee(activity.assignee),
-    linkedMailId: activity.linkedMailId || null,
-    linkedFileId: activity.linkedFileId || null,
-    followUpTaskId: activity.followUpTaskId || null,
-    notes: activity.notes || activity.text || null,
-  };
 }
 
 function _batterySerialsForBebat(project) {
@@ -325,148 +244,6 @@ function bebatRowsForProjects(projects = []) {
       if (statusDiff) return statusDiff;
       return String(a.projectLabel || '').localeCompare(String(b.projectLabel || ''), 'nl-BE');
     });
-}
-
-function _hasActivity(project, type) {
-  return Array.isArray(project && project.activities) && project.activities.some(a => a && a.type === type);
-}
-
-function _hasOpenTask(project, type) {
-  return Array.isArray(project && project.tasks) && project.tasks.some(t => t && t.type === type && !['done', 'cancelled'].includes(t.status));
-}
-
-function _hasCancelledTask(project, type) {
-  return Array.isArray(project && project.tasks) && project.tasks.some(t => t && t.type === type && t.status === 'cancelled');
-}
-
-function _isActionSuppressed(project, type) {
-  return _hasOpenTask(project, type) || _hasCancelledTask(project, type);
-}
-
-function _hasEnergyDataForCalculation(project) {
-  return !!(
-    (project && project.csvUpload && project.csvUpload.dailyCompact) ||
-    (project && project.lastCalcRun)
-  );
-}
-
-const ENERGY_DATA_REQUEST_STATUSES = ['nieuw_contact', 'wachten_op_data', 'klaar_voor_bezoek'];
-
-function _shouldRequestEnergyData(project) {
-  const status = (project && project.status) || DEFAULT_STATUS;
-  if (!ENERGY_DATA_REQUEST_STATUSES.includes(status)) return false;
-  return !_hasEnergyDataForCalculation(project);
-}
-
-function _hasAttachedOffer(project) {
-  const offres = project && project.offertes;
-  if (!offres || typeof offres !== 'object') return false;
-  return Object.values(offres).some(entry => entry && (entry.storagePath || entry.downloadUrl || entry.filename));
-}
-
-function _shouldSendOfferMail(project) {
-  const status = (project && project.status) || DEFAULT_STATUS;
-  if (['offerte_uit', 'wacht_op_beslissing', 'akkoord', 'niet_akkoord', 'afgesloten'].includes(status)) return false;
-  if (!_hasAttachedOffer(project)) return false;
-  return !_hasActivity(project, 'offer_sent');
-}
-
-function nextActionsForProject(project) {
-  const p = { ...mergeProjectMetadata(project || {}), ...(project || {}) };
-  const actions = [];
-  const appointmentPlanned = p.status === 'bezoek_gepland' || !!p.planning.visitPlannedDate;
-  if (appointmentPlanned && !_hasActivity(p, 'mail_sent') && !_isActionSuppressed(p, 'send_appointment_confirmation')) {
-    actions.push({ type: 'send_appointment_confirmation', label: 'Bevestigingsmail afspraak sturen', assignee: 'kevin', priority: 'high' });
-  }
-  if (_shouldRequestEnergyData(p) && !_isActionSuppressed(p, 'request_energy_data')) {
-    actions.push({ type: 'request_energy_data', label: 'MyFluvius/CSV of verbruiksdata opvragen', assignee: 'kevin', priority: 'normal' });
-  }
-  if (_shouldSendOfferMail(p) && !_isActionSuppressed(p, 'send_offer_mail')) {
-    actions.push({ type: 'send_offer_mail', label: 'Offertemail naar klant versturen', assignee: 'kevin', priority: 'high' });
-  }
-  const bebat = bebatSummaryForProject(p);
-  if (bebat.pending > 0 && !_isActionSuppressed(p, 'register_bebat')) {
-    actions.push({ type: 'register_bebat', label: `${bebat.pending} batterijserienummer(s) nog Bebat registreren`, assignee: 'ruben', priority: 'high' });
-  }
-  if (p.status === 'offerte_uit' && !_isActionSuppressed(p, 'follow_up_offer')) {
-    actions.push({ type: 'follow_up_offer', label: 'Offerte opvolgen', assignee: 'kevin', priority: 'normal' });
-  }
-  return actions;
-}
-
-function projectTaskRowsForProjects(projects = [], options = {}) {
-  const assigneeFilter = options.assignee || 'all';
-  const statusRank = { in_progress: 0, open: 1, suggested: 2 };
-  const priorityRank = { high: 0, normal: 1, low: 2 };
-  const includeSuggested = options.includeSuggested !== false;
-  const rows = [];
-  for (const project of (Array.isArray(projects) ? projects : [])) {
-    if (!project || project.deletedAt) continue;
-    const p = { ...mergeProjectMetadata(project), ...project };
-    const projectId = project.id;
-    const projectLabel = getProjectLabel({ ...project, ...p });
-    const customerName = project.customerName || p.customer.name || '';
-    const projectStatus = project.status || p.status || '';
-    const projectStatusLabel = getStatusMeta(projectStatus).label;
-
-    for (const task of (p.tasks || []).map(normalizeProjectTask)) {
-      if (!task.title || ['done', 'cancelled'].includes(task.status)) continue;
-      if (assigneeFilter !== 'all' && task.assignee && task.assignee !== assigneeFilter) continue;
-      rows.push({
-        rowType: 'task',
-        projectId,
-        projectLabel,
-        customerName,
-        projectStatus,
-        projectStatusLabel,
-        taskId: task.id,
-        type: task.type,
-        title: task.title,
-        status: task.status,
-        assignee: task.assignee,
-        assigneeLabel: assigneeLabel(task.assignee),
-        dueDate: task.dueDate || null,
-        notes: task.notes || null,
-        createdAt: task.createdAt || null,
-        updatedAt: task.updatedAt || null,
-        source: task.source || 'manual',
-        priority: task.priority || 'normal',
-      });
-    }
-
-    if (includeSuggested) {
-      for (const action of nextActionsForProject(p)) {
-        if (assigneeFilter !== 'all' && action.assignee !== assigneeFilter) continue;
-        rows.push({
-          rowType: 'suggested',
-          projectId,
-          projectLabel,
-          customerName,
-          projectStatus,
-          projectStatusLabel,
-          taskId: null,
-          type: action.type,
-          title: action.label,
-          status: 'suggested',
-          assignee: action.assignee || null,
-          assigneeLabel: assigneeLabel(action.assignee),
-          dueDate: null,
-          source: 'suggested',
-          priority: action.priority || 'normal',
-        });
-      }
-    }
-  }
-  return rows.sort((a, b) => {
-    const dueA = a.dueDate || '9999-12-31';
-    const dueB = b.dueDate || '9999-12-31';
-    if (dueA !== dueB) return String(dueA).localeCompare(String(dueB), 'nl-BE');
-    const statusDiff = (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
-    if (statusDiff) return statusDiff;
-    const priorityDiff = (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9);
-    if (priorityDiff) return priorityDiff;
-    return String(a.projectLabel || '').localeCompare(String(b.projectLabel || ''), 'nl-BE');
-  });
 }
 
 // BTW afleidingsregel (single source of truth).
@@ -680,9 +457,6 @@ async function createProject({ projectName, customerName, status, csvData, metad
     if (metadata.inspection)   doc.inspection   = metadata.inspection;
     if (metadata.supplier)     doc.supplier     = metadata.supplier;
     if (metadata.calcDefaults) doc.calcDefaults = metadata.calcDefaults;
-    if (Array.isArray(metadata.activities)) doc.activities = metadata.activities;
-    if (Array.isArray(metadata.tasks)) doc.tasks = metadata.tasks;
-    if (Array.isArray(metadata.mailLinks)) doc.mailLinks = metadata.mailLinks;
     if (Array.isArray(metadata.filesInbox)) doc.filesInbox = metadata.filesInbox;
     if (metadata.batteryRegistry) doc.batteryRegistry = metadata.batteryRegistry;
     if (Array.isArray(metadata.serialNumbers)) doc.serialNumbers = metadata.serialNumbers;
@@ -2857,11 +2631,5 @@ window.formatCustomerAddress = formatCustomerAddress;
 window.billitAddressForCustomer = billitAddressForCustomer;
 window.googleMapsUrlForCustomerAddress = googleMapsUrlForCustomerAddress;
 window.wazeUrlForCustomerAddress = wazeUrlForCustomerAddress;
-window.normalizeProjectTask = normalizeProjectTask;
-window.normalizeProjectActivity = normalizeProjectActivity;
-window.assigneeForEmail = assigneeForEmail;
-window.assigneeLabel = assigneeLabel;
 window.bebatSummaryForProject = bebatSummaryForProject;
 window.bebatRowsForProjects = bebatRowsForProjects;
-window.projectTaskRowsForProjects = projectTaskRowsForProjects;
-window.nextActionsForProject = nextActionsForProject;

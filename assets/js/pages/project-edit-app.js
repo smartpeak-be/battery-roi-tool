@@ -7,7 +7,6 @@ import {
   normalizeInstalledSolution,
   solutionProductOptions,
 } from '../project-solution.js';
-import { normalizeProjectMailLink } from '../mailbox-view.js';
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 const URL_PARAMS = new URLSearchParams(window.location.search);
@@ -36,13 +35,6 @@ function showError(msg) {
   el.classList.remove('hide');
 }
 function clearError() { document.getElementById('globalError').classList.add('hide'); }
-function fmtDateString(value) {
-  if (!value) return '';
-  const [year, month, day] = String(value).split('-');
-  if (!year || !month || !day) return String(value);
-  return `${day}/${month}/${year}`;
-}
-
 function showFieldError(fieldId, msg) {
   const el = document.getElementById(fieldId);
   if (!el) return;
@@ -437,11 +429,6 @@ function renderSections() {
   }
   document.getElementById('blokD-slot').innerHTML = sectionBlokD();
   wireBlokD();
-  const opsSlot = document.getElementById('blokOps-slot');
-  if (opsSlot) {
-    opsSlot.innerHTML = sectionOps();
-    wireOps();
-  }
   updateSaveCalcEnabled();
 }
 
@@ -1398,186 +1385,6 @@ function rerenderBlokC() {
   wireBlokC();
 }
 
-function sectionOps() {
-  const tasks = (_project.tasks || []).map(normalizeProjectTask);
-  const activities = (_project.activities || []).map(normalizeProjectActivity);
-  const nextActions = nextActionsForProject(_project);
-  const taskRows = tasks.length ? tasks.map(t => {
-    const created = t.createdAt ? `<span class="small text-muted">Aangemaakt: ${escapeHtml(fmtDateString(String(t.createdAt).slice(0, 10)))}</span>` : '';
-    const updated = t.updatedAt ? `<span class="small text-muted">Gewijzigd: ${escapeHtml(fmtDateString(String(t.updatedAt).slice(0, 10)))}</span>` : '';
-    return `
-    <div class="border rounded p-2 d-flex flex-column gap-2" data-task-id="${escapeHtml(t.id)}">
-      <div class="d-flex flex-column flex-md-row gap-2 align-items-md-center">
-        <select class="form-select form-select-sm w-auto" data-task-field="status">
-          ${['open','in_progress','done','cancelled'].map(s => `<option value="${s}" ${t.status === s ? 'selected' : ''}>${s === 'open' ? 'Open' : s === 'in_progress' ? 'Bezig' : s === 'done' ? 'Gedaan' : 'Geannuleerd'}</option>`).join('')}
-        </select>
-        <input class="form-control form-control-sm flex-grow-1" data-task-field="title" value="${escapeHtml(t.title || '')}" placeholder="Taak" />
-        <select class="form-select form-select-sm w-auto" data-task-field="assignee">
-          <option value="" ${!t.assignee ? 'selected' : ''}>Nog toe te wijzen</option>
-          <option value="kevin" ${t.assignee === 'kevin' ? 'selected' : ''}>Kevin</option>
-          <option value="ruben" ${t.assignee === 'ruben' ? 'selected' : ''}>Ruben</option>
-        </select>
-        <input type="date" class="form-control form-control-sm w-auto" data-task-field="dueDate" value="${escapeHtml(t.dueDate || '')}" title="Due date" />
-        <button type="button" class="btn btn-sm btn-outline-danger" data-task-delete="${escapeHtml(t.id)}" title="Taak verwijderen"><i class="fa-solid fa-trash"></i></button>
-      </div>
-      <textarea class="form-control form-control-sm" data-task-field="notes" rows="2" placeholder="Beschrijving/notitie">${escapeHtml(t.notes || '')}</textarea>
-      ${(created || updated) ? `<div class="d-flex flex-wrap gap-2">${created}${updated}</div>` : ''}
-    </div>`;
-  }).join('') : '<p class="text-muted mb-0">Nog geen taken.</p>';
-  const activityRows = activities.length ? activities.slice().reverse().map(a => `
-    <div class="border-start border-3 ps-2 py-1">
-      <div class="small text-muted">${escapeHtml(a.type)} · ${escapeHtml(a.occurredAt || 'geen datum')} · bron: ${escapeHtml(a.source || 'manual')} · ${escapeHtml(a.confidence || 'zeker')}</div>
-      <div>${escapeHtml(a.title || a.notes || 'Activiteit')}</div>
-    </div>`).join('') : '<p class="text-muted mb-0">Nog geen gestructureerde activiteiten.</p>';
-  const mailLinks = (_project.mailLinks || []).map(normalizeProjectMailLink)
-    .sort((a, b) => String(b.date || b.dateLabel).localeCompare(String(a.date || a.dateLabel)));
-  const mailRows = mailLinks.length ? mailLinks.map(link => `
-    <div class="border rounded p-2 d-flex flex-column flex-md-row align-items-md-center gap-2" data-project-mail-link="${escapeHtml(link.messageId)}">
-      <div class="flex-grow-1 min-w-0">
-        <div class="fw-semibold text-truncate">${escapeHtml(link.subject)}</div>
-        <div class="small text-muted">${escapeHtml(link.dateLabel || link.date || 'geen datum')} · ${escapeHtml(link.directionLabel)}</div>
-      </div>
-      <a class="btn btn-sm btn-outline-primary" href="${escapeHtml(link.openUrl)}" target="_blank" rel="noopener">
-        <i class="fa-solid fa-envelope-open-text me-1"></i>Open
-      </a>
-    </div>`).join('') : '<p class="text-muted mb-0">Nog geen mails gekoppeld.</p>';
-  const suggestedRows = nextActions.length ? nextActions.map(a => `
-    <span class="d-inline-flex gap-1 me-1 mb-1">
-      <button type="button" class="btn btn-sm btn-outline-primary" data-add-suggested-task="${escapeHtml(a.type)}" data-title="${escapeHtml(a.label)}" data-assignee="${escapeHtml(a.assignee || '')}">
-        <i class="fa-solid fa-plus me-1"></i>${escapeHtml(a.label)}
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-warning" data-ignore-suggested-task="${escapeHtml(a.type)}" data-title="${escapeHtml(a.label)}" data-assignee="${escapeHtml(a.assignee || '')}">
-        Negeer
-      </button>
-    </span>`).join('') : '<span class="text-muted small">Geen automatische suggesties.</span>';
-  return `
-    <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0"><i class="fa-solid fa-list-check text-primary me-2"></i>Opvolging &amp; tijdlijn</h5>
-      </div>
-      <div class="card-body">
-        <div class="alert alert-info small">
-          Taken zijn voorlopig bedoeld voor Kevin of Ruben. Onzekere info kan je hier bewust als taak/activiteit markeren in plaats van ze als feit te interpreteren.
-        </div>
-        <h6 class="text-muted">Volgende beste acties</h6>
-        <div class="mb-3">${suggestedRows}</div>
-        <h6 class="text-muted">Taken</h6>
-        <div class="d-flex flex-column gap-2 mb-2" id="opsTaskList">${taskRows}</div>
-        <button type="button" class="btn btn-sm btn-outline-primary" id="opsAddTask"><i class="fa-solid fa-plus me-1"></i>Taak toevoegen</button>
-        <hr />
-        <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
-          <h6 class="text-muted mb-0">Gekoppelde mails</h6>
-          <a class="btn btn-sm btn-outline-secondary" href="mailbox-view.html" target="_blank" rel="noopener"><i class="fa-solid fa-inbox me-1"></i>Mailbox</a>
-        </div>
-        <div class="d-flex flex-column gap-2 mt-2 mb-2" id="opsMailLinkList">${mailRows}</div>
-        <hr />
-        <h6 class="text-muted">Tijdlijn / activiteiten</h6>
-        <div class="d-flex flex-column gap-2 mb-2" id="opsActivityList">${activityRows}</div>
-        <div class="row g-2">
-          <div class="col-12 col-md-3">
-            <select class="form-select form-select-sm" id="opsActivityType">
-              <option value="phone_call">Telefoon</option>
-              <option value="mail_sent">Mail verstuurd</option>
-              <option value="mail_received">Mail ontvangen</option>
-              <option value="appointment_scheduled">Afspraak gepland</option>
-              <option value="site_visit">Plaatsbezoek</option>
-              <option value="offer_sent">Offerte verzonden</option>
-              <option value="installation_done">Installatie uitgevoerd</option>
-              <option value="internal_note">Interne notitie</option>
-            </select>
-          </div>
-          <div class="col-12 col-md-2"><input type="date" class="form-control form-control-sm" id="opsActivityDate" /></div>
-          <div class="col-12 col-md"><input type="text" class="form-control form-control-sm" id="opsActivityTitle" placeholder="Korte omschrijving" /></div>
-          <div class="col-12 col-md-auto"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="opsAddActivity">Activiteit toevoegen</button></div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function rerenderOps() {
-  const slot = document.getElementById('blokOps-slot');
-  if (!slot) return;
-  slot.innerHTML = sectionOps();
-  wireOps();
-}
-
-function wireOps() {
-  document.getElementById('opsAddTask')?.addEventListener('click', () => {
-    const now = new Date().toISOString();
-    _project.tasks = _project.tasks || [];
-    _project.tasks.push(normalizeProjectTask({ title: '', assignee: null, createdAt: now, updatedAt: now }));
-    rerenderOps();
-  });
-  document.querySelectorAll('[data-add-suggested-task]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const now = new Date().toISOString();
-      _project.tasks = _project.tasks || [];
-      _project.tasks.push(normalizeProjectTask({
-        type: btn.getAttribute('data-add-suggested-task'),
-        title: btn.getAttribute('data-title'),
-        assignee: btn.getAttribute('data-assignee'),
-        source: 'suggested',
-        createdAt: now,
-        updatedAt: now,
-      }));
-      rerenderOps();
-    });
-  });
-  document.querySelectorAll('[data-ignore-suggested-task]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const now = new Date().toISOString();
-      _project.tasks = _project.tasks || [];
-      _project.tasks.push(normalizeProjectTask({
-        type: btn.getAttribute('data-ignore-suggested-task'),
-        title: btn.getAttribute('data-title'),
-        assignee: btn.getAttribute('data-assignee'),
-        status: 'cancelled',
-        source: 'manual',
-        notes: 'Genegeerd vanuit projectopvolging.',
-        createdAt: now,
-        updatedAt: now,
-        cancelledAt: now,
-      }));
-      rerenderOps();
-    });
-  });
-  document.querySelectorAll('[data-task-field]').forEach(el => {
-    el.addEventListener('input', _updateTaskFromRow);
-    el.addEventListener('change', _updateTaskFromRow);
-  });
-  document.querySelectorAll('[data-task-delete]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.getAttribute('data-task-delete');
-      _project.tasks = (_project.tasks || []).filter(t => t.id !== id);
-      rerenderOps();
-    });
-  });
-  document.getElementById('opsAddActivity')?.addEventListener('click', () => {
-    const title = document.getElementById('opsActivityTitle')?.value.trim();
-    if (!title) return;
-    _project.activities = _project.activities || [];
-    _project.activities.push(normalizeProjectActivity({
-      type: document.getElementById('opsActivityType')?.value,
-      occurredAt: document.getElementById('opsActivityDate')?.value || new Date().toISOString().slice(0, 10),
-      title,
-      source: 'manual',
-    }));
-    rerenderOps();
-  });
-}
-
-function _updateTaskFromRow(e) {
-  const row = e.target.closest('[data-task-id]');
-  const id = row && row.getAttribute('data-task-id');
-  const task = (_project.tasks || []).find(t => t.id === id);
-  if (!task) return;
-  task[e.target.getAttribute('data-task-field')] = e.target.value || null;
-  task.updatedAt = new Date().toISOString();
-  if (task.status === 'done' && !task.completedAt) task.completedAt = task.updatedAt;
-  if (task.status === 'cancelled' && !task.cancelledAt) task.cancelledAt = task.updatedAt;
-}
-
 function sectionBlokD() {
   const serials = _project.serialNumbers || [];
   const serialRowsHtml = serials.map(s => _renderSerialRow(s)).join('')
@@ -1689,7 +1496,6 @@ function wireBlokD() {
           const entry = { id: _genSerialId(), value: val, category: 'batterij', source: 'manual', bebatStatus: 'pending', bebatRegisteredAt: null, bebatReference: null, photoStoragePath: null, uploadedAt: null, uploadedBy: null };
           _project.serialNumbers.push(entry);
           rerenderBlokD();
-          rerenderOps();
           // Focus what used to be the trailing input (now the last real row)
           setTimeout(() => {
             const rows = document.querySelectorAll('#peSerialList .serial-row');
@@ -1712,7 +1518,6 @@ function wireBlokD() {
               _project.serialNumbers = _project.serialNumbers || [];
               _project.serialNumbers.push(entry);
               rerenderBlokD();
-              rerenderOps();
             } catch (err) {
               row.dataset.serialAdding = 'false';
               e.target.readOnly = false;
@@ -1742,7 +1547,6 @@ function wireBlokD() {
             try { await updateProjectSerial(PROJECT_ID, id, patchToSave); }
             catch (err) { showToast('Opslaan mislukt: ' + (err && err.message ? err.message : String(err)), 'danger'); }
           }
-          if ('category' in patchToSave || 'bebatStatus' in patchToSave) rerenderOps();
         }, 600);
       }
     });
@@ -1766,7 +1570,6 @@ function wireBlokD() {
       }
       _project.serialNumbers = (_project.serialNumbers || []).filter(x => x.id !== id);
       rerenderBlokD();
-      rerenderOps();
     });
   });
 
@@ -1980,9 +1783,6 @@ function collectFromForm() {
     supplier:      _project.supplier,
     calcDefaults:  _project.calcDefaults,
     installedSolution: normalizeInstalledSolution(_project.installedSolution || {}),
-    activities:    (_project.activities || []).map(normalizeProjectActivity),
-    tasks:         (_project.tasks || []).map(normalizeProjectTask).filter(t => t.title),
-    mailLinks:     _project.mailLinks || [],
     filesInbox:    _project.filesInbox || [],
     batteryRegistry: _project.batteryRegistry || { bebatStatus: 'not_needed', entries: [] },
     serialNumbers: _project.serialNumbers || [],
