@@ -25,6 +25,12 @@ describe('index custom composition UI', () => {
     expect(source).toContain('id="composerCompositionDescription"');
     expect(source).toContain('Uitleg voor klant');
     expect(source).toContain("_customCompositions[type].description = (modal.querySelector('#composerCompositionDescription')?.value || '').trim();");
+    expect(source).toContain('const linesUnchanged = JSON.stringify(previousLines) === JSON.stringify(nextLines);');
+    expect(source).toContain('if (linesUnchanged) _syncSavedCompositionMetadata(type);');
+    expect(source).toContain('function _syncSavedCompositionMetadata(type)');
+    expect(source).toContain("cr.cfg.compositionDescription = comp.description || '';");
+    expect(source).toContain('renderScenarioGrid(_saved);');
+    expect(source).toContain('saveProjectCalcRun(_saved).catch');
     expect(source).toContain('function renderCompositionDescriptionHtml');
     expect(source).toContain('composition-description');
     expect(source).toContain('const explicitName = (modal.querySelector(\'#composerCompositionName\')?.value || \'\').trim();');

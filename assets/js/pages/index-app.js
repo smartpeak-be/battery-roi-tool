@@ -810,14 +810,42 @@ function _saveComposerModal() {
   const modal = document.getElementById('configComposerModal');
   const type = modal?.dataset.configType;
   if (!type) return;
-  _compositionLinesByType[type] = _readComposerModalLines();
+  const previousLines = serializeCompositionLines(_compositionLinesByType[type] || [], {
+    inspectionProductId: _inspectionProduct && _inspectionProduct.id,
+  });
+  const nextLines = _readComposerModalLines();
+  _compositionLinesByType[type] = nextLines;
   if (_customCompositions[type]) {
     const explicitName = (modal.querySelector('#composerCompositionName')?.value || '').trim();
     _customCompositions[type].name = explicitName || _compositionNameFromLines(_compositionLinesByType[type]);
     _customCompositions[type].description = (modal.querySelector('#composerCompositionDescription')?.value || '').trim();
   }
+  const linesUnchanged = JSON.stringify(previousLines) === JSON.stringify(nextLines);
+  if (linesUnchanged) _syncSavedCompositionMetadata(type);
   _closeComposerModal();
   renderConfigPickers();
+}
+
+function _syncSavedCompositionMetadata(type) {
+  const comp = _customCompositions[type];
+  if (!comp || !_saved || !Array.isArray(_saved.configResults)) return;
+  let changed = false;
+  _saved.configResults.forEach(cr => {
+    if (!cr?.cfg || cr.cfg.type !== type) return;
+    cr.cfg.omschrijving = comp.name || cr.cfg.omschrijving;
+    cr.cfg.name = comp.name || cr.cfg.name;
+    cr.cfg.description = comp.name || cr.cfg.description;
+    cr.cfg.compositionDescription = comp.description || '';
+    changed = true;
+  });
+  if (!changed) return;
+  renderScenarioGrid(_saved);
+  if (_projectId && _projectDoc) {
+    saveProjectCalcRun(_saved).catch(err => {
+      console.error('Composition metadata save failed:', err);
+      showToast('⚠️ Uitleg niet opgeslagen — controleer netwerk');
+    });
+  }
 }
 
 // Build the <details> block for one config row. `lines` is the seeded
