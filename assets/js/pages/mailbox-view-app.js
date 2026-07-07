@@ -1,7 +1,6 @@
 import { escapeHtml, showState, showToast } from '../shared-helpers.js';
 import {
   filterMailboxRows,
-  linkMailboxToProjectsViaFirebaseFunction,
   listFoldersViaFirebaseFunction,
   listMailboxMessages,
   mailboxProviderStatus,
@@ -267,29 +266,6 @@ async function syncAllMailboxes() {
   }
 }
 
-async function linkAllMailboxMessagesToProjects() {
-  const btn = document.getElementById('btnLinkMailboxProjects');
-  const original = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Koppelen…';
-  const accounts = activeMailboxAccounts();
-  updateSyncStatus(`Mailbox-cache van ${accounts.length} mailboxen wordt gekoppeld aan projecten op basis van klantmailadres/naam. In projecten bewaren we alleen onderwerp, datum, richting en open-link.`, 'info');
-  try {
-    const results = [];
-    for (const account of accounts) {
-      const result = await linkMailboxToProjectsViaFirebaseFunction({ account, folderKey: 'all' });
-      results.push(result);
-    }
-    const linkedMessages = results.reduce((sum, item) => sum + (item.linkedMessages || 0), 0);
-    const linkedProjects = results.reduce((sum, item) => sum + (item.linkedProjects || 0), 0);
-    updateSyncStatus(`Projectkoppeling klaar: ${linkedMessages} mails bij ${linkedProjects} projecten.`, 'success');
-    showToast('Mails gekoppeld aan projecten', 'success');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = original;
-  }
-}
-
 async function loadSettingsAndMessages() {
   const settings = await getSettings();
   _settings = normalizeMailboxSettings(settings || {});
@@ -350,12 +326,6 @@ function wireEvents() {
     syncAllMailboxes().catch(e => {
       updateSyncStatus('Mailbox-sync mislukt: ' + e.message, 'danger');
       showToast('Mailbox-sync mislukt: ' + e.message, 'danger');
-    });
-  });
-  document.getElementById('btnLinkMailboxProjects').addEventListener('click', () => {
-    linkAllMailboxMessagesToProjects().catch(e => {
-      updateSyncStatus('Projectkoppeling mislukt: ' + e.message, 'danger');
-      showToast('Projectkoppeling mislukt: ' + e.message, 'danger');
     });
   });
   document.getElementById('mailboxFilter').addEventListener('change', e => {

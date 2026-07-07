@@ -2,7 +2,6 @@ import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, with
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 import { mountProjectDocuments, mergeProjectDocuments, resolveDocumentDownloadUrls } from '../project-documents.js';
 import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
-import { getMailboxMessageViaFirebaseFunction, normalizeMailboxMessage, normalizeProjectMailLink } from '../mailbox-view.js';
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
@@ -50,14 +49,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Debounce: re-render only (already-loaded list) without re-fetching Firestore.
     renderCurrent(true);
   });
-  document.querySelectorAll('[data-task-assignee]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _taskAssigneeFilter = btn.dataset.taskAssignee || 'mine';
-      document.querySelectorAll('[data-task-assignee]').forEach(b => b.classList.toggle('active', b === btn));
-      renderTaskInbox();
-    });
-  });
-
   // Leads "Toon verwijderde" toggle: persisted, re-render only (cache already loaded).
   const leadsToggle = document.getElementById('toggleShowDeletedLeads');
   try {
@@ -157,17 +148,13 @@ function rowHTML(p, isDeleted) {
   const warnOfferte = needsOfferteWarning(p)
     ? `<span class="row-warning row-warning-offerte" role="img" aria-label="Offertes ontbreken" title="Offertes ontbreken — klant zit in offerte-fase maar er zijn configs zonder PDF."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
     : '';
-  const nextActionCount = nextActionsForProject(p).length;
-  const opsBadge = nextActionCount > 0
-    ? `<span class="badge text-bg-info ms-1" title="${nextActionCount} voorgestelde opvolgactie(s)">${nextActionCount}</span>`
-    : '';
   const bebat = bebatSummaryForProject(p);
   const bebatWarn = bebat.pending > 0
     ? `<span class="row-warning" role="img" aria-label="Bebat nog te registreren" title="${bebat.pending} batterijserienummer(s) nog Bebat registreren."><i class="fa-solid fa-recycle icon-warn" aria-hidden="true"></i></span>`
     : '';
   return `
     <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${p.id}">
-      <td>${chat}${warn}${warnOfferte}${bebatWarn}<button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold projectNameBtn" data-id="${p.id}">${escapeHtml(getProjectLabel(p))}</button>${opsBadge}</td>
+      <td>${chat}${warn}${warnOfferte}${bebatWarn}<button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold projectNameBtn" data-id="${p.id}">${escapeHtml(getProjectLabel(p))}</button></td>
       <td class="d-none d-sm-table-cell">${escapeHtml(p.customerName || '')}</td>
       <td>${statusChipHTML(p.status, p.id)}</td>
       <td class="d-none d-sm-table-cell text-muted small">${updated}</td>
@@ -185,7 +172,6 @@ function rowHTML(p, isDeleted) {
 
 // Cached list of projects from Firestore. Filtering + render happens on this cache.
 let _projectsCache = { active: [], deleted: [] };
-let _taskAssigneeFilter = 'mine';
 
 // Pagination state (list view only; board view shows all projects).
 const PAGE_SIZE = 25;
@@ -202,7 +188,6 @@ async function refreshProjectList(showSpinnerOverlay = false) {
       _projectsCache.active  = await listActiveProjects();
       _projectsCache.deleted = showDeleted ? await listDeletedProjects() : [];
       renderCurrent();
-      renderTaskInbox();
     } catch (e) {
       el.innerHTML = `<div class="alert alert-danger">Kon projecten niet laden: ${escapeHtml(e && e.message ? e.message : String(e))}</div>`;
     }
@@ -218,111 +203,6 @@ async function refreshProjectList(showSpinnerOverlay = false) {
 function currentView() {
   if (window.innerWidth < 992) return 'list';
   return localStorage.getItem('smartpeak.dashboardView') || 'list';
-}
-
-function currentTaskAssignee() {
-  if (_taskAssigneeFilter === 'mine') return assigneeForEmail(currentUserEmail());
-  return _taskAssigneeFilter || 'all';
-}
-
-function taskStatusBadge(row) {
-  if (row.rowType === 'suggested') return '<span class="badge text-bg-info">Suggestie</span>';
-  if (row.status === 'in_progress') return '<span class="badge text-bg-primary">Bezig</span>';
-  return '<span class="badge text-bg-secondary">Open</span>';
-}
-
-function taskRowHTML(row) {
-  const assignee = row.assigneeLabel || assigneeLabel(row.assignee);
-  const due = row.dueDate ? ` · deadline ${escapeHtml(fmtDateString(row.dueDate))}` : '';
-  const source = row.source === 'assistant' ? 'AmaAi' : row.source === 'suggested' ? 'suggestie' : 'manueel';
-  const startLabel = row.rowType === 'suggested' ? 'Maak taak' : row.status === 'in_progress' ? 'Bezig' : 'Start';
-  return `
-    <div class="border rounded p-2 d-flex flex-column flex-lg-row gap-2 align-items-lg-center" data-task-row-type="${escapeHtml(row.rowType)}" data-project-id="${escapeHtml(row.projectId || '')}" data-task-id="${escapeHtml(row.taskId || '')}" data-task-type="${escapeHtml(row.type || '')}" data-task-title="${escapeHtml(row.title || '')}" data-task-assignee="${escapeHtml(row.assignee || '')}">
-      <div class="flex-grow-1">
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-          ${taskStatusBadge(row)}
-          <span class="fw-semibold">${escapeHtml(row.title || '')}</span>
-        </div>
-        <div class="small text-muted">
-          <a href="project-edit.html?project=${encodeURIComponent(row.projectId)}" class="text-decoration-none">${escapeHtml(row.projectLabel || '(zonder naam)')}</a>
-          ${row.customerName ? ` · ${escapeHtml(row.customerName)}` : ''}
-          · ${escapeHtml(row.projectStatusLabel || row.projectStatus || '')}
-          · ${escapeHtml(assignee)}${due}
-          · bron: ${escapeHtml(source)}
-        </div>
-      </div>
-      <div class="d-flex gap-1 justify-content-lg-end">
-        <button type="button" class="btn btn-sm btn-outline-primary taskStartBtn" ${row.status === 'in_progress' ? 'disabled' : ''}>${startLabel}</button>
-        ${row.rowType === 'task' ? '<button type="button" class="btn btn-sm btn-outline-success taskDoneBtn">Gedaan</button>' : ''}
-        <button type="button" class="btn btn-sm btn-outline-secondary taskDrawerBtn">Project</button>
-      </div>
-    </div>`;
-}
-
-function renderTaskInbox() {
-  const list = document.getElementById('taskInboxList');
-  const count = document.getElementById('taskInboxCount');
-  if (!list || !count) return;
-  const assignee = currentTaskAssignee();
-  const rows = projectTaskRowsForProjects(_projectsCache.active, { assignee }).slice(0, 12);
-  count.textContent = rows.length;
-  if (!rows.length) {
-    const who = assignee === 'all' ? 'iedereen' : assigneeLabel(assignee);
-    list.innerHTML = `<p class="sp-empty-state">Geen open taken of voorgestelde acties voor ${escapeHtml(who)}.</p>`;
-    return;
-  }
-  list.innerHTML = `<div class="d-flex flex-column gap-2">${rows.map(taskRowHTML).join('')}</div>`;
-  wireTaskInboxActions(list);
-}
-
-async function updateTaskFromDashboard(rowEl, targetStatus) {
-  const projectId = rowEl.dataset.projectId;
-  if (!projectId) return;
-  await withSpinner(async () => {
-    try {
-      const project = await getProject(projectId);
-      if (!project) throw new Error('Project niet gevonden');
-      const now = new Date().toISOString();
-      const tasks = (mergeProjectMetadata(project).tasks || []).map(normalizeProjectTask);
-      if (rowEl.dataset.taskRowType === 'suggested') {
-        tasks.push(normalizeProjectTask({
-          type: rowEl.dataset.taskType,
-          title: rowEl.dataset.taskTitle,
-          assignee: rowEl.dataset.taskAssignee,
-          status: 'in_progress',
-          source: 'manual',
-          createdAt: now,
-          updatedAt: now,
-        }));
-      } else {
-        const task = tasks.find(t => t.id === rowEl.dataset.taskId);
-        if (!task) throw new Error('Taak niet gevonden');
-        task.status = targetStatus;
-        task.updatedAt = now;
-        if (targetStatus === 'done') task.completedAt = now;
-      }
-      await updateProjectMetadata(projectId, { tasks });
-      const idx = _projectsCache.active.findIndex(p => p.id === projectId);
-      if (idx >= 0) _projectsCache.active[idx] = { ..._projectsCache.active[idx], tasks };
-      renderTaskInbox();
-      renderCurrent();
-      showToast(targetStatus === 'done' ? 'Taak afgewerkt' : 'Taak gestart', 'success');
-    } catch (err) {
-      showToast('Taak bijwerken mislukt: ' + (err && err.message ? err.message : err), 'danger');
-    }
-  });
-}
-
-function wireTaskInboxActions(root) {
-  root.querySelectorAll('.taskStartBtn').forEach(btn => {
-    btn.addEventListener('click', () => updateTaskFromDashboard(btn.closest('[data-project-id]'), 'in_progress'));
-  });
-  root.querySelectorAll('.taskDoneBtn').forEach(btn => {
-    btn.addEventListener('click', () => updateTaskFromDashboard(btn.closest('[data-project-id]'), 'done'));
-  });
-  root.querySelectorAll('.taskDrawerBtn').forEach(btn => {
-    btn.addEventListener('click', () => openDrawer(btn.closest('[data-project-id]').dataset.projectId));
-  });
 }
 
 // Apply filters (search + show-finished) to the cached projects and render in the
@@ -463,13 +343,11 @@ function kanbanCardHTML(p) {
   const warnOfferte = needsOfferteWarning(p)
     ? `<span class="row-warning row-warning-offerte" role="img" aria-label="Offertes ontbreken" title="Offertes ontbreken — klant zit in offerte-fase maar er zijn configs zonder PDF."><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i></span>`
     : '';
-  const nextActionCount = nextActionsForProject(p).length;
-  const opsBadge = nextActionCount > 0 ? `<span class="badge text-bg-info ms-1">${nextActionCount}</span>` : '';
   const bebat = bebatSummaryForProject(p);
   const bebatWarn = bebat.pending > 0 ? `<span class="row-warning" title="Bebat nog te registreren"><i class="fa-solid fa-recycle icon-warn" aria-hidden="true"></i></span>` : '';
   return `
     <div class="kanban-card" draggable="true" data-id="${p.id}">
-      <div class="kanban-card-title" data-id="${p.id}">${chat}${warn}${warnOfferte}${bebatWarn}${escapeHtml(getProjectLabel(p))}${opsBadge}</div>
+      <div class="kanban-card-title" data-id="${p.id}">${chat}${warn}${warnOfferte}${bebatWarn}${escapeHtml(getProjectLabel(p))}</div>
       <div class="kanban-card-customer">${escapeHtml(p.customerName || '')}</div>
       <div class="kanban-card-footer">
         ${statusChipHTML(p.status, p.id)}
@@ -745,62 +623,6 @@ function closeDrawer() {
   }
   const el = document.getElementById('drawer');
   bootstrap.Offcanvas.getOrCreateInstance(el).hide();
-}
-
-function dashboardMailFrameSrcdoc(row) {
-  return `<!doctype html><html><head><base target="_blank"><style>body{margin:0;padding:16px;background:#fff;color:#111827;font-family:Arial,sans-serif;overflow-wrap:anywhere;}img{max-width:100%;height:auto;}table{max-width:100%;}a{color:#0d6efd;}</style></head><body>${row.bodyHtml || ''}</body></html>`;
-}
-
-function ensureDashboardMailModal() {
-  let modal = document.getElementById('dashboardMailModal');
-  if (modal) return modal;
-  modal = document.createElement('div');
-  modal.className = 'modal fade mailbox-fullscreen-modal';
-  modal.id = 'dashboardMailModal';
-  modal.tabIndex = -1;
-  modal.setAttribute('aria-labelledby', 'dashboardMailModalTitle');
-  modal.setAttribute('aria-hidden', 'true');
-  modal.innerHTML = `
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header">
-          <div>
-            <div class="small text-muted" id="dashboardMailModalMeta">Mail</div>
-            <h2 class="modal-title h5" id="dashboardMailModalTitle">Bericht</h2>
-          </div>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
-        </div>
-        <div class="modal-body p-0" id="dashboardMailModalBody"></div>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-  return modal;
-}
-
-function renderDashboardMailModal(row) {
-  const modal = ensureDashboardMailModal();
-  modal.querySelector('#dashboardMailModalTitle').textContent = row.subject || 'Bericht';
-  modal.querySelector('#dashboardMailModalMeta').textContent = `${row.mailboxLabel || 'Kevin'} · ${row.folderLabel || ''} · ${row.dateLabel || ''}`;
-  const body = modal.querySelector('#dashboardMailModalBody');
-  if (row.bodyHtml) {
-    body.innerHTML = '<iframe class="mailbox-html-frame mailbox-html-frame-full" title="Mailinhoud" sandbox="allow-popups allow-popups-to-escape-sandbox"></iframe>';
-    body.querySelector('.mailbox-html-frame').srcdoc = dashboardMailFrameSrcdoc(row);
-  } else {
-    body.innerHTML = `<div class="p-4">${escapeHtml(row.body || row.preview || '').replaceAll('\n', '<br>')}</div>`;
-  }
-  bootstrap.Modal.getOrCreateInstance(modal).show();
-}
-
-async function openDashboardMailModal(link) {
-  const normalized = normalizeProjectMailLink(link);
-  const message = await getMailboxMessageViaFirebaseFunction({
-    accountKey: normalized.mailboxKey || 'kevin',
-    folderKey: normalized.folderKey || 'inbox',
-    messageId: normalized.messageId || normalized.cacheId,
-  });
-  const account = { key: normalized.mailboxKey || 'kevin', label: normalized.mailboxLabel || 'Kevin' };
-  const folder = { key: normalized.folderKey || 'inbox', label: normalized.folderLabel || '' };
-  renderDashboardMailModal(normalizeMailboxMessage(message || normalized, account, folder));
 }
 
 function setDrawerDocumentsCount(count, entries = []) {
@@ -1721,59 +1543,13 @@ function renderDrawer(project) {
     `);
   }
 
-  const nextActions = nextActionsForProject(project);
-  const openTasks = (m.tasks || []).filter(t => !['done', 'cancelled'].includes(t.status));
   const bebat = bebatSummaryForProject(project);
-  const nextActionsHtml = nextActions.length
-    ? `<div class="d-flex flex-column gap-1">${nextActions.map(a => `<div class="small"><i class="fa-solid fa-arrow-right text-primary me-1"></i>${escapeHtml(a.label)} <span class="badge text-bg-light">${escapeHtml(a.assignee || '')}</span></div>`).join('')}</div>`
-    : '<p class="text-muted small mb-0">Geen automatische suggesties.</p>';
-  const tasksHtml = openTasks.length
-    ? `<div class="d-flex flex-column gap-1">${openTasks.slice(0, 6).map(t => `<div class="small"><span class="badge ${t.status === 'in_progress' ? 'text-bg-primary' : 'text-bg-secondary'}">${t.status === 'in_progress' ? 'Bezig' : 'Open'}</span> ${escapeHtml(t.title)}${t.assignee ? ` · ${escapeHtml(t.assignee)}` : ''}${t.dueDate ? ` · ${escapeHtml(fmtDateString(t.dueDate))}` : ''}</div>`).join('')}</div>`
-    : '<p class="text-muted small mb-0">Geen open taken.</p>';
-  sections.push(`
-    <section class="border-bottom pb-3 mb-3">
-      <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Opvolging</h6>
-      <div class="mb-2"><strong class="small">Volgende acties</strong>${nextActionsHtml}</div>
-      <div><strong class="small">Open taken</strong>${tasksHtml}</div>
-    </section>
-  `);
-  const mailLinks = (m.mailLinks || []).map(normalizeProjectMailLink)
-    .sort((a, b) => String(b.date || b.dateLabel).localeCompare(String(a.date || a.dateLabel)))
-    .slice(0, 8);
-  const mailsHtml = mailLinks.length
-    ? `<div class="d-flex flex-column gap-2">${mailLinks.map(link => `
-      <div class="d-flex align-items-center gap-2 border rounded p-2">
-        <div class="flex-grow-1 min-w-0">
-          <div class="small fw-semibold text-truncate">${escapeHtml(link.subject)}</div>
-          <div class="small text-muted">${escapeHtml(link.dateLabel || link.date || 'geen datum')} · ${escapeHtml(link.directionLabel)}</div>
-        </div>
-        <button type="button" class="btn btn-sm btn-outline-primary" data-dashboard-mail-open="${escapeHtml(link.messageId || link.cacheId)}" data-mailbox-key="${escapeHtml(link.mailboxKey || 'kevin')}" data-folder-key="${escapeHtml(link.folderKey || 'inbox')}">Open</button>
-      </div>`).join('')}</div>`
-    : '<p class="text-muted small mb-0">Nog geen mails gekoppeld.</p>';
-  sections.push(`
-    <section class="border-bottom pb-3 mb-3">
-      <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Mails</h6>
-      ${mailsHtml}
-    </section>
-  `);
   sections.push(`
     <section class="border-bottom pb-3 mb-3">
       <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-recycle" aria-hidden="true"></i> Bebat</h6>
       <div class="small">Batterijserienummers: <strong>${bebat.total}</strong> · geregistreerd: <strong>${bebat.registered}</strong> · nog te registreren: <strong>${bebat.pending}</strong></div>
     </section>
   `);
-
-  const recentActivities = (m.activities || []).slice().reverse().slice(0, 5);
-  if (recentActivities.length) {
-    sections.push(`
-      <section class="border-bottom pb-3 mb-3">
-        <h6 class="mb-2 text-uppercase text-muted"><i class="fa-solid fa-timeline" aria-hidden="true"></i> Tijdlijn</h6>
-        <div class="d-flex flex-column gap-2">
-          ${recentActivities.map(a => `<div class="border-start border-3 ps-2"><div class="text-muted small">${escapeHtml(a.type)} · ${escapeHtml(a.occurredAt || '')} · ${escapeHtml(a.source || 'manual')}</div><div class="small">${escapeHtml(a.title || a.notes || 'Activiteit')}</div></div>`).join('')}
-        </div>
-      </section>
-    `);
-  }
 
   const voltageRows = Object.entries(m.technical.voltageMeasurements || {})
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
@@ -1927,29 +1703,6 @@ function renderDrawer(project) {
       });
     });
   }
-
-  document.querySelectorAll('[data-dashboard-mail-open]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const mailLinks = (mergeProjectMetadata(project).mailLinks || []).map(normalizeProjectMailLink);
-      const id = btn.getAttribute('data-dashboard-mail-open');
-      const link = mailLinks.find(item => item.messageId === id || item.cacheId === id) || {
-        messageId: id,
-        mailboxKey: btn.getAttribute('data-mailbox-key'),
-        folderKey: btn.getAttribute('data-folder-key'),
-      };
-      btn.disabled = true;
-      const oldText = btn.textContent;
-      btn.textContent = 'Laden…';
-      try {
-        await openDashboardMailModal(link);
-      } catch (err) {
-        showToast('Mail openen mislukt: ' + (err && err.message ? err.message : err), 'danger');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = oldText;
-      }
-    });
-  });
 
   const reviewBtn = document.getElementById('drawerReviewLinkBtn');
   if (reviewBtn) {

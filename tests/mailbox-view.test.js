@@ -4,7 +4,6 @@ import {
   DEFAULT_MAILBOX_ACCOUNTS,
   filterMailboxRows,
   getMailboxMessageViaFirebaseFunction,
-  linkMailboxToProjectsViaFirebaseFunction,
   listFoldersViaFirebaseFunction,
   listMailboxMessages,
   listMessagesViaFirebaseFunction,
@@ -93,11 +92,9 @@ describe('mailbox view', () => {
     await listMessagesViaFirebaseFunction({ account: { key: 'ruben' }, folder: { key: 'inbox', providerFolder: 'INBOX' }, limit: 25 });
     await listFoldersViaFirebaseFunction({ account: { key: 'contact' } });
     await syncMailboxViaFirebaseFunction({ account: { key: 'ruben' }, folderKey: 'all' });
-    await linkMailboxToProjectsViaFirebaseFunction({ account: { key: 'contact' }, folderKey: 'all' });
-
-    expect(fetch).toHaveBeenCalledTimes(4);
-    expect(fetch.mock.calls.map(call => JSON.parse(call[1].body).accountKey)).toEqual(['ruben', 'contact', 'ruben', 'contact']);
-    expect(fetch.mock.calls.map(call => JSON.parse(call[1].body).action || 'list')).toEqual(['list', 'folders', 'sync', 'linkProjects']);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls.map(call => JSON.parse(call[1].body).accountKey)).toEqual(['ruben', 'contact', 'ruben']);
+    expect(fetch.mock.calls.map(call => JSON.parse(call[1].body).action || 'list')).toEqual(['list', 'folders', 'sync']);
     vi.unstubAllGlobals();
   });
 
@@ -162,24 +159,20 @@ describe('mailbox view', () => {
     expect(Object.keys(received)).not.toContain('bodyHtml');
   });
 
-  it('toont gekoppelde mails in project en dashboard met enkel onderwerp, datum, richting en open-knop', () => {
-    expect(projectEditSource).toContain('Gekoppelde mails');
-    expect(projectEditSource).toContain('normalizeProjectMailLink');
-    expect(projectEditSource).toContain('link.subject');
-    expect(projectEditSource).toContain('link.directionLabel');
-    expect(projectEditSource).toContain('link.openUrl');
-    expect(projectEditSource).not.toContain('link.body');
-    expect(projectEditSource).not.toContain('link.bodyHtml');
-    expect(dashboardAppSource).toContain('> Mails</h6>');
-    expect(dashboardAppSource).toContain('normalizeProjectMailLink');
+  it('houdt gekoppelde mails uit project-edit en dashboard opvolgingsblokken', () => {
+    expect(projectEditSource).not.toContain('Gekoppelde mails');
+    expect(projectEditSource).not.toContain('normalizeProjectMailLink');
+    expect(projectEditSource).not.toContain('link.subject');
+    expect(projectEditSource).not.toContain('link.directionLabel');
+    expect(projectEditSource).not.toContain('link.openUrl');
+    expect(dashboardAppSource).not.toContain('> Mails</h6>');
   });
 
-  it('opent dashboard-mails in een modal zonder nieuwe mailbox-tab', async () => {
-    expect(dashboardAppSource).toContain('data-dashboard-mail-open');
-    expect(dashboardAppSource).toContain('openDashboardMailModal');
-    expect(dashboardAppSource).toContain('dashboardMailModal');
-    expect(dashboardAppSource).toContain('getMailboxMessageViaFirebaseFunction');
-    expect(dashboardAppSource).not.toContain('target="_blank" rel="noopener">Open</a>');
+  it('haalt dashboard-mailmodal uit de projectopvolging', async () => {
+    expect(dashboardAppSource).not.toContain('data-dashboard-mail-open');
+    expect(dashboardAppSource).not.toContain('openDashboardMailModal');
+    expect(dashboardAppSource).not.toContain('dashboardMailModal');
+    expect(dashboardAppSource).not.toContain('getMailboxMessageViaFirebaseFunction');
 
     const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message: { id: 'inbox-1', subject: 'Vraag', body: 'Mailtekst' } }) });
     vi.stubGlobal('firebase', {
@@ -193,27 +186,24 @@ describe('mailbox view', () => {
     vi.unstubAllGlobals();
   });
 
-  it('heeft backend sync die bestaande mailbox-cache aan projecten linkt', () => {
-    expect(pageSource).toContain('btnLinkMailboxProjects');
-    expect(appSource).toContain('linkMailboxToProjectsViaFirebaseFunction');
+  it('houdt mailbox-sync los van projectopvolging', () => {
+    expect(pageSource).not.toContain('btnLinkMailboxProjects');
+    expect(appSource).not.toContain('linkMailboxToProjectsViaFirebaseFunction');
     expect(appSource).toContain('function activeMailboxAccounts');
     expect(appSource).not.toContain("_settings.accounts.find(item => item.key === 'kevin')");
-    expect(mailboxModuleSource).toContain("action: 'linkProjects'");
+    expect(mailboxModuleSource).not.toContain("action: 'linkProjects'");
     expect(appSource).toContain("_initialParams.get('message')");
-    expect(functionsSource).toContain('linkMailboxCacheToProjects');
+    expect(functionsSource).not.toContain('linkMailboxCacheToProjects');
     expect(functionsSource).toContain('getCachedMessage');
-    expect(functionsSource).toContain("action === 'linkProjects'");
+    expect(functionsSource).not.toContain("action === 'linkProjects'");
     expect(functionsSource).toContain("action === 'getMessage'");
-    expect(functionsSource).toContain('projectMailLinkFromMessage');
-    expect(functionsSource).toContain('mailboxLinkKey');
-    expect(functionsSource).toContain('projectMailLinkFromMessage(message, accountKey)');
-    expect(functionsSource).toContain('SMARTPEAK_MAILBOX_LABELS');
+    expect(functionsSource).not.toContain('projectMailLinkFromMessage');
+    expect(functionsSource).not.toContain('mailboxLinkKey');
     expect(functionsSource).toContain('hostingerSmartpeakRubenPassword');
     expect(functionsSource).toContain('hostingerSmartpeakContactPassword');
     expect(mailboxModuleSource).not.toContain("account.key !== 'kevin'");
     expect(functionsSource).toContain("email: 'ruben@smartpeak.be'");
     expect(functionsSource).toContain("email: 'contact@smartpeak.be'");
-    expect(functionsSource).toContain('subject: cleanString(message.subject');
   });
 
 });
