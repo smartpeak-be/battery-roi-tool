@@ -14,6 +14,7 @@ import {
   productPurchaseCostExVat,
   productCalculationReadiness,
   productConfigCalculationReadiness,
+  normalizeProductConfigCustomerType,
   quoteGroupsProfitExVat,
   quoteGroupSubtotalExVat,
 } from '../assets/js/product-configs.js';
@@ -280,6 +281,11 @@ describe('product config helpers', () => {
     expect(readiness.blockingMissing).toEqual([]);
     expect(readiness.advisoryMissing).toEqual(['efficiency']);
     expect(readiness.messages).toContain('Rendement ontbreekt; calculator gebruikt 90% standaardrendement');
+  });
+
+  it('defaults blank new configs to B2C without requiring a config object', () => {
+    expect(normalizeProductConfigCustomerType(undefined, null)).toBe('b2c');
+    expect(normalizeProductConfigCustomerType(undefined, undefined)).toBe('b2c');
   });
 
   it('reports B2B configs as hidden from the default calculator dropdown', () => {

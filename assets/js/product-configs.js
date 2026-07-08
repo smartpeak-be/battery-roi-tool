@@ -19,7 +19,8 @@ export function normalizeProductConfigCustomerType(value, config = {}) {
   const raw = String(value || '').trim().toLowerCase();
   if (PRODUCT_CONFIG_CUSTOMER_TYPES.has(raw)) return raw;
 
-  const searchable = [config.name, config.description]
+  const safeConfig = config || {};
+  const searchable = [safeConfig.name, safeConfig.description]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
