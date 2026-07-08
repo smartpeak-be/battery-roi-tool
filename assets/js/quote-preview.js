@@ -561,10 +561,15 @@ function updateQuotePreview() {
       <button type="button" class="btn btn-primary" id="btnCreateBillitOffer">
         <i class="fa-solid fa-paper-plane me-1"></i> Maak Billit-offerte
       </button>
+      ${_currentContext?.previousBillitOrderId ? `<button type="button" class="btn btn-outline-primary" id="btnCreateAdvanceInvoice" data-billit-offer-id="${escapeAttr(_currentContext.previousBillitOrderId)}">
+        <i class="fa-solid fa-file-invoice-dollar me-1"></i> Maak voorschotfactuur
+      </button>` : ''}
       <span class="text-muted small" id="billitOfferStatus">Maakt een concept-offerte in Billit sandbox.</span>
     </div>`;
   const billitBtn = document.getElementById('btnCreateBillitOffer');
   if (billitBtn) billitBtn.onclick = createBillitOfferFromPreview;
+  const advanceBtn = document.getElementById('btnCreateAdvanceInvoice');
+  if (advanceBtn) advanceBtn.onclick = () => createAdvanceInvoiceFromOffer(advanceBtn.dataset.billitOfferId);
 }
 
 function isoDatePlusDays(days) {
@@ -618,7 +623,7 @@ function buildBillitOfferPayloadForComputed(computed) {
 function billitConfigTypeForComputed(computed) {
   const explicitType = document.getElementById('quoteConfigType')?.value || '';
   const fallbackType = computed?.cfg?.id ? `PC_${computed.cfg.id}` : '';
-  if (explicitType && (!fallbackType || explicitType === fallbackType)) return explicitType;
+  if (explicitType) return explicitType;
   return fallbackType;
 }
 
@@ -646,6 +651,19 @@ async function attachBillitPdfToProjectConfig(computed, pdf, billitId) {
   return result;
 }
 
+async function attachBillitPdfToProjectDocuments(computed, pdf, billitId, title) {
+  if (!computed?.project?.id || !pdf?.fileContent || typeof window.uploadProjectDocument !== 'function') return null;
+  const file = billitPdfToFile(pdf, billitId);
+  const result = await window.uploadProjectDocument(computed.project.id, file, {
+    title: title || `Billit document #${billitId}`,
+    documentKind: 'invoice',
+    includeInCloseoutPdf: true,
+    includeInInspectionPack: false,
+  });
+  if (typeof _onBillitPdfAttached === 'function') await _onBillitPdfAttached();
+  return result;
+}
+
 async function createBillitOfferFromPreview() {
   const btn = document.getElementById('btnCreateBillitOffer');
   const status = document.getElementById('billitOfferStatus');
@@ -661,6 +679,11 @@ async function createBillitOfferFromPreview() {
     const token = await user.getIdToken();
     const projectId = firebase.app().options.projectId;
     const endpoint = `https://europe-west1-${projectId}.cloudfunctions.net/createBillitOffer`;
+    if (_currentContext?.previousBillitOrderId) {
+      status.textContent = `Vorige Billit-offerte #${_currentContext.previousBillitOrderId} wordt geweigerd...`;
+      await declinePreviousBillitOffer(endpoint, token, _currentContext.previousBillitOrderId);
+      status.textContent = 'Vorige Billit-offerte geweigerd. Nieuwe Billit-offerte wordt aangemaakt...';
+    }
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -675,7 +698,9 @@ async function createBillitOfferFromPreview() {
     const pdf = await waitForBillitPdf(endpoint, token, billitId, status);
     status.textContent = `PDF voor Billit-offerte #${billitId} wordt aan de projectconfig gekoppeld...`;
     await attachBillitPdfToProjectConfig(computed, pdf, billitId);
+    _currentContext.previousBillitOrderId = String(billitId);
     wireBillitPdfDownloadButton(btn, status, pdf, billitId);
+    addAdvanceInvoiceButton(billitId);
     showToast(`Billit-offerte #${billitId} is klaar en gekoppeld aan de configuratie.`, 'success');
   } catch (e) {
     if (status) status.textContent = e.message || String(e);
@@ -683,6 +708,71 @@ async function createBillitOfferFromPreview() {
     if (btn) btn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i> Maak Billit-offerte';
   } finally {
     if (btn && !btn.dataset.pdfReady) btn.disabled = false;
+  }
+}
+
+async function declinePreviousBillitOffer(endpoint, token, orderId) {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'decline-offer', orderId }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'Vorige Billit-offerte weigeren mislukt.');
+  return result;
+}
+
+function addAdvanceInvoiceButton(offerId) {
+  const createBtn = document.getElementById('btnCreateBillitOffer');
+  if (!createBtn || document.getElementById('btnCreateAdvanceInvoice')) return;
+  createBtn.insertAdjacentHTML('afterend', `<button type="button" class="btn btn-outline-primary" id="btnCreateAdvanceInvoice" data-billit-offer-id="${escapeAttr(offerId)}">
+    <i class="fa-solid fa-file-invoice-dollar me-1"></i> Maak voorschotfactuur
+  </button>`);
+  const advanceBtn = document.getElementById('btnCreateAdvanceInvoice');
+  if (advanceBtn) advanceBtn.onclick = () => createAdvanceInvoiceFromOffer(offerId);
+}
+
+async function createAdvanceInvoiceFromOffer(offerId) {
+  const btn = document.getElementById('btnCreateAdvanceInvoice');
+  const status = document.getElementById('billitOfferStatus');
+  try {
+    const computed = buildQuoteComputation();
+    if (!computed?.project?.id) throw new Error('Kies eerst een klant/project voor de voorschotfactuur.');
+    const percentageRaw = window.prompt('Voorschotpercentage?', '30');
+    if (percentageRaw === null) return;
+    const percentage = Math.max(1, Math.min(100, Number(String(percentageRaw).replace(',', '.')) || 30));
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error('Niet ingelogd.');
+    const token = await user.getIdToken();
+    const projectId = firebase.app().options.projectId;
+    const endpoint = `https://europe-west1-${projectId}.cloudfunctions.net/createBillitOffer`;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Voorschotfactuur maken...';
+    }
+    if (status) status.textContent = `Voorschotfactuur (${percentage}%) wordt aangemaakt...`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'advance-invoice', offerId, percentage }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Voorschotfactuur maken mislukt.');
+    const invoiceId = result.invoiceId || (result.billit && (result.billit.ID || result.billit.Id || result.billit.id || result.billit));
+    if (!invoiceId) throw new Error('Billit maakte de voorschotfactuur aan, maar gaf geen order-ID terug.');
+    if (status) status.textContent = `Voorschotfactuur #${invoiceId} aangemaakt. PDF wordt voorbereid...`;
+    const pdf = await waitForBillitPdf(endpoint, token, invoiceId, status);
+    await attachBillitPdfToProjectDocuments(computed, pdf, invoiceId, `Voorschotfactuur ${percentage}% - Billit #${invoiceId}`);
+    if (status) status.textContent = `Voorschotfactuur #${invoiceId} is klaar en als projectdocument gekoppeld.`;
+    showToast(`Voorschotfactuur #${invoiceId} is aangemaakt en gekoppeld.`, 'success');
+  } catch (e) {
+    if (status) status.textContent = e.message || String(e);
+    showToast('Voorschotfactuur maken mislukt: ' + (e.message || e), 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-file-invoice-dollar me-1"></i> Maak voorschotfactuur';
+    }
   }
 }
 

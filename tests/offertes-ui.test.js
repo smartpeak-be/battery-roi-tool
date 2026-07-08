@@ -26,6 +26,80 @@ describe('offertes-ui quote preview action', () => {
     expect(source).toContain('buildQuoteContextFromProjectConfig(project, type');
   });
 
+  it('weigert een vorige Billit-offerte voordat de drawer-knop een vervangende offerte maakt', () => {
+    const quoteContextSource = readFileSync(new URL('../assets/js/quote-context.js', import.meta.url), 'utf8');
+    const functionsSource = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+
+    expect(source).toContain("title: 'Nieuwe Billit-offerte maken?'");
+    expect(source).toContain('Vorige weigeren + nieuwe maken');
+    expect(quoteContextSource).toContain('previousBillitOrderId: existingOffer?.billitOrderId ? String(existingOffer.billitOrderId) :');
+    expect(quotePreviewSource).toContain('if (explicitType) return explicitType;');
+    expect(quotePreviewSource).toContain("action: 'decline-offer'");
+    expect(quotePreviewSource).toContain('await declinePreviousBillitOffer(endpoint, token, _currentContext.previousBillitOrderId);');
+    expect(quotePreviewSource.indexOf('await declinePreviousBillitOffer(endpoint, token, _currentContext.previousBillitOrderId);'))
+      .toBeLessThan(quotePreviewSource.indexOf('body: JSON.stringify({ order })'));
+    expect(functionsSource).toContain("method: 'PATCH'");
+    expect(functionsSource).toContain("OrderStatus: 'Declined'");
+    expect(functionsSource).toContain("OrderStatus: 'Refused'");
+    expect(functionsSource).toContain("ApprovalStatus: 'Rejected'");
+    expect(functionsSource).toContain('async function deleteBillitOrder');
+    expect(functionsSource).toContain("fallback: 'deleted'");
+  });
+
+  it('ververst de drawer en documenten opnieuw met de verse projectdata na offerte-upload', () => {
+    const dashboardSource = readFileSync(new URL('../assets/js/pages/dashboard-app.js', import.meta.url), 'utf8');
+    const projectDocumentsSource = readFileSync(new URL('../assets/js/project-documents.js', import.meta.url), 'utf8');
+
+    expect(dashboardSource).toContain('renderDrawer(fresh);');
+    expect(dashboardSource).toContain("_drawerDocumentsExplorer = mountProjectDocuments(document.getElementById('drawerDocumentsMount'), {");
+    expect(dashboardSource).toContain('project: fresh,');
+    expect(projectDocumentsSource).toContain('async function refresh(nextProject)');
+    expect(projectDocumentsSource).toContain('if (nextProject) options.project = nextProject;');
+  });
+
+  it('kan vanuit een gekoppelde Billit-offerte een voorschotfactuur maken en als document koppelen', () => {
+    const functionsSource = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
+
+    expect(source).toContain('offerte-invoice-btn');
+    expect(source).toContain('function openBillitInvoiceModal');
+    expect(source).toContain('Voorschotfactuur');
+    expect(source).toContain('Afrekening');
+    expect(source).toContain('Totaal offerte');
+    expect(source).toContain('Reeds gefactureerd');
+    expect(source).toContain('Openstaand');
+    expect(source).toContain('_sumBillitInvoiceAmountExVat');
+    expect(source).toContain('_recordBillitInvoiceForConfig');
+    expect(source).toContain('billitInvoices');
+    expect(source).toContain('_setBillitInvoicePaidForConfig');
+    expect(source).toContain('data-billit-paid-toggle');
+    expect(source).toContain('Betaald');
+    expect(source).toContain('Serienummers vermelden op factuur');
+    expect(source).toContain('_serialNumbersForInvoice');
+    expect(source).toContain('includeSerialNumbers');
+    expect(source).toContain("radio.value === 'final'");
+    expect(source).toContain('serialCheckbox.checked = true');
+    expect(source).toContain('paid: false');
+    expect(source).toContain('paidCount');
+    expect(source).toContain('Openstaand bedrag ex. BTW');
+    expect(source).toContain("invoiceKind: kind");
+    expect(source).toContain("documentKind: 'invoice'");
+    expect(quotePreviewSource).toContain('id="btnCreateAdvanceInvoice"');
+    expect(quotePreviewSource).toContain("action: 'advance-invoice'");
+    expect(quotePreviewSource).toContain("window.prompt('Voorschotpercentage?', '30')");
+    expect(quotePreviewSource).toContain('attachBillitPdfToProjectDocuments(computed, pdf, invoiceId');
+    expect(quotePreviewSource).toContain("documentKind: 'invoice'");
+    expect(functionsSource).toContain('function buildBillitAdvanceInvoicePayload');
+    expect(functionsSource).toContain('function formatSerialNumbersForInvoice');
+    expect(functionsSource).toContain('Serienummers: ${serialLines.join');
+    expect(functionsSource).toContain('UnitPriceExcl: 0');
+    expect(functionsSource).toContain('includeSerialNumbers: req.body.includeSerialNumbers === true');
+    expect(functionsSource).toContain("OrderType: 'Invoice'");
+    expect(functionsSource).toContain('AboutInvoiceNumber: offerNumber');
+    expect(functionsSource).toContain('Voorschot ${pct}% op offerte ${offerNumber}');
+    expect(functionsSource).toContain('Afrekening op offerte ${offerNumber}');
+    expect(functionsSource).toContain("kind: req.body.invoiceKind === 'final' ? 'final' : 'advance'");
+  });
+
   it('gebruikt de opgegeven custom samenstellingsnaam als titel in de project/offerte-lijst', () => {
     expect(source).toContain('const displayName = cfg.omschrijving || cfg.type;');
     expect(source).toContain('isCustomCalculatorConfig\n        ? escapeHtml(displayName)');

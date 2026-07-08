@@ -511,6 +511,8 @@ async function _refreshCurrentDrawer() {
   // wrapping here would strip the top-level fields and break warnings + configs.
   const fresh = { id: snap.id, ...snap.data() };
   _currentDrawerProject = fresh;
+  if (_drawerPhotoUploader) { try { _drawerPhotoUploader.destroy(); } catch {} _drawerPhotoUploader = null; }
+  if (_drawerDocumentsExplorer) { try { _drawerDocumentsExplorer.destroy(); } catch {} _drawerDocumentsExplorer = null; }
   renderDrawer(fresh);
   // Re-populate the async sections (comments + photo uploader) that renderDrawer reset
   // to their loading placeholders. Without this the drawer is stuck mid-reload.
@@ -520,8 +522,16 @@ async function _refreshCurrentDrawer() {
     ]);
     if (_drawerProjectId !== refreshId) return;
     renderComments(fresh, comments);
-    if (_drawerPhotoUploader) await _drawerPhotoUploader.refresh();
-    if (_drawerDocumentsExplorer) await _drawerDocumentsExplorer.refresh();
+    _drawerPhotoUploader = mountPhotoUploader(document.getElementById('drawerPhotoUploader'), {
+      projectId: fresh.id,
+      onChange: refreshDrawerAfterChange,
+    });
+    _drawerDocumentsExplorer = mountProjectDocuments(document.getElementById('drawerDocumentsMount'), {
+      projectId: fresh.id,
+      project: fresh,
+      onCountChange: setDrawerDocumentsCount,
+      onChange: refreshDrawerAfterChange,
+    });
   } catch (err) {
     console.warn('drawer refresh async sections failed', err);
   }
