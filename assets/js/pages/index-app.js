@@ -799,8 +799,7 @@ function _updateComposerPreview() {
   const preview = modal.querySelector('#configComposerPreview');
   const summary = modal.querySelector('#configComposerSummary');
   const adjustableTotal = (resolved?.compositionLines || []).filter(ln => !ln.automatic).reduce((sum, ln) => sum + ln.amountInclBtw, 0);
-  const inspection = (resolved?.compositionLines || []).find(ln => ln.kind === 'inspection');
-  const html = `Samenstelling: <strong>${fmt2(resolved?.batCap || 0)} kWh</strong> · <strong>${fmt2(resolved?.batInv || 0)} kW</strong> · lijnen: <strong>${fmtEur(adjustableTotal)}</strong> incl. BTW${inspection ? ` · automatische keuring: <strong>${fmtEur(inspection.amountInclBtw)}</strong>` : ''} · totaal: <strong>${fmtEur(resolved?.price || 0)}</strong>`;
+  const html = `Samenstelling: <strong>${fmt2(resolved?.batCap || 0)} kWh</strong> · <strong>${fmt2(resolved?.batInv || 0)} kW</strong> · lijnen: <strong>${fmtEur(adjustableTotal)}</strong> incl. BTW · totaal: <strong>${fmtEur(resolved?.price || 0)}</strong>`;
   if (preview) preview.innerHTML = html;
   if (summary) summary.innerHTML = html;
 }
@@ -1876,7 +1875,6 @@ function renderProjectValuesCard(project) {
   if (ageLbl) add('Leeftijd woning', ageLbl);
   const effBtw = effectiveBtwFor(project);
   if (effBtw != null) add('BTW', effBtw + '%');
-  add('Keuring', 'Standaard inbegrepen');
 
   // Planning
   add('Plaatsbezoek ingepland', fmtProjectDateString(m.planning.visitPlannedDate));

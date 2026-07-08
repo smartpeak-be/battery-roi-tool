@@ -2343,11 +2343,55 @@ function _normalizeProductConfigData(data) {
   };
 }
 
+function _isInspectionProduct(product) {
+  return !!product && (product.serviceKey === 'inspection' || product?.specs?.serviceKey === 'inspection');
+}
+
+async function _getInspectionProductId() {
+  const snap = await productsCol().get();
+  const doc = snap.docs.find(d => _isInspectionProduct({ id: d.id, ...d.data() }));
+  return doc ? doc.id : '';
+}
+
+function _ensureInspectionItemForB2cConfig(data, inspectionProductId) {
+  const normalized = _normalizeProductConfigData(data);
+  if (!inspectionProductId || normalized.customerType === 'b2b') return normalized;
+  if (normalized.items.some(item => item.productId === inspectionProductId)) return normalized;
+  return {
+    ...normalized,
+    items: [...normalized.items, { productId: inspectionProductId, qty: 1 }],
+  };
+}
+
 async function listProductConfigs() {
-  const snap = await productConfigsCol().get();
+  const [snap, inspectionProductId] = await Promise.all([
+    productConfigsCol().get(),
+    _getInspectionProductId().catch(() => ''),
+  ]);
   const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  list.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || (a.name || '').localeCompare(b.name || ''));
-  return list;
+  const batch = getDb().batch();
+  let missingInspectionCount = 0;
+  const normalizedList = list.map(cfg => {
+    const normalized = _ensureInspectionItemForB2cConfig(cfg, inspectionProductId);
+    if (inspectionProductId
+      && normalized.customerType !== 'b2b'
+      && JSON.stringify(normalized.items) !== JSON.stringify(_normalizeProductConfigData(cfg).items)) {
+      missingInspectionCount += 1;
+      batch.update(productConfigsCol().doc(cfg.id), {
+        items: normalized.items,
+        customerType: normalized.customerType,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: currentUserEmail() || null,
+      });
+    }
+    return { ...cfg, ...normalized };
+  });
+  if (missingInspectionCount > 0) {
+    await batch.commit();
+    console.info(`Keuring toegevoegd aan ${missingInspectionCount} B2C product-samenstellingen.`);
+  }
+  normalizedList.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || (a.name || '').localeCompare(b.name || ''));
+  return normalizedList;
 }
 
 async function getProductConfig(id) {
@@ -2359,8 +2403,9 @@ async function createProductConfig(data) {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd');
   const now = firebase.firestore.FieldValue.serverTimestamp();
+  const inspectionProductId = await _getInspectionProductId().catch(() => '');
   const ref = await productConfigsCol().add({
-    ..._normalizeProductConfigData(data),
+    ..._ensureInspectionItemForB2cConfig(data, inspectionProductId),
     createdAt: now,
     updatedAt: now,
     createdBy: email,
@@ -2372,8 +2417,9 @@ async function createProductConfig(data) {
 async function updateProductConfig(id, data) {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd');
+  const inspectionProductId = await _getInspectionProductId().catch(() => '');
   await productConfigsCol().doc(id).update({
-    ..._normalizeProductConfigData(data),
+    ..._ensureInspectionItemForB2cConfig(data, inspectionProductId),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedBy: email,
   });

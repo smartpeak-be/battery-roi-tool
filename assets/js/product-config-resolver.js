@@ -48,6 +48,17 @@ function productEfficiency(product) {
     || null;
 }
 
+function isInspectionProduct(product) {
+  return !!product && (product.serviceKey === 'inspection' || product?.specs?.serviceKey === 'inspection');
+}
+
+function ensureInspectionItem(items, productsById, customerType) {
+  if (customerType === 'b2b') return items;
+  const inspectionProduct = Object.values(productsById).find(isInspectionProduct);
+  if (!inspectionProduct || items.some(item => item.productId === inspectionProduct.id)) return items;
+  return [...items, { productId: inspectionProduct.id, qty: 1 }];
+}
+
 function inferTechnicalSpecs(items, productsById, categoriesById) {
   let batCap = 0;
   let batInv = 0;
@@ -116,16 +127,18 @@ export function productConfigToCalcConfig(config, products, categories, options 
   const categoriesById = categoryMap(categories || []);
   const readiness = productConfigCalculationReadiness(config, productsById, categoriesById, options);
   if (!readiness.eligible) return null;
-  const items = (config.items || [])
+  const rawItems = (config.items || [])
     .map(item => ({ productId: item?.productId ? String(item.productId) : '', qty: normalizeQty(item?.qty) }))
     .filter(item => item.productId && item.qty > 0 && productsById[item.productId]);
+  const items = ensureInspectionItem(rawItems, productsById, customerType);
 
   const { batCap, batInv, eff } = inferTechnicalSpecs(items, productsById, categoriesById);
   if (!(batCap > 0) || !(batInv > 0) || !(eff > 0)) return null;
 
   const subtotalExVat = configSubtotalExVat(items, productsById);
   const type = productConfigType(config.id);
-  const omschrijving = generatedConfigDescription(items, productsById, categoriesById)
+  const displayItems = items.filter(item => !isInspectionProduct(productsById[item.productId]));
+  const omschrijving = generatedConfigDescription(displayItems, productsById, categoriesById)
     || config.description
     || config.name
     || type;
