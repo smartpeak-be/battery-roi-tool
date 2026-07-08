@@ -139,12 +139,14 @@ export function isInspectionProduct(product, inspectionProductId = '') {
 }
 
 export function selectableComposerProducts(products = [], inspectionProductId = '') {
-  return (products || []).filter(product => !isInspectionProduct(product, inspectionProductId));
+  void inspectionProductId;
+  return products || [];
 }
 
 export function ensureInspectionLine(lines, inspectionProduct, keuringChoice, btwPercent) {
   const withoutInspection = (lines || []).filter(line => !(line && line.kind === 'inspection'));
   if (keuringChoice !== 'yes' || !inspectionProduct) return withoutInspection;
+  if (withoutInspection.some(line => line && line.kind === 'product' && line.productId === inspectionProduct.id)) return withoutInspection;
   return [
     ...withoutInspection,
     {
@@ -161,9 +163,9 @@ export function ensureInspectionLine(lines, inspectionProduct, keuringChoice, bt
 }
 
 export function serializeCompositionLines(lines, opts = {}) {
+  void opts;
   return (lines || [])
     .filter(line => line && !line.automatic && line.kind !== 'inspection')
-    .filter(line => !(line.kind === 'product' && opts.inspectionProductId && line.productId === opts.inspectionProductId))
     .map(line => ({
       id: line.id || `comp_${Math.random().toString(36).slice(2, 10)}`,
       kind: line.kind || 'manual',

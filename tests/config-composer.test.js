@@ -46,6 +46,16 @@ describe('config composer', () => {
     expect(withoutInspection).toEqual([]);
   });
 
+  it('does not duplicate automatic inspection when inspection is selected as a product line', () => {
+    const withSelectedInspection = ensureInspectionLine([
+      { id: 'manual-inspection', kind: 'product', productId: 'inspection', qty: 1, vat: 6 },
+    ], products[0], 'yes', 6);
+
+    expect(withSelectedInspection).toEqual([
+      { id: 'manual-inspection', kind: 'product', productId: 'inspection', qty: 1, vat: 6 },
+    ]);
+  });
+
   it('defaults inspection vat to 21 when no btwPercent is given', () => {
     const withInspection = ensureInspectionLine([], products[0], 'yes');
     expect(withInspection).toEqual([
@@ -102,7 +112,7 @@ describe('config composer', () => {
     expect(resolved.compositionDescription).toBe('Deze uitleg komt op de klant-view.');
   });
 
-  it('serializes only meaningful adjustable composition lines and blocks inspection products', () => {
+  it('serializes only meaningful adjustable composition lines and allows explicitly selected inspection products', () => {
     const lines = serializeCompositionLines([
       { id: 'auto-inspection', kind: 'inspection', productId: 'inspection', amountExVat: 150, vat: 21, automatic: true },
       { id: 'manual-inspection', kind: 'product', productId: 'inspection', qty: 1, vat: 21 },
@@ -111,6 +121,7 @@ describe('config composer', () => {
     ], { inspectionProductId: 'inspection' });
 
     expect(lines).toEqual([
+      { id: 'manual-inspection', kind: 'product', productId: 'inspection', qty: 1, description: '', amountExVat: 0, vat: 21 },
       { id: 'discount', kind: 'discount', description: 'Korting', amountExVat: -10, vat: 6 },
     ]);
   });
@@ -162,7 +173,7 @@ describe('config composer', () => {
     ]));
   });
 
-  it('hides inspection products from composer product choices', () => {
-    expect(selectableComposerProducts(products).map(p => p.id)).toEqual(['shelf', 'battery', 'inverter']);
+  it('shows inspection products in composer product choices', () => {
+    expect(selectableComposerProducts(products).map(p => p.id)).toEqual(['inspection', 'shelf', 'battery', 'inverter']);
   });
 });
