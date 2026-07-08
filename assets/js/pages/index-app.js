@@ -744,7 +744,7 @@ function _openComposerModal(type) {
     ? 'Producten hieronder vormen de volledige samenstelling. Je kan alles toevoegen of verwijderen.'
     : `Basis: <strong>${escapeHtml(cfg.omschrijving || cfg.type)}</strong>.`;
   body.innerHTML = `
-    <p style="margin-top:0;color:var(--muted);">${intro} Keuring wordt automatisch bepaald door de keuring-keuze buiten dit venster en staat hier bewust niet tussen de producten.</p>
+    <p style="margin-top:0;color:var(--muted);">${intro}</p>
     ${comp ? `<div class="form-group" style="margin:0 0 14px;"><label>Naam samenstelling</label><input type="text" id="composerCompositionName" value="${escapeHtml(comp.name || '')}" placeholder="Bijv. 2x AB3000X + Solarflow"></div>
     <div class="form-group" style="margin:0 0 14px;"><label>Uitleg voor klant</label><textarea id="composerCompositionDescription" rows="3" placeholder="Kort woordje uitleg over waarom deze samenstelling gekozen is of wat erin zit.">${escapeHtml(comp.description || '')}</textarea></div>` : ''}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 8px;"><h4 style="margin:0;">Producten</h4><button type="button" class="btn btn-secondary" id="configComposerAddProduct">+ Product toevoegen</button></div>
