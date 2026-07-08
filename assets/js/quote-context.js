@@ -60,6 +60,7 @@ function calculatedQuoteLine(cfg, vat) {
 export function buildQuoteContextFromProjectConfig(project, configType, opts = {}) {
   const type = String(configType || '');
   const cfg = findCalculatedConfig(project, type) || {};
+  const existingOffer = project?.offertes && project.offertes[type];
   const rawLines = Array.isArray(cfg.compositionLines) && cfg.compositionLines.length
     ? cfg.compositionLines
     : fallbackCompositionLines(project, type);
@@ -87,6 +88,7 @@ export function buildQuoteContextFromProjectConfig(project, configType, opts = {
       : '',
     vat,
     calculatedLine: calculatedQuoteLine(cfg, vat),
+    previousBillitOrderId: existingOffer?.billitOrderId ? String(existingOffer.billitOrderId) : '',
     extraProducts,
     manualLines,
     discount: { type: 'fixed', value: Number(discountValue.toFixed(2)) },

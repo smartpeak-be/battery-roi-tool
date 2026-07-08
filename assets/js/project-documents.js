@@ -505,7 +505,8 @@ export function mountProjectDocuments(containerEl, opts = {}) {
     if (typeof options.onCountChange === 'function') options.onCountChange(state.entries.length, state.entries);
   }
 
-  async function refresh() {
+  async function refresh(nextProject) {
+    if (nextProject) options.project = nextProject;
     if (!options.projectId) {
       listEl.innerHTML = '<p class="sp-empty-state mb-0">Sla het project eerst op om documenten toe te voegen.</p>';
       if (typeof options.onCountChange === 'function') options.onCountChange(0);

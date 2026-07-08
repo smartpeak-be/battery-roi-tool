@@ -33,11 +33,14 @@ describe('quote context handoff', () => {
           }],
         },
       },
+      offertes: {
+        'PC_cfg-1': { billitOrderId: '12345', filename: 'oude-offerte.pdf' },
+      },
     };
 
     const context = buildQuoteContextFromProjectConfig(project, 'PC_cfg-1', { vat: 6 });
 
-    expect(context).toMatchObject({ projectId: 'project-1', configId: 'cfg-1', configType: 'PC_cfg-1', vat: 6 });
+    expect(context).toMatchObject({ projectId: 'project-1', configId: 'cfg-1', configType: 'PC_cfg-1', vat: 6, previousBillitOrderId: '12345' });
     expect(context.calculatedLine).toEqual({
       description: 'Zendure Solarflow 2400 AC+ & Installatiekost & Zendure Slimme Meter P1',
       amountInclVat: 1797.13,

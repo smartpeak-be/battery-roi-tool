@@ -829,12 +829,158 @@ function extractBillitOrderId(data) {
   return Number(data.OrderID || data.OrderId || data.ID || data.Id || data.id) || null;
 }
 
+function extractBillitOrderNumber(data, fallback = '') {
+  if (!data || typeof data !== 'object') return fallback;
+  return cleanString(data.OrderNumber || data.OrderNo || data.Number || fallback, 80);
+}
+
+function formatSerialNumbersForInvoice(serialNumbers) {
+  const serials = Array.isArray(serialNumbers) ? serialNumbers : [];
+  return serials
+    .map(s => {
+      const value = cleanString(s && (s.value || s.serial || s.serialNumber || s.number), 120);
+      if (!value) return '';
+      const category = cleanString(s && (s.categoryLabel || s.category || s.type), 80);
+      return category ? `${category}: ${value}` : value;
+    })
+    .filter(Boolean);
+}
+
+function buildBillitAdvanceInvoicePayload(offer, options = {}) {
+  if (!offer || typeof offer !== 'object') throw new Error('Billit offer not found');
+  const pct = Math.max(1, Math.min(100, cleanNumber(options.percentage, 30)));
+  const kind = options.kind === 'final' ? 'final' : 'advance';
+  const explicitAmountExVat = cleanNumber(options.amountExVat, 0);
+  const offerNumber = extractBillitOrderNumber(offer, String(offer.OrderID || ''));
+  const lines = Array.isArray(offer.OrderLines) ? offer.OrderLines : [];
+  if (!lines.length) throw new Error('Billit offer has no lines');
+  const subtotalsByVat = new Map();
+  let totalExVat = 0;
+  lines.forEach(line => {
+    const qty = cleanNumber(line.Quantity, 1);
+    const exVat = cleanNumber(line.UnitPriceExcl, 0) * qty;
+    const vat = cleanNumber(line.VATPercentage, 21);
+    if (exVat > 0) {
+      totalExVat += exVat;
+      subtotalsByVat.set(vat, (subtotalsByVat.get(vat) || 0) + exVat);
+    }
+  });
+  const targetAmountExVat = kind === 'final' && explicitAmountExVat > 0
+    ? explicitAmountExVat
+    : totalExVat * pct / 100;
+  const invoiceLines = Array.from(subtotalsByVat.entries()).map(([vat, subtotal]) => ({
+    Quantity: 1,
+    UnitPriceExcl: Number((targetAmountExVat * (subtotal / totalExVat)).toFixed(2)),
+    Description: kind === 'final'
+      ? `Afrekening op offerte ${offerNumber}`
+      : `Voorschot ${pct}% op offerte ${offerNumber}`,
+    VATPercentage: vat,
+    AccountCode: cleanNumber(offer.AccountCode, 700010),
+  })).filter(line => line.UnitPriceExcl > 0);
+  if (!invoiceLines.length) throw new Error('Billit offer has no positive invoiceable lines');
+  const today = new Date();
+  const expiry = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const serialLines = options.includeSerialNumbers ? formatSerialNumbersForInvoice(options.serialNumbers) : [];
+  if (serialLines.length) {
+    invoiceLines.push({
+      Quantity: 1,
+      UnitPriceExcl: 0,
+      Description: `Serienummers: ${serialLines.join(' · ')}`,
+      VATPercentage: 0,
+      AccountCode: cleanNumber(offer.AccountCode, 700010),
+    });
+  }
+  return {
+    IsSent: false,
+    OrderType: 'Invoice',
+    OrderDirection: 'Income',
+    OrderDate: today.toISOString().slice(0, 10),
+    ExpiryDate: expiry.toISOString().slice(0, 10),
+    OrderTitle: kind === 'final'
+      ? `Afrekening - offerte ${offerNumber}`
+      : `Voorschotfactuur ${pct}% - offerte ${offerNumber}`,
+    Reference: cleanString(offer.Reference, 200),
+    Comments: kind === 'final'
+      ? `Afrekening op Billit-offerte ${offerNumber}.`
+      : `Voorschotfactuur op Billit-offerte ${offerNumber}.`,
+    AboutInvoiceNumber: offerNumber,
+    Customer: offer.Customer || offer.CounterParty || {},
+    OrderLines: invoiceLines,
+    AccountCode: cleanNumber(offer.AccountCode, 700010),
+    Currency: cleanString(offer.Currency || 'EUR', 3),
+  };
+}
+
 async function getBillitOrder(orderId, apiKey) {
   const response = await fetch(`${BILLIT_BASE_URL}/v1/orders/${encodeURIComponent(orderId)}`, {
     method: 'GET',
     headers: billitHeaders(apiKey),
   });
   return readBillitResponse(response);
+}
+
+async function patchBillitOrder(orderId, delta, apiKey) {
+  const response = await fetch(`${BILLIT_BASE_URL}/v1/orders/${encodeURIComponent(orderId)}`, {
+    method: 'PATCH',
+    headers: billitHeaders(apiKey),
+    body: JSON.stringify(delta),
+  });
+  return readBillitResponse(response);
+}
+
+async function deleteBillitOrder(orderId, apiKey) {
+  const response = await fetch(`${BILLIT_BASE_URL}/v1/orders/${encodeURIComponent(orderId)}`, {
+    method: 'DELETE',
+    headers: billitHeaders(apiKey),
+  });
+  return readBillitResponse(response);
+}
+
+async function declineBillitOffer(orderId, apiKey) {
+  // Billit exposes offer lifecycle updates through PATCH /v1/orders/{orderID}.
+  // Billit does not publish enum values in Swagger, so verify the status after
+  // each accepted PATCH and try the common offer-decline labels until one sticks.
+  const candidates = [
+    { OrderStatus: 'Declined', ApprovalStatus: 'Rejected' },
+    { OrderStatus: 'Refused', ApprovalStatus: 'Rejected' },
+    { OrderStatus: 'Cancelled', ApprovalStatus: 'Rejected' },
+    { OrderStatus: 'Canceled', ApprovalStatus: 'Rejected' },
+  ];
+  const observations = [];
+  for (const delta of candidates) {
+    const patch = await patchBillitOrder(orderId, delta, apiKey);
+    if (!patch.ok) {
+      observations.push({ tried: delta, status: patch.status, details: patch.data });
+      continue;
+    }
+    const fresh = await getBillitOrder(orderId, apiKey);
+    const observed = fresh.ok && fresh.data ? {
+      OrderStatus: fresh.data.OrderStatus || '',
+      ApprovalStatus: fresh.data.ApprovalStatus || '',
+    } : null;
+    observations.push({ tried: delta, observed });
+    if (observed && (
+      observed.OrderStatus === delta.OrderStatus
+      || observed.ApprovalStatus === delta.ApprovalStatus
+    )) {
+      return { ok: true, status: patch.status, data: { patched: patch.data, observed, tried: delta } };
+    }
+  }
+  console.warn('Billit offer decline status patch failed; falling back to delete', { orderId, observations });
+  const deleted = await deleteBillitOrder(orderId, apiKey);
+  if (deleted.ok || [400, 404].includes(deleted.status)) {
+    return {
+      ok: true,
+      status: deleted.status,
+      data: {
+        fallback: 'deleted',
+        deleted: deleted.data,
+        observations,
+      },
+    };
+  }
+  console.error('Billit offer decline/delete failed', { orderId, observations, deleteStatus: deleted.status, deleteDetails: deleted.data });
+  return { ok: false, status: 502, data: { message: 'Billit accepted no known decline status and delete failed', observations, deleteStatus: deleted.status, deleteDetails: deleted.data } };
 }
 
 async function getBillitFile(fileId, apiKey) {
@@ -900,6 +1046,48 @@ export const createBillitOffer = functions.https.onRequest(
           return;
         }
         res.json(pdf);
+        return;
+      }
+      if (req.body && req.body.action === 'decline-offer') {
+        const orderId = Number(req.body.orderId);
+        if (!Number.isFinite(orderId) || orderId <= 0) throw new Error('Valid orderId is required');
+        const billit = await declineBillitOffer(orderId, apiKey);
+        if (!billit.ok) {
+          res.status(502).json({ error: 'Billit offer decline failed', status: billit.status, details: billit.data });
+          return;
+        }
+        res.json({ ok: true, orderId, billit: billit.data });
+        return;
+      }
+      if (req.body && req.body.action === 'advance-invoice') {
+        const offerId = Number(req.body.offerId || req.body.orderId);
+        if (!Number.isFinite(offerId) || offerId <= 0) throw new Error('Valid offerId is required');
+        const percentage = cleanNumber(req.body.percentage, 30);
+        const offer = await getBillitOrder(offerId, apiKey);
+        if (!offer.ok) {
+          res.status(502).json({ error: 'Billit offer lookup failed', status: offer.status, details: offer.data });
+          return;
+        }
+        const invoice = buildBillitAdvanceInvoicePayload(offer.data, {
+          kind: req.body.invoiceKind === 'final' ? 'final' : 'advance',
+          percentage,
+          amountExVat: cleanNumber(req.body.amountExVat, 0),
+          includeSerialNumbers: req.body.includeSerialNumbers === true,
+          serialNumbers: Array.isArray(req.body.serialNumbers) ? req.body.serialNumbers : [],
+        });
+        const billit = await createBillitOrder(invoice, apiKey);
+        if (!billit.ok) {
+          res.status(502).json({ error: 'Billit advance invoice failed', status: billit.status, details: billit.data, invoice });
+          return;
+        }
+        res.json({
+          ok: true,
+          offerId,
+          invoiceId: extractBillitOrderId(billit.data),
+          offerNumber: extractBillitOrderNumber(offer.data, String(offerId)),
+          billit: billit.data,
+          invoice,
+        });
         return;
       }
       const order = sanitizeBillitOrder(req.body && req.body.order);
