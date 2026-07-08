@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const source = readFileSync(new URL('../assets/js/pages/index-app.js', import.meta.url), 'utf8');
+const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 describe('index custom composition UI', () => {
   it('shows only two starter buttons and moves existing-config search into a modal', () => {
@@ -68,5 +69,19 @@ describe('index custom composition UI', () => {
     expect(readOnlyBlock).not.toContain('Gedeelde berekening');
     expect(readOnlyBlock).not.toContain('alleen-lezen');
     expect(readOnlyBlock).not.toContain('Bewaar / Deel resultaten');
+  });
+
+  it('always includes inspection in calculator compositions without a visible dropdown', () => {
+    expect(indexHtml).toContain('id="keuringSelect" value="yes"');
+    expect(indexHtml).toContain('Standaard inbegrepen in elke samenstelling');
+    expect(indexHtml).not.toContain('<option value="no">Zonder keuring</option>');
+    expect(indexHtml).not.toContain('<option value="yes" selected>Met keuring</option>');
+
+    expect(source).toContain('add(\'Keuring\', \'Standaard inbegrepen\');');
+    expect(source).toContain("return `${document.getElementById('btwSelect').value}_yes`;");
+    expect(source).toContain("return ensureInspectionLine(manualLines, _inspectionProduct, 'yes', btwPercent);");
+    expect(source).toContain("const withInspection = ensureInspectionLine(lines, _inspectionProduct, 'yes', btwPercent);");
+    expect(source).toContain("const kSel = 'yes';");
+    expect(source).not.toContain("document.getElementById('keuringSelect').value");
   });
 });

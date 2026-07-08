@@ -293,7 +293,7 @@ let _restoredCompositionDescriptions = {};
 let _manualConfigs = {};
 
 function _getPriceKey() {
-  return `${document.getElementById('btwSelect').value}_${document.getElementById('keuringSelect').value}`;
+  return `${document.getElementById('btwSelect').value}_yes`;
 }
 
 function currentBebatPricePerKg() {
@@ -490,11 +490,10 @@ function readAllSelectedConfigObjects() {
   }
 
   function resolveCompositionLinesFor(type) {
-    const keuringChoice = document.getElementById('keuringSelect').value;
     const manualLines = serializeCompositionLines(_compositionLinesByType[type] || [], {
       inspectionProductId: _inspectionProduct && _inspectionProduct.id,
     });
-    return ensureInspectionLine(manualLines, _inspectionProduct, keuringChoice, btwPercent);
+    return ensureInspectionLine(manualLines, _inspectionProduct, 'yes', btwPercent);
   }
 
   const customResolved = readSelectedConfigs()
@@ -791,7 +790,7 @@ function _updateComposerPreview() {
   const cfg = _composerBaseConfig(type);
   const lines = _readComposerModalLines();
   const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
-  const withInspection = ensureInspectionLine(lines, _inspectionProduct, document.getElementById('keuringSelect')?.value || 'no', btwPercent);
+  const withInspection = ensureInspectionLine(lines, _inspectionProduct, 'yes', btwPercent);
   const resolved = resolveCompositionToCalculatorConfig(cfg, { type, baseProductConfigId: cfg?.productConfigId, lines: withInspection }, _sheetProducts, {
     btwPercent,
     categories: _sheetCategories,
@@ -1612,8 +1611,8 @@ function buildProjectSyncPatch(project) {
     const n = Number(v);
     if (n === 6 || n === 21) calcPatch.btw = n;
   }
-  // Keuring — always: if user value differs from stored calcDefaults, write it.
-  const kSel = document.getElementById('keuringSelect').value;
+  // Keuring is no longer configurable in the calculator: always include it.
+  const kSel = 'yes';
   const kStored = m.calcDefaults.keuring || null;
   if (kSel && kSel !== kStored) calcPatch.keuring = kSel;
 
@@ -1754,9 +1753,9 @@ function wireIndexActions() {
 // ─── AUTO-LOAD FROM URL ────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   wireIndexActions();
-  // Repopulate dropdowns when BTW/keuring changes
-  ['btwSelect','keuringSelect'].forEach(id => {
-    document.getElementById(id).addEventListener('change', () => {
+  // Repopulate dropdowns when BTW changes
+  ['btwSelect'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
       if (_sheetConfigs) renderConfigPickers(readSelectedConfigs());
     });
   });
@@ -1877,7 +1876,7 @@ function renderProjectValuesCard(project) {
   if (ageLbl) add('Leeftijd woning', ageLbl);
   const effBtw = effectiveBtwFor(project);
   if (effBtw != null) add('BTW', effBtw + '%');
-  if (m.calcDefaults.keuring) add('Keuring (voorkeur)', m.calcDefaults.keuring === 'yes' ? 'Met keuring' : 'Zonder keuring');
+  add('Keuring', 'Standaard inbegrepen');
 
   // Planning
   add('Plaatsbezoek ingepland', fmtProjectDateString(m.planning.visitPlannedDate));
@@ -2010,11 +2009,8 @@ function applyProjectToCalcForm(project) {
     show('btwSelect');
   }
 
-  // Keuring — NEVER hide; pre-fill with project default if present.
-  show('keuringSelect');
-  if (m.calcDefaults.keuring) {
-    setVal('keuringSelect', m.calcDefaults.keuring);
-  }
+  // Keuring is always included in the calculator.
+  setVal('keuringSelect', 'yes');
 
   // Hide the whole "Installatieparameters" card when all three inputs are hidden.
   const installCard = document.getElementById('installParamsCard');
