@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const source = readFileSync(new URL('../assets/js/pages/index-app.js', import.meta.url), 'utf8');
 const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const firebaseInit = readFileSync(new URL('../assets/js/firebase-init.js', import.meta.url), 'utf8');
 
 describe('index custom composition UI', () => {
   it('shows only two starter buttons and moves existing-config search into a modal', () => {
@@ -73,15 +74,22 @@ describe('index custom composition UI', () => {
 
   it('always includes inspection in calculator compositions without a visible dropdown', () => {
     expect(indexHtml).toContain('id="keuringSelect" value="yes"');
-    expect(indexHtml).toContain('Standaard inbegrepen in elke samenstelling');
+    expect(indexHtml).not.toContain('Standaard inbegrepen in elke samenstelling');
     expect(indexHtml).not.toContain('<option value="no">Zonder keuring</option>');
     expect(indexHtml).not.toContain('<option value="yes" selected>Met keuring</option>');
 
-    expect(source).toContain('add(\'Keuring\', \'Standaard inbegrepen\');');
+    expect(source).not.toContain('Keuring\', \'Standaard inbegrepen');
+    expect(source).not.toContain('automatische keuring');
     expect(source).toContain("return `${document.getElementById('btwSelect').value}_yes`;");
     expect(source).toContain("return ensureInspectionLine(manualLines, _inspectionProduct, 'yes', btwPercent);");
     expect(source).toContain("const withInspection = ensureInspectionLine(lines, _inspectionProduct, 'yes', btwPercent);");
     expect(source).toContain("const kSel = 'yes';");
     expect(source).not.toContain("document.getElementById('keuringSelect').value");
+
+    expect(firebaseInit).toContain('function _ensureInspectionItemForB2cConfig');
+    expect(firebaseInit).toContain("normalized.customerType === 'b2b'");
+    expect(firebaseInit).toContain('items: [...normalized.items, { productId: inspectionProductId, qty: 1 }]');
+    expect(firebaseInit).toContain('batch.update(productConfigsCol().doc(cfg.id)');
+    expect(firebaseInit).toContain('..._ensureInspectionItemForB2cConfig(data, inspectionProductId)');
   });
 });
