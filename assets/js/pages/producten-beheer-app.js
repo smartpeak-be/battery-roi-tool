@@ -556,6 +556,7 @@ function openProductDetail(productId) {
     // Desktop: render in side panel only
     const desktopBody = document.getElementById('productDetailBody');
     desktopBody.innerHTML = html;
+    desktopBody.scrollTop = 0;
     wireDetailForm(desktopBody, product);
   } else {
     // Mobile: render in drawer only
@@ -577,6 +578,7 @@ function openNewProduct() {
     // Desktop: render in side panel only
     const desktopBody = document.getElementById('productDetailBody');
     desktopBody.innerHTML = html;
+    desktopBody.scrollTop = 0;
     wireDetailForm(desktopBody, null);
   } else {
     // Mobile: render in drawer only
@@ -784,7 +786,7 @@ function buildDetailFormHtml(product, mode) {
       <hr>
 
       <!-- Actions -->
-      <div class="d-flex gap-2 flex-wrap">
+      <div class="detail-actions d-flex gap-2 flex-wrap">
         <button class="btn btn-primary detail-btn-save">
           <i class="fa-solid fa-floppy-disk me-1"></i> ${isCreate ? 'Aanmaken' : 'Opslaan'}
         </button>
