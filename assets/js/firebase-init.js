@@ -71,7 +71,7 @@ function phaseForStatus(statusKey) {
 const FINISHED_STATUSES = ['afgesloten', 'niet_akkoord'];
 
 // ─── CONNECTION TYPES ────────────────────────────────────────────────────────
-const CONNECTION_TYPES = ['1x230', '3x230', '3x400+N'];
+const CONNECTION_TYPES = ['1x230', '1x230-delta', '3x230', '3x400+N'];
 
 // ─── PROJECT METADATA HELPERS ────────────────────────────────────────────────
 // Default-empty structure for the 6 metadata sections added in the 2026-04-20
@@ -2294,6 +2294,7 @@ async function createProduct(data) {
     discountType:    data.discountType || 'percent',
     discountValue:   data.discountValue ?? 10,
     discountFromUnit: data.discountFromUnit ?? 2,
+    gridCompatibility: Array.isArray(data.gridCompatibility) ? data.gridCompatibility : [],
     specs:           data.specs || {},
     serviceKey:      data.serviceKey || (data.specs && data.specs.serviceKey) || null,
     isActive:        true,

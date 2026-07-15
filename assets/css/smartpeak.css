@@ -94,6 +94,54 @@
   box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), 0.18);
 }
 
+/* Product management master-detail: list and metadata scroll independently on desktop. */
+@media (min-width: 992px) {
+  #productLayout {
+    height: calc(100vh - 215px);
+    min-height: 520px;
+    overflow: hidden;
+    align-items: stretch;
+  }
+  #productListCol,
+  #productDetailCol {
+    height: 100%;
+    min-height: 0;
+  }
+  #productListCol {
+    display: flex;
+    flex-direction: column;
+  }
+  #productList {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.25rem;
+  }
+  #productDetailCard,
+  #productDetailBody {
+    height: 100%;
+    min-height: 0;
+  }
+  #productDetailCard {
+    overflow: hidden;
+  }
+  #productDetailBody {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+.detail-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: 1rem -1rem -1rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border-top: 1px solid var(--bs-border-color);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06);
+}
+
 /* Offcanvas drawer: wider on large screens so the config grid (1/2/3 cols) fits. */
 @media (max-width: 767.98px) { #drawer { --bs-offcanvas-width: 100vw; } }
 @media (min-width: 768px)    { #drawer { --bs-offcanvas-width: 420px; } }

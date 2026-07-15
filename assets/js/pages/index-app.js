@@ -9,6 +9,7 @@ import { escapeHtml, showSpinner, hideSpinner, withSpinner, showConfirm } from '
 import { makeScenCard } from '../index/scenario-card.js';
 import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js';
 import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
+import { gridConnectionLabel } from '../grid-compatibility.js';
 import {
   ensureInspectionLine,
   resolveCompositionToCalculatorConfig,
@@ -1084,8 +1085,13 @@ async function loadConfigs() {
       _sheetCategories = categories;
       _settings = settings || {};
       _inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection') || null;
-      _sheetConfigs = productConfigsToCalcConfigs(productConfigs, products, categories);
-      if (!_sheetConfigs.length) throw new Error('Geen actieve product-samenstellingen gevonden.');
+      const connectionType = _projectDoc?.electrical?.connectionType || null;
+      _sheetConfigs = productConfigsToCalcConfigs(productConfigs, products, categories, {
+        connectionType,
+      });
+      if (!_sheetConfigs.length) throw new Error(connectionType
+        ? `Geen actieve samenstellingen geschikt voor ${gridConnectionLabel(connectionType)} gevonden.`
+        : 'Geen actieve product-samenstellingen gevonden.');
       _populateConfigSelects();
       document.getElementById('configSelectorsArea').style.display = '';
       const manualBtn = document.getElementById('addManualConfigBtn');
@@ -1885,7 +1891,7 @@ function renderProjectValuesCard(project) {
   add('Keuring uitgevoerd', fmtProjectDateString(m.planning.inspectionDoneDate));
 
   // Elektrisch
-  if (m.electrical.connectionType) add('Aansluiting', m.electrical.connectionType);
+  if (m.electrical.connectionType) add('Aansluiting', gridConnectionLabel(m.electrical.connectionType));
   if (m.electrical.fuseRatingA != null) add('Fluvius-zekering', m.electrical.fuseRatingA + ' A');
 
   // Zekeringkast

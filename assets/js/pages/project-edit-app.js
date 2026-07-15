@@ -1,4 +1,5 @@
 import { escapeHtml, showToast, showState, showSpinner, hideSpinner, showConfirm } from '../shared-helpers.js';
+import { gridConnectionLabel } from '../grid-compatibility.js';
 import { extractCsvForStorage } from '../csv.js';
 import {
   calculateSolutionSummary,
@@ -53,6 +54,11 @@ const VOLTAGE_MEASUREMENT_FIELDS = {
     ['l1N',  'L1 - N'],
     ['l1Pe', 'L1 - PE'],
     ['nPe',  'N - PE'],
+  ],
+  '1x230-delta': [
+    ['l1L2', 'L1 - L2'],
+    ['l1Pe', 'L1 - PE'],
+    ['l2Pe', 'L2 - PE'],
   ],
   '3x230': [
     ['l1L2', 'L1 - L2'],
@@ -1049,7 +1055,7 @@ function sectionBlokC() {
   const invs = (_project.solar && _project.solar.inverters) || [];
 
   const connTypes = ['', ...CONNECTION_TYPES].map(t =>
-    `<option value="${t}" ${t === (el.connectionType || '') ? 'selected' : ''}>${t === '' ? '— Niet bepaald —' : t}</option>`
+    `<option value="${t}" ${t === (el.connectionType || '') ? 'selected' : ''}>${t === '' ? '— Niet bepaald —' : escapeHtml(gridConnectionLabel(t))}</option>`
   ).join('');
 
   const triRow = (label, key, value) => `
