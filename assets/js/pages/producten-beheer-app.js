@@ -1,6 +1,12 @@
 import { sellPrice, unitPrice } from '../product-pricing.js';
 import { specsForCategory } from '../product-specs.js';
 import {
+  GRID_CONNECTION_TYPES,
+  gridConnectionLabel,
+  normalizeGridCompatibility,
+  productConfigGridCompatibility,
+} from '../grid-compatibility.js';
+import {
   bebatTotalInclVat,
   categoryMap,
   configBatteryWeightKg,
@@ -596,6 +602,24 @@ function buildBrandOptions(selectedBrand) {
   return html;
 }
 
+function gridCompatibilityCheckboxesHtml(values) {
+  const selected = new Set(normalizeGridCompatibility(values));
+  return GRID_CONNECTION_TYPES.map(type => `
+    <label class="form-check mb-2">
+      <input class="form-check-input" type="checkbox" data-grid-connection="${escapeAttr(type.value)}" ${selected.has(type.value) ? 'checked' : ''}>
+      <span class="form-check-label">
+        <strong>${escapeHtml(type.label)}</strong>
+        <span class="d-block small text-muted">${escapeHtml(type.description)}</span>
+      </span>
+    </label>
+  `).join('');
+}
+
+function readGridCompatibilityFromForm(container) {
+  return normalizeGridCompatibility([...container.querySelectorAll('[data-grid-connection]:checked')]
+    .map(input => input.dataset.gridConnection));
+}
+
 function buildDetailFormHtml(product, mode) {
   const p = product || {};
   const isCreate = mode === 'create';
@@ -714,6 +738,13 @@ function buildDetailFormHtml(product, mode) {
       <!-- Blok C: Specificaties -->
       <h6 class="text-muted mb-3"><i class="fa-solid fa-list-check me-1"></i> Specificaties</h6>
       <div class="spec-fields-container"></div>
+
+      <div class="border rounded p-3 mt-3 grid-compatibility-fields">
+        <label class="form-label fw-bold mb-2"><i class="fa-solid fa-plug-circle-check me-1"></i> Geschikte nettypes</label>
+        <p class="small text-muted mb-2">Duid alle netten aan waarop dit product volgens datasheet/fabrikant mag worden aangesloten. Laat leeg voor DC- of niet-elektrische producten.</p>
+        ${gridCompatibilityCheckboxesHtml(p.gridCompatibility)}
+      </div>
+
       <div class="custom-specs-container mt-3">
         <label class="form-label fw-bold small">Extra specificaties</label>
         <div class="custom-specs-list"></div>
@@ -1221,6 +1252,7 @@ function readProductFromForm(container) {
     discountType: container.querySelector('.detail-discount-type')?.dataset.type || 'percent',
     discountValue: parseFloat(container.querySelector('.detail-discount-value').value) || 0,
     discountFromUnit: parseInt(container.querySelector('.detail-discount-from-unit').value) || 2,
+    gridCompatibility: readGridCompatibilityFromForm(container),
     specs,
     serviceKey: specs.serviceKey || null,
   };
@@ -1333,12 +1365,19 @@ function renderConfigList() {
     const readinessBadge = readiness.eligible
       ? `<span class="badge text-bg-success ms-2" title="${escapeAttr(readinessTitle)}">In calculator</span>`
       : `<span class="badge text-bg-danger ms-2" title="${escapeAttr(readinessTitle)}">Niet in calculator</span>`;
+    const grid = productConfigGridCompatibility(cfg, productsById);
+    const gridBadges = grid.hasConflict
+      ? '<span class="badge text-bg-danger mt-1" title="De AC-producten hebben geen gemeenschappelijk geschikt nettype">Netconflict</span>'
+      : (grid.gridCompatibility.length
+        ? grid.gridCompatibility.map(value => `<span class="badge text-bg-light border text-dark me-1 mt-1">${escapeHtml(gridConnectionLabel(value))}</span>`).join('')
+        : '<span class="badge text-bg-light border text-muted mt-1">Nettypes nog onbekend</span>');
     return `
       <div class="border rounded p-2 mb-2 config-row" data-config-id="${escapeAttr(cfg.id)}">
         <div class="d-flex gap-2 align-items-start">
           <div class="flex-grow-1">
             <strong>${escapeHtml(cfg.name || '(zonder naam)')}</strong>${customerBadge}${inactive}${readinessBadge}
             <div class="text-muted small">${escapeHtml(desc)}</div>
+            <div>${gridBadges}</div>
           </div>
           <div class="text-end text-nowrap">
             <strong>€${subtotal.toFixed(2)}</strong>
@@ -1528,6 +1567,12 @@ function updateConfigPreview() {
   const kg = configBatteryWeightKg(data.items, productsById, categoriesById);
   const bebat = bebatTotalInclVat(kg, currentBebatPricePerKg());
   const readiness = productConfigCalculationReadiness(data, productsById, categoriesById);
+  const grid = productConfigGridCompatibility(data, productsById);
+  const gridHtml = grid.hasConflict
+    ? '<div class="alert alert-danger py-2 small mb-3"><strong>Netconflict:</strong> de gekozen AC-producten hebben geen gemeenschappelijk geschikt nettype.</div>'
+    : `<div class="alert alert-light border py-2 small mb-3"><strong>Geschikte nettypes:</strong> ${grid.gridCompatibility.length
+      ? grid.gridCompatibility.map(gridConnectionLabel).map(escapeHtml).join(', ')
+      : 'nog niet bepaald op de gekozen AC-producten'}</div>`;
   const readinessHtml = readiness.eligible
     ? '<div class="alert alert-success py-2 small mb-3">Deze samenstelling wordt getoond in de calculator-dropdown.</div>'
     : `<div class="alert alert-warning py-2 small mb-3"><strong>Niet in calculator-dropdown</strong><ul class="mb-0 ps-3">${readiness.reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div>`;
@@ -1538,7 +1583,7 @@ function updateConfigPreview() {
     <h6>Preview</h6>
     <div class="small text-muted mb-2">Doelgroep</div>
     <div class="mb-2"><span class="badge ${data.customerType === 'b2b' ? 'text-bg-warning' : 'text-bg-success'}">${data.customerType.toUpperCase()}</span></div>
-    ${readinessHtml}${warningHtml}
+    ${readinessHtml}${warningHtml}${gridHtml}
     <div class="small text-muted mb-2">Omschrijving</div>
     <div class="mb-3">${escapeHtml(desc)}</div>
     <dl class="row small mb-0">

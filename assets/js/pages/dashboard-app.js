@@ -1,4 +1,5 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
+import { gridConnectionLabel } from '../grid-compatibility.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 import { mountProjectDocuments, mergeProjectDocuments, resolveDocumentDownloadUrls } from '../project-documents.js';
 import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
@@ -941,12 +942,17 @@ function numberOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-const WORKFLOW_CONNECTION_TYPES = ['1x230', '3x230', '3x400+N'];
+const WORKFLOW_CONNECTION_TYPES = ['1x230', '1x230-delta', '3x230', '3x400+N'];
 const WORKFLOW_VOLTAGE_MEASUREMENT_FIELDS = {
   '1x230': [
     ['l1N',  'L1 - N'],
     ['l1Pe', 'L1 - PE'],
     ['nPe',  'N - PE'],
+  ],
+  '1x230-delta': [
+    ['l1L2', 'L1 - L2'],
+    ['l1Pe', 'L1 - PE'],
+    ['l2Pe', 'L2 - PE'],
   ],
   '3x230': [
     ['l1L2', 'L1 - L2'],
@@ -1108,7 +1114,7 @@ async function openWorkflowChecksModal(project) {
   const tech = m.technical || {};
   const voltage = tech.voltageMeasurements || {};
   const connTypes = ['', ...WORKFLOW_CONNECTION_TYPES].map(t =>
-    `<option value="${t}" ${t === (el.connectionType || '') ? 'selected' : ''}>${t === '' ? '— Niet bepaald —' : t}</option>`
+    `<option value="${t}" ${t === (el.connectionType || '') ? 'selected' : ''}>${t === '' ? '— Niet bepaald —' : escapeHtml(gridConnectionLabel(t))}</option>`
   ).join('');
   const triValue = (value) => {
     if (value === true || value === 'true' || value === 'yes') return 'yes';

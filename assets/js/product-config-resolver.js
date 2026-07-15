@@ -8,6 +8,10 @@ import {
   productConfigCalculationReadiness,
   productMap,
 } from './product-configs.js';
+import {
+  productConfigGridCompatibility,
+  productConfigSupportsGridConnection,
+} from './grid-compatibility.js';
 
 const DEFAULT_EFFICIENCY = 0.90;
 const PRODUCT_CONFIG_TYPE_PREFIX = 'PC_';
@@ -127,6 +131,8 @@ export function productConfigToCalcConfig(config, products, categories, options 
   const categoriesById = categoryMap(categories || []);
   const readiness = productConfigCalculationReadiness(config, productsById, categoriesById, options);
   if (!readiness.eligible) return null;
+  if (!productConfigSupportsGridConnection(config, productsById, options.connectionType)) return null;
+  const grid = productConfigGridCompatibility(config, productsById);
   const rawItems = (config.items || [])
     .map(item => ({ productId: item?.productId ? String(item.productId) : '', qty: normalizeQty(item?.qty) }))
     .filter(item => item.productId && item.qty > 0 && productsById[item.productId]);
@@ -159,6 +165,8 @@ export function productConfigToCalcConfig(config, products, categories, options 
     customerType,
     productConfigId: config.id,
     productConfigName: config.name || '',
+    gridCompatibility: grid.gridCompatibility,
+    gridCompatibilityKnown: grid.constrainedProductCount > 0,
     items,
   };
 }

@@ -162,4 +162,30 @@ describe('productConfigToCalcConfig', () => {
     expect(all[0].customerType).toBe('b2b');
     expect(all[0].items.some(item => item.productId === 'inspection')).toBe(false);
   });
+
+  it('inherits product grid compatibility and filters by the project connection type', () => {
+    const compatibleProducts = products.map(product => product.id === 'solarflow'
+      ? { ...product, gridCompatibility: ['1x230', '1x230-delta'] }
+      : product);
+
+    const onePhase = productConfigsToCalcConfigs([config], compatibleProducts, categories, {
+      connectionType: '1x230-delta',
+    });
+    const threePhase = productConfigsToCalcConfigs([config], compatibleProducts, categories, {
+      connectionType: '3x400+N',
+    });
+
+    expect(onePhase).toHaveLength(1);
+    expect(onePhase[0].gridCompatibility).toEqual(['1x230', '1x230-delta']);
+    expect(threePhase).toEqual([]);
+  });
+
+  it('keeps legacy compositions visible when products have no grid metadata yet', () => {
+    const resolved = productConfigsToCalcConfigs([config], products, categories, {
+      connectionType: '3x230',
+    });
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].gridCompatibility).toEqual([]);
+  });
 });
