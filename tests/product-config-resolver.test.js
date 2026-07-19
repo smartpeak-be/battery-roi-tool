@@ -103,7 +103,7 @@ const config = {
 };
 
 describe('productConfigToCalcConfig', () => {
-  it('converts a Firestore product composition into a calculator config with price variants', () => {
+  it('uses exactly the stored composition items and totals in the calculator', () => {
     const resolved = productConfigToCalcConfig(config, products, categories, { inspectionProductId: 'inspection' });
 
     expect(resolved.type).toBe('PC_cfg-1');
@@ -114,12 +114,13 @@ describe('productConfigToCalcConfig', () => {
     expect(resolved.batInv).toBeCloseTo(2.4);
     expect(resolved.eff).toBeCloseTo(0.93);
 
-    // Excl: 1200 + 650 + 350 + 98.1376 + 150 keuring = 2448.1376.
-    expect(resolved.prices['6_no']).toBeCloseTo(2448.1376 * 1.06);
-    expect(resolved.prices['21_no']).toBeCloseTo(2448.1376 * 1.21);
-    expect(resolved.prices['6_yes']).toBeCloseTo(2448.1376 * 1.06);
-    expect(resolved.prices['21_yes']).toBeCloseTo(2448.1376 * 1.21);
-    expect(resolved.items).toContainEqual({ productId: 'inspection', qty: 1 });
+    // Excl: only the stored lines: 1200 + 650 + 350 + 98.1376 = 2298.1376.
+    expect(resolved.prices['6_no']).toBeCloseTo(2298.1376 * 1.06);
+    expect(resolved.prices['21_no']).toBeCloseTo(2298.1376 * 1.21);
+    expect(resolved.prices['6_yes']).toBeCloseTo(2298.1376 * 1.06);
+    expect(resolved.prices['21_yes']).toBeCloseTo(2298.1376 * 1.21);
+    expect(resolved.items).toEqual(config.items);
+    expect(resolved.items).not.toContainEqual({ productId: 'inspection', qty: 1 });
   });
 
   it('keeps product-config prices compatible with existing extra-cost lines', () => {
@@ -127,7 +128,7 @@ describe('productConfigToCalcConfig', () => {
     const lines = [{ description: 'Extra schap', amountInclBtw: 106 }];
     const price = resolved.prices['6_no'] + lines.reduce((sum, line) => sum + line.amountInclBtw, 0);
 
-    expect(price).toBeCloseTo(2448.1376 * 1.06 + 106);
+    expect(price).toBeCloseTo(2298.1376 * 1.06 + 106);
   });
 
   it('filters inactive or technically incomplete product configs while keeping active valid ones', () => {

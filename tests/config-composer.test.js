@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ensureInspectionLine,
   resolveCompositionToCalculatorConfig,
   selectableComposerProducts,
   serializeCompositionLines,
@@ -36,42 +35,16 @@ const categories = [
 ];
 
 describe('config composer', () => {
-  it('adds or removes an automatic inspection line based on keuring choice', () => {
-    const withInspection = ensureInspectionLine([], products[0], 'yes', 6);
-    expect(withInspection).toEqual([
-      expect.objectContaining({ kind: 'inspection', productId: 'inspection', automatic: true, vat: 6, amountExVat: 150 }),
-    ]);
-
-    const withoutInspection = ensureInspectionLine(withInspection, products[0], 'no');
-    expect(withoutInspection).toEqual([]);
-  });
-
-  it('does not duplicate automatic inspection when inspection is selected as a product line', () => {
-    const withSelectedInspection = ensureInspectionLine([
-      { id: 'manual-inspection', kind: 'product', productId: 'inspection', qty: 1, vat: 6 },
-    ], products[0], 'yes', 6);
-
-    expect(withSelectedInspection).toEqual([
-      { id: 'manual-inspection', kind: 'product', productId: 'inspection', qty: 1, vat: 6 },
-    ]);
-  });
-
-  it('defaults inspection vat to 21 when no btwPercent is given', () => {
-    const withInspection = ensureInspectionLine([], products[0], 'yes');
-    expect(withInspection).toEqual([
-      expect.objectContaining({ kind: 'inspection', vat: 21 }),
-    ]);
-  });
-
-  it('resolves product, manual, discount and inspection lines into the calculator price', () => {
+  it('resolves exactly the selected product, manual, discount and inspection lines into the calculator price', () => {
     const composition = {
       type: 'PC_cfg-1',
       baseProductConfigId: 'cfg-1',
-      lines: ensureInspectionLine([
+      lines: [
         { id: 'line-product', kind: 'product', productId: 'shelf', qty: 2, vat: 6 },
         { id: 'line-manual', kind: 'manual', description: 'Extra kabel', amountExVat: 40, vat: 6 },
         { id: 'line-discount', kind: 'discount', description: 'Afrondingskorting', amountExVat: -25, vat: 6 },
-      ], products[0], 'yes', 6),
+        { id: 'line-inspection', kind: 'product', productId: 'inspection', qty: 1, vat: 6 },
+      ],
     };
 
     const resolved = resolveCompositionToCalculatorConfig(baseConfig, composition, products, { btwPercent: 6 });
@@ -82,6 +55,29 @@ describe('config composer', () => {
     expect(resolved.source).toBe('productConfig');
     expect(resolved.productConfigId).toBe('cfg-1');
     expect(resolved.composition.lines).toHaveLength(4);
+  });
+
+  it('changes the total only when inspection is explicitly present as a composition product', () => {
+    const base = {
+      ...baseConfig,
+      type: 'CUSTOM_TOTALS',
+      prices: { '6_no': 0, '6_yes': 0, '21_no': 0, '21_yes': 0 },
+    };
+    const batteryLine = { id: 'battery-line', kind: 'product', productId: 'battery', qty: 1, vat: 6 };
+
+    const withoutInspection = resolveCompositionToCalculatorConfig(base, {
+      type: 'CUSTOM_TOTALS',
+      lines: [batteryLine],
+    }, products, { btwPercent: 6, categories, bebatPricePerKg: 0 });
+    const withInspection = resolveCompositionToCalculatorConfig(base, {
+      type: 'CUSTOM_TOTALS',
+      lines: [
+        batteryLine,
+        { id: 'inspection-line', kind: 'product', productId: 'inspection', qty: 1, vat: 6 },
+      ],
+    }, products, { btwPercent: 6, categories, bebatPricePerKg: 0 });
+
+    expect(withInspection.price - withoutInspection.price).toBeCloseTo(150 * 1.06);
   });
 
   it('preserves the customer-facing composition explanation on resolved configs', () => {
