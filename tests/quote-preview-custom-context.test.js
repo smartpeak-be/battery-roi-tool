@@ -17,5 +17,7 @@ describe('quote preview custom calculator context', () => {
     expect(source).toContain('const sourceExtraProducts = useCalculatedLine ? [] : (Array.isArray(context.extraProducts) ? context.extraProducts : []);');
     expect(source).toContain('const sourceManualLines = useCalculatedLine ? [] : (Array.isArray(context.manualLines) ? context.manualLines : []);');
     expect(source).toContain("context.configId || (String(context.configType || '').startsWith('CUSTOM_') ? context.configType : '')");
+    expect(source).toContain("const contextConfigId = _currentContext.configId || (String(_currentContext.configType || '').startsWith('CUSTOM_') ? _currentContext.configType : '');");
+    expect(source).toContain('if (calculatedLine && cfg.id === contextConfigId)');
   });
 });
