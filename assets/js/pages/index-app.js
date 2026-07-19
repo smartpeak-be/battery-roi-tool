@@ -11,7 +11,6 @@ import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } fro
 import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
 import { gridConnectionLabel } from '../grid-compatibility.js';
 import {
-  ensureInspectionLine,
   resolveCompositionToCalculatorConfig,
   selectableComposerProducts,
   serializeCompositionLines,
@@ -73,9 +72,7 @@ function _serializeState() {
       if (description) compositionDescriptions[cr.cfg.type] = description;
     }
     if (Array.isArray(cr.cfg.compositionLines)) {
-      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
-        inspectionProductId: _inspectionProduct && _inspectionProduct.id,
-      });
+      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines);
       if (keepComposition.length > 0) compositionLines[cr.cfg.type] = keepComposition;
     }
     if (!Array.isArray(cr.cfg.meerkostLines)) return;
@@ -283,7 +280,6 @@ let _sheetConfigs = null;
 let _sheetProducts = [];
 let _sheetCategories = [];
 let _settings = {};
-let _inspectionProduct = null;
 let _suppressProjectCalcAutoSave = false;
 let _compositionLinesByType = {};
 let _customCompositions = {};
@@ -294,7 +290,7 @@ let _restoredCompositionDescriptions = {};
 let _manualConfigs = {};
 
 function _getPriceKey() {
-  return `${document.getElementById('btwSelect').value}_yes`;
+  return `${document.getElementById('btwSelect').value}_no`;
 }
 
 function currentBebatPricePerKg() {
@@ -337,9 +333,7 @@ function _baseConfigForCustomComposition(comp) {
 
 function _createCustomComposition({ name = '', description = '', sourceName = '', baseProductConfigId = '', lines = [] } = {}) {
   const type = _customCompositionType();
-  const serialized = serializeCompositionLines(lines, {
-    inspectionProductId: _inspectionProduct && _inspectionProduct.id,
-  });
+  const serialized = serializeCompositionLines(lines);
   _customCompositions[type] = {
     type,
     name: name || _compositionNameFromLines(serialized),
@@ -491,10 +485,7 @@ function readAllSelectedConfigObjects() {
   }
 
   function resolveCompositionLinesFor(type) {
-    const manualLines = serializeCompositionLines(_compositionLinesByType[type] || [], {
-      inspectionProductId: _inspectionProduct && _inspectionProduct.id,
-    });
-    return ensureInspectionLine(manualLines, _inspectionProduct, 'yes', btwPercent);
+    return serializeCompositionLines(_compositionLinesByType[type] || []);
   }
 
   const customResolved = readSelectedConfigs()
@@ -571,9 +562,7 @@ function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositi
     if (!cfg) return;
     const extraLines = Array.isArray(compositionLines[type]) ? compositionLines[type] : [];
     const customType = _customCompositionType();
-    const lines = serializeCompositionLines([..._productLinesForConfig(cfg), ...extraLines], {
-      inspectionProductId: _inspectionProduct && _inspectionProduct.id,
-    });
+    const lines = serializeCompositionLines([..._productLinesForConfig(cfg), ...extraLines]);
     _customCompositions[customType] = {
       type: customType,
       name: cfg.omschrijving || cfg.productConfigName || 'Samenstelling',
@@ -586,9 +575,7 @@ function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositi
 }
 
 function _customCompositionCardHtml(comp) {
-  const lines = serializeCompositionLines(_compositionLinesByType[comp.type] || [], {
-    inspectionProductId: _inspectionProduct && _inspectionProduct.id,
-  });
+  const lines = serializeCompositionLines(_compositionLinesByType[comp.type] || []);
   const productCount = lines.filter(ln => ln.kind === 'product').length;
   const manualCount = lines.filter(ln => ln.kind === 'manual').length;
   const installExtraCount = lines.filter(ln => ln.kind === 'installation_extra').length;
@@ -652,7 +639,7 @@ function _productLabel(product) {
 }
 
 function _composerProductOptionsHtml(selectedId) {
-  return '<option value="">— Kies product —</option>' + selectableComposerProducts(_sheetProducts, _inspectionProduct && _inspectionProduct.id)
+  return '<option value="">— Kies product —</option>' + selectableComposerProducts(_sheetProducts)
     .map(product => `<option value="${escapeHtml(product.id)}" ${product.id === selectedId ? 'selected' : ''}>${escapeHtml(_productLabel(product))}</option>`)
     .join('');
 }
@@ -738,7 +725,7 @@ function _openComposerModal(type) {
   modal.dataset.configType = type;
   const body = modal.querySelector('#configComposerBody');
   const comp = _customCompositions[type] || null;
-  const saved = serializeCompositionLines(_compositionLinesByType[type] || [], { inspectionProductId: _inspectionProduct && _inspectionProduct.id });
+  const saved = serializeCompositionLines(_compositionLinesByType[type] || []);
   const productRows = saved.filter(ln => ln.kind === 'product').map(_composerProductRowHtml).join('');
   const manualRows = saved.filter(ln => ln.kind === 'manual' || ln.kind === 'installation_extra' || ln.kind === 'discount').map(_composerManualRowHtml).join('');
   const intro = comp
@@ -781,7 +768,7 @@ function _readComposerModalLines() {
     const amountExVat = kind === 'discount' ? -Math.abs(rawAmount) : rawAmount;
     return { id: row.dataset.lineId || _genMeerkostId(), kind, description, amountExVat, vat };
   });
-  return serializeCompositionLines([...productLines, ...manualLines], { inspectionProductId: _inspectionProduct && _inspectionProduct.id });
+  return serializeCompositionLines([...productLines, ...manualLines]);
 }
 
 function _updateComposerPreview() {
@@ -791,8 +778,7 @@ function _updateComposerPreview() {
   const cfg = _composerBaseConfig(type);
   const lines = _readComposerModalLines();
   const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
-  const withInspection = ensureInspectionLine(lines, _inspectionProduct, 'yes', btwPercent);
-  const resolved = resolveCompositionToCalculatorConfig(cfg, { type, baseProductConfigId: cfg?.productConfigId, lines: withInspection }, _sheetProducts, {
+  const resolved = resolveCompositionToCalculatorConfig(cfg, { type, baseProductConfigId: cfg?.productConfigId, lines }, _sheetProducts, {
     btwPercent,
     categories: _sheetCategories,
     bebatPricePerKg: currentBebatPricePerKg(),
@@ -809,9 +795,7 @@ function _saveComposerModal() {
   const modal = document.getElementById('configComposerModal');
   const type = modal?.dataset.configType;
   if (!type) return;
-  const previousLines = serializeCompositionLines(_compositionLinesByType[type] || [], {
-    inspectionProductId: _inspectionProduct && _inspectionProduct.id,
-  });
+  const previousLines = serializeCompositionLines(_compositionLinesByType[type] || []);
   const nextLines = _readComposerModalLines();
   _compositionLinesByType[type] = nextLines;
   if (_customCompositions[type]) {
@@ -1084,7 +1068,6 @@ async function loadConfigs() {
       _sheetProducts = products;
       _sheetCategories = categories;
       _settings = settings || {};
-      _inspectionProduct = products.find(p => p.serviceKey === 'inspection' || p?.specs?.serviceKey === 'inspection') || null;
       const connectionType = _projectDoc?.electrical?.connectionType || null;
       _sheetConfigs = productConfigsToCalcConfigs(productConfigs, products, categories, {
         connectionType,
@@ -1520,9 +1503,7 @@ async function saveProjectCalcRun(d) {
       if (description) compositionDescriptions[cr.cfg.type] = description;
     }
     if (Array.isArray(cr.cfg.compositionLines)) {
-      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines, {
-        inspectionProductId: _inspectionProduct && _inspectionProduct.id,
-      });
+      const keepComposition = serializeCompositionLines(cr.cfg.compositionLines);
       if (keepComposition.length > 0) compositionLines[cr.cfg.type] = keepComposition;
     }
     if (Array.isArray(cr.cfg.meerkostLines) && cr.cfg.meerkostLines.length > 0) {
@@ -1616,10 +1597,6 @@ function buildProjectSyncPatch(project) {
     const n = Number(v);
     if (n === 6 || n === 21) calcPatch.btw = n;
   }
-  // Keuring is no longer configurable in the calculator: always include it.
-  const kSel = 'yes';
-  const kStored = m.calcDefaults.keuring || null;
-  if (kSel && kSel !== kStored) calcPatch.keuring = kSel;
 
   if (Object.keys(calcPatch).length > 0) {
     patch.calcDefaults = { ...m.calcDefaults, ...calcPatch };
@@ -2012,9 +1989,6 @@ function applyProjectToCalcForm(project) {
   } else {
     show('btwSelect');
   }
-
-  // Keuring is always included in the calculator.
-  setVal('keuringSelect', 'yes');
 
   // Hide the whole "Installatieparameters" card when all three inputs are hidden.
   const installCard = document.getElementById('installParamsCard');

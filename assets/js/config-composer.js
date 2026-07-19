@@ -8,7 +8,6 @@ import {
   generatedConfigDescription,
 } from './product-configs.js';
 
-const INSPECTION_LINE_ID = 'auto-inspection';
 
 function productLookup(products) {
   return Object.fromEntries((products || []).map(p => [p.id, p]));
@@ -130,37 +129,10 @@ function bebatLineFor(baseConfig, resolvedLines, productsById, categoriesById, b
   };
 }
 
-export function isInspectionProduct(product, inspectionProductId = '') {
-  return !!product && (
-    (inspectionProductId && product.id === inspectionProductId)
-    || product.serviceKey === 'inspection'
-    || product?.specs?.serviceKey === 'inspection'
-  );
-}
-
-export function selectableComposerProducts(products = [], inspectionProductId = '') {
-  void inspectionProductId;
+export function selectableComposerProducts(products = []) {
   return products || [];
 }
 
-export function ensureInspectionLine(lines, inspectionProduct, keuringChoice, btwPercent) {
-  const withoutInspection = (lines || []).filter(line => !(line && line.kind === 'inspection'));
-  if (keuringChoice !== 'yes' || !inspectionProduct) return withoutInspection;
-  if (withoutInspection.some(line => line && line.kind === 'product' && line.productId === inspectionProduct.id)) return withoutInspection;
-  return [
-    ...withoutInspection,
-    {
-      id: INSPECTION_LINE_ID,
-      kind: 'inspection',
-      productId: inspectionProduct.id,
-      qty: 1,
-      description: inspectionProduct.model || inspectionProduct.description || 'Keuring',
-      amountExVat: totalProductPrice(inspectionProduct, 1),
-      vat: normalizeVat(btwPercent, 21),
-      automatic: true,
-    },
-  ];
-}
 
 export function serializeCompositionLines(lines, opts = {}) {
   void opts;

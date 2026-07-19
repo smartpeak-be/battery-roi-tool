@@ -56,13 +56,6 @@ function isInspectionProduct(product) {
   return !!product && (product.serviceKey === 'inspection' || product?.specs?.serviceKey === 'inspection');
 }
 
-function ensureInspectionItem(items, productsById, customerType) {
-  if (customerType === 'b2b') return items;
-  const inspectionProduct = Object.values(productsById).find(isInspectionProduct);
-  if (!inspectionProduct || items.some(item => item.productId === inspectionProduct.id)) return items;
-  return [...items, { productId: inspectionProduct.id, qty: 1 }];
-}
-
 function inferTechnicalSpecs(items, productsById, categoriesById) {
   let batCap = 0;
   let batInv = 0;
@@ -133,10 +126,9 @@ export function productConfigToCalcConfig(config, products, categories, options 
   if (!readiness.eligible) return null;
   if (!productConfigSupportsGridConnection(config, productsById, options.connectionType)) return null;
   const grid = productConfigGridCompatibility(config, productsById);
-  const rawItems = (config.items || [])
+  const items = (config.items || [])
     .map(item => ({ productId: item?.productId ? String(item.productId) : '', qty: normalizeQty(item?.qty) }))
     .filter(item => item.productId && item.qty > 0 && productsById[item.productId]);
-  const items = ensureInspectionItem(rawItems, productsById, customerType);
 
   const { batCap, batInv, eff } = inferTechnicalSpecs(items, productsById, categoriesById);
   if (!(batCap > 0) || !(batInv > 0) || !(eff > 0)) return null;
