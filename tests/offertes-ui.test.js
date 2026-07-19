@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../assets/js/offertes-ui.js', import.meta.url), 'utf8');
 const dashboardHtml = readFileSync(new URL('../dashboard.html', import.meta.url), 'utf8');
 const quotePreviewSource = readFileSync(new URL('../assets/js/quote-preview.js', import.meta.url), 'utf8');
+const functionsSource = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
 
 describe('offertes-ui quote preview action', () => {
   it('opent de volledige Billit/offerte-preview op het dashboard zonder redirect of iframe', () => {
@@ -15,10 +16,14 @@ describe('offertes-ui quote preview action', () => {
     expect(quotePreviewSource).toContain('id="btnCreateBillitOffer"');
     expect(quotePreviewSource).toContain('function createBillitOfferFromPreview');
     expect(quotePreviewSource).toContain('context.calculatedLine');
+    expect(quotePreviewSource).toContain('function billitOfferSubject');
+    expect(quotePreviewSource).toContain('.slice(0, 250)');
     expect(source).toContain('const hasCalculatedLine = Number(context.calculatedLine?.amountInclVat) > 0;');
     expect(source).toContain('&& !hasCalculatedLine');
     expect(quotePreviewSource).toContain('amountInclVat / (1 + vat / 100)');
     expect(quotePreviewSource).not.toContain('<iframe');
+    expect(functionsSource).toContain('Description: cleanString(source.Description, 250)');
+    expect(functionsSource).toContain('OrderTitle: cleanString(source.OrderTitle, 250)');
   });
 
   it('toont ook een offerteknop voor custom calculator-configs in project/drawer lijst', () => {

@@ -747,8 +747,8 @@ function sanitizeBillitOrder(input) {
     OrderDirection: 'Income',
     OrderDate: cleanString(source.OrderDate, 10),
     ExpiryDate: cleanString(source.ExpiryDate, 10),
-    Description: cleanString(source.Description, 500),
-    OrderTitle: cleanString(source.OrderTitle, 500),
+    Description: cleanString(source.Description, 250),
+    OrderTitle: cleanString(source.OrderTitle, 250),
     InternalInfo: cleanString(source.InternalInfo, 2000),
     Customer: {
       Name: cleanString(customer.Name, 200),

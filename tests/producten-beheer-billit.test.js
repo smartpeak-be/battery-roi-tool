@@ -6,6 +6,8 @@ const firebaseSource = readFileSync(new URL('../assets/js/firebase-init.js', imp
 
 describe('producten-beheer Billit offerte koppeling', () => {
   it('bewaart de finale Billit-PDF op het project onder de gekozen configuratie', () => {
+    expect(source).toContain('function billitOfferSubject');
+    expect(source).toContain('.slice(0, 250)');
     expect(source).toContain('async function attachBillitPdfToProjectConfig');
     expect(source).toContain('await attachBillitPdfToProjectConfig(computed, pdf, billitId);');
     expect(source).toContain('uploadProjectOfferte(computed.project.id, configType, file, {');
