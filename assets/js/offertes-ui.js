@@ -251,8 +251,12 @@ function wireOffertesClicks(containerEl, getProjectFn, onChange) {
         const context = quoteTools.buildQuoteContextFromProjectConfig(project, type, {
           vat: (typeof effectiveBtwFor === 'function') ? effectiveBtwFor(project) : 21,
         });
-        if (!context.configId && (!Array.isArray(context.extraProducts) || context.extraProducts.length === 0)) {
-          throw new Error('Deze configuratie bevat geen productlijnen voor de offerte-preview.');
+        const hasCalculatedLine = Number(context.calculatedLine?.amountInclVat) > 0;
+        if (!context.configId
+          && (!Array.isArray(context.extraProducts) || context.extraProducts.length === 0)
+          && (!Array.isArray(context.manualLines) || context.manualLines.length === 0)
+          && !hasCalculatedLine) {
+          throw new Error('Deze configuratie bevat geen productlijnen of berekend totaal voor de offerte-preview.');
         }
         window.SmartPeakQuotePreview.openQuoteModal(context, {
           onBillitPdfAttached: () => onChange && onChange(),

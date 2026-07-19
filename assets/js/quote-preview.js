@@ -458,7 +458,8 @@ function buildQuoteComputation() {
   const vat = parseFloat(document.getElementById('quoteVat').value) || 21;
   const calculatedLine = calculatedLineFromContext(vat);
   const project = _quoteProjects.find(p => p.id === document.getElementById('quoteProject')?.value) || null;
-  if (calculatedLine && cfg.id === _currentContext.configId) {
+  const contextConfigId = _currentContext.configId || (String(_currentContext.configType || '').startsWith('CUSTOM_') ? _currentContext.configType : '');
+  if (calculatedLine && cfg.id === contextConfigId) {
     const totalIncl = calculatedLine.exVat * (1 + calculatedLine.vat / 100);
     return {
       cfg,

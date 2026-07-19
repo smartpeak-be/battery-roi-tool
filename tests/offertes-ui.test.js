@@ -15,6 +15,8 @@ describe('offertes-ui quote preview action', () => {
     expect(quotePreviewSource).toContain('id="btnCreateBillitOffer"');
     expect(quotePreviewSource).toContain('function createBillitOfferFromPreview');
     expect(quotePreviewSource).toContain('context.calculatedLine');
+    expect(source).toContain('const hasCalculatedLine = Number(context.calculatedLine?.amountInclVat) > 0;');
+    expect(source).toContain('&& !hasCalculatedLine');
     expect(quotePreviewSource).toContain('amountInclVat / (1 + vat / 100)');
     expect(quotePreviewSource).not.toContain('<iframe');
   });
