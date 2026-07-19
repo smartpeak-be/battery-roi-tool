@@ -2065,11 +2065,15 @@ function projectBillitCustomer(project) {
   };
 }
 
+function billitOfferSubject(configName) {
+  return `SmartPeak offerte - ${configName || 'configuratie'}`.slice(0, 250);
+}
+
 function buildBillitOfferPayloadForComputed(computed) {
   if (!computed.project) throw new Error('Kies eerst een klant/project voor de Billit-offerte.');
   const customer = projectBillitCustomer(computed.project);
   if (!customer.Name) throw new Error('Het gekozen project heeft geen klantnaam.');
-  const title = `SmartPeak offerte - ${computed.cfg.name || 'configuratie'}`;
+  const title = billitOfferSubject(computed.cfg.name);
   return {
     IsSent: false,
     OrderType: 'Offer',
