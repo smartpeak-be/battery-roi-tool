@@ -105,6 +105,8 @@ export function productConfigCalculationReadiness(config, productsById = {}, cat
   let capacityKwh = 0;
   let inverterPowerKw = 0;
   let hasRelevantProduct = false;
+  let hasStandaloneBattery = false;
+  let hasInverterOrSystem = false;
   let hasEfficiency = false;
   const validItems = normalizeConfigItems(config.items);
 
@@ -119,6 +121,8 @@ export function productConfigCalculationReadiness(config, productsById = {}, cat
     const slug = categorySlugForProduct(product, categoriesById);
     const specs = product.specs || {};
     if (CALC_RELEVANT_CATEGORY_SLUGS.has(slug)) hasRelevantProduct = true;
+    if (slug === 'batterijen') hasStandaloneBattery = true;
+    if (slug === INVERTER_CATEGORY_SLUG || slug === 'thuisbatterij-systemen') hasInverterOrSystem = true;
     if (BATTERY_CATEGORY_SLUGS.has(slug) && positiveNumber(specs.capacityKwh)) capacityKwh += Number(specs.capacityKwh) * item.qty;
     if ((BATTERY_CATEGORY_SLUGS.has(slug) || slug === INVERTER_CATEGORY_SLUG) && positiveNumber(specs.inverterPowerKw)) {
       inverterPowerKw += Number(specs.inverterPowerKw) * item.qty;
@@ -134,7 +138,13 @@ export function productConfigCalculationReadiness(config, productsById = {}, cat
 
   if (!hasRelevantProduct) reasons.push('Geen batterij, omvormer of thuisbatterij-systeem in de samenstelling');
   if (!(capacityKwh > 0)) reasons.push('Geen totale nuttige batterijcapaciteit gevonden');
-  if (!(inverterPowerKw > 0)) reasons.push('Geen totaal nominaal AC-vermogen gevonden');
+  const requiresExistingInverterPower = options.allowBatteryOnly === true
+    && hasStandaloneBattery
+    && !hasInverterOrSystem
+    && capacityKwh > 0
+    && !(inverterPowerKw > 0);
+  if (!(inverterPowerKw > 0) && !requiresExistingInverterPower) reasons.push('Geen totaal nominaal AC-vermogen gevonden');
+  if (requiresExistingInverterPower) warnings.push('Gebruikt het ingegeven totale vermogen van de bestaande omvormer');
   if (hasRelevantProduct && !hasEfficiency) warnings.push('Geen rendement ingevuld; calculator gebruikt 90% standaardrendement');
 
   return {
@@ -143,6 +153,7 @@ export function productConfigCalculationReadiness(config, productsById = {}, cat
     warnings: [...new Set(warnings)],
     capacityKwh,
     inverterPowerKw,
+    requiresExistingInverterPower,
     customerType,
   };
 }

@@ -101,10 +101,17 @@ function inferCalculatorSpecs(items, productsById, categoriesById, fallback = {}
     }
   });
 
+  const fallbackInverterPowerKw = Number(fallback.existingInverterPowerKw);
+  const requiresExistingInverterPower = batCap > 0 && !(batInv > 0);
   return {
     batCap: batCap > 0 ? batCap : Number(fallback.batCap) || 0,
-    batInv: batInv > 0 ? batInv : Number(fallback.batInv) || 0,
+    batInv: batInv > 0
+      ? batInv
+      : (requiresExistingInverterPower && Number.isFinite(fallbackInverterPowerKw) && fallbackInverterPowerKw > 0
+          ? fallbackInverterPowerKw
+          : Number(fallback.batInv) || 0),
     eff: effWeightTotal > 0 ? weightedEffTotal / effWeightTotal : Number(fallback.eff) || 0.90,
+    requiresExistingInverterPower,
   };
 }
 
@@ -180,7 +187,10 @@ export function resolveCompositionToCalculatorConfig(baseConfig, composition, pr
   const compositionTotalInclBtw = allLines.reduce((sum, line) => sum + line.amountInclBtw, 0);
   const baseItems = Array.isArray(baseConfig.items) ? baseConfig.items : [];
   const dynamicItems = [...baseItems, ...compositionProductItems(resolvedLines)];
-  const inferred = inferCalculatorSpecs(dynamicItems, productsById, categoriesById, baseConfig);
+  const inferred = inferCalculatorSpecs(dynamicItems, productsById, categoriesById, {
+    ...baseConfig,
+    existingInverterPowerKw: opts.existingInverterPowerKw,
+  });
   const description = generatedConfigDescription(dynamicItems, productsById, categoriesById)
     || baseConfig.omschrijving
     || baseConfig.description
@@ -192,6 +202,7 @@ export function resolveCompositionToCalculatorConfig(baseConfig, composition, pr
     omschrijving: description,
     batCap: inferred.batCap,
     batInv: inferred.batInv,
+    requiresExistingInverterPower: inferred.requiresExistingInverterPower,
     eff: inferred.eff,
     basePrice: normalizedBasePrice,
     price: normalizedBasePrice + compositionTotalInclBtw,

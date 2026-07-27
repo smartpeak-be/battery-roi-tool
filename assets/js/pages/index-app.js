@@ -280,6 +280,8 @@ let _sheetConfigs = null;
 let _sheetProducts = [];
 let _sheetCategories = [];
 let _settings = {};
+let _configsLoadPromise = null;
+let _showBatteryOnlyBaseConfigs = false;
 let _suppressProjectCalcAutoSave = false;
 let _compositionLinesByType = {};
 let _customCompositions = {};
@@ -379,7 +381,8 @@ function _startFromSelectedComposition() {
   return true;
 }
 
-function _openBaseCompositionModal() {
+async function _openBaseCompositionModal() {
+  if (!_sheetConfigs) await loadConfigs();
   const modal = _ensureBaseCompositionModal();
   modal.style.display = 'flex';
   _renderBaseCompositionOptions();
@@ -395,6 +398,7 @@ function _filteredBaseConfigs() {
   const q = (document.getElementById('compositionSearch')?.value || '').trim().toLowerCase();
   return (_sheetConfigs || []).filter(c => {
     if (c.source !== 'productConfig') return false;
+    if (c.requiresExistingInverterPower && !_showBatteryOnlyBaseConfigs) return false;
     if (!q) return true;
     return [c.type, c.omschrijving, c.productConfigName]
       .filter(Boolean)
@@ -407,10 +411,16 @@ function _filteredBaseConfigs() {
 function _renderBaseCompositionOptions(selected = '') {
   const opts = _filteredBaseConfigs().map(c => `
     <option value="${escapeHtml(c.type)}" ${c.type === selected ? 'selected' : ''}>
-      ${escapeHtml(c.omschrijving || c.productConfigName || c.type)} · ${fmt2(c.batCap)} kWh · ${fmt2(c.batInv)} kW
+      ${escapeHtml(c.omschrijving || c.productConfigName || c.type)} · ${fmt2(c.batCap)} kWh · ${c.requiresExistingInverterPower ? 'vermogen bestaande omvormer' : `${fmt2(c.batInv)} kW`}
     </option>`).join('');
   const select = document.getElementById('baseCompositionSelect');
   if (select) select.innerHTML = `<option value="">— Zoek/kies bestaande samenstelling —</option>${opts}`;
+  const toggle = document.getElementById('toggleBatteryOnlyConfigs');
+  if (toggle) {
+    toggle.setAttribute('aria-pressed', String(_showBatteryOnlyBaseConfigs));
+    toggle.classList.toggle('btn-calculate', _showBatteryOnlyBaseConfigs);
+    toggle.classList.toggle('btn-secondary', !_showBatteryOnlyBaseConfigs);
+  }
 }
 
 function _ensureBaseCompositionModal() {
@@ -431,6 +441,9 @@ function _ensureBaseCompositionModal() {
           <label>Zoeken</label>
           <input type="search" id="compositionSearch" placeholder="Zoek op merk/model/naam..." value="">
         </div>
+        <button type="button" class="btn btn-secondary" id="toggleBatteryOnlyConfigs" aria-pressed="false" style="margin:0 0 12px;">
+          <i class="fa-solid fa-battery-full" aria-hidden="true"></i> Ook samenstellingen zonder AC-vermogen tonen
+        </button>
         <div class="form-group" style="margin:0;">
           <label>Bestaande samenstelling</label>
           <select id="baseCompositionSelect" size="8" style="min-height:220px;"></select>
@@ -444,6 +457,10 @@ function _ensureBaseCompositionModal() {
   document.body.appendChild(modal);
   modal.addEventListener('click', e => {
     if (e.target === modal || e.target.closest('[data-base-composition-close]')) _closeBaseCompositionModal();
+    if (e.target.closest('#toggleBatteryOnlyConfigs')) {
+      _showBatteryOnlyBaseConfigs = !_showBatteryOnlyBaseConfigs;
+      _renderBaseCompositionOptions(document.getElementById('baseCompositionSelect')?.value || '');
+    }
     if (e.target.closest('#baseCompositionUse')) {
       if (_startFromSelectedComposition()) _closeBaseCompositionModal();
     }
@@ -492,6 +509,7 @@ function readAllSelectedConfigObjects() {
     .map(type => {
       const comp = _customCompositions[type];
       if (!comp) return null;
+      const existingInverterPowerKw = parseFloat(document.getElementById('pvInverter')?.value) || 0;
       return resolveCompositionToCalculatorConfig(_baseConfigForCustomComposition(comp), {
         type,
         baseProductConfigId: comp.baseProductConfigId || '',
@@ -501,6 +519,7 @@ function readAllSelectedConfigObjects() {
         btwPercent,
         categories: _sheetCategories,
         bebatPricePerKg: currentBebatPricePerKg(),
+        existingInverterPowerKw,
       });
     })
     .filter(Boolean);
@@ -1054,10 +1073,16 @@ async function deleteManualConfig(type) {
   renderManualConfigCards();
 }
 
-async function loadConfigs() {
+async function loadConfigs({ force = false } = {}) {
   const statusEl = document.getElementById('configsStatus');
-  statusEl.innerHTML = '<span class="spinner"></span> Laden...';
-  return withSpinner(async () => {
+  if (_sheetConfigs && !force) {
+    _populateConfigSelects();
+    document.getElementById('configSelectorsArea').style.display = '';
+    return _sheetConfigs;
+  }
+  if (_configsLoadPromise) return _configsLoadPromise;
+  statusEl.innerHTML = '<span class="spinner"></span> Samenstellingen automatisch laden...';
+  _configsLoadPromise = withSpinner(async () => {
     try {
       const [categories, products, productConfigs, settings] = await Promise.all([
         listProductCategories(),
@@ -1071,6 +1096,7 @@ async function loadConfigs() {
       const connectionType = _projectDoc?.electrical?.connectionType || null;
       _sheetConfigs = productConfigsToCalcConfigs(productConfigs, products, categories, {
         connectionType,
+        allowBatteryOnly: true,
       });
       if (!_sheetConfigs.length) throw new Error(connectionType
         ? `Geen actieve samenstellingen geschikt voor ${gridConnectionLabel(connectionType)} gevonden.`
@@ -1079,12 +1105,19 @@ async function loadConfigs() {
       document.getElementById('configSelectorsArea').style.display = '';
       const manualBtn = document.getElementById('addManualConfigBtn');
       if (manualBtn) manualBtn.style.display = 'none';
-      statusEl.textContent = `✅ ${_sheetConfigs.length} samenstellingen geladen. Sheet-configs zijn niet meer beschikbaar in de calculator.`;
+      const batteryOnlyCount = _sheetConfigs.filter(cfg => cfg.requiresExistingInverterPower).length;
+      statusEl.textContent = `✅ ${_sheetConfigs.length} samenstellingen geladen${batteryOnlyCount ? ` (${batteryOnlyCount} zonder AC-vermogen optioneel)` : ''}.`;
+      return _sheetConfigs;
     } catch(e) {
       statusEl.textContent = `❌ Fout bij laden: ${e.message}`;
       throw e;
     }
   }, { message: 'Samenstellingen laden...' });
+  try {
+    return await _configsLoadPromise;
+  } finally {
+    _configsLoadPromise = null;
+  }
 }
 
 // ─── MAIN CALC ─────────────────────────────────────────────────────────────────
@@ -1098,8 +1131,12 @@ async function calculate() {
     return;
   }
   if (!_sheetConfigs) {
-    alert('Klik eerst op "Configuraties laden" om de productlijst te laden.');
-    return;
+    try {
+      await loadConfigs();
+    } catch {
+      alert('De productlijst kon niet worden geladen. Probeer opnieuw via "Samenstellingen vernieuwen".');
+      return;
+    }
   }
 
   const selectedConfigs = readAllSelectedConfigObjects();
@@ -1671,7 +1708,7 @@ async function copyShareUrlInput() {
 
 function wireIndexActions() {
   document.getElementById('loadConfigsBtn')?.addEventListener('click', () => {
-    loadConfigs().catch(() => {});
+    loadConfigs({ force: true }).catch(() => {});
   });
   document.getElementById('addManualConfigBtn')?.addEventListener('click', () => showManualConfigForm());
   document.getElementById('calculateBtn')?.addEventListener('click', () => {
@@ -1690,7 +1727,9 @@ function wireIndexActions() {
       return;
     }
     if (e.target.closest('#startFromComposition')) {
-      _openBaseCompositionModal();
+      _openBaseCompositionModal().catch(e => {
+        alert('Samenstellingen laden mislukt: ' + (e && e.message ? e.message : e));
+      });
       return;
     }
     const delBtn = e.target.closest('.custom-composition-delete');
@@ -1805,6 +1844,7 @@ let _projectDoc  = null;
     }
     try {
       await loadProjectIntoUI(pid);
+      await loadConfigs().catch(() => {});
     } catch (e) {
       console.error('Project load error:', e);
       alert('Kon project niet laden: ' + (e && e.message ? e.message : e));

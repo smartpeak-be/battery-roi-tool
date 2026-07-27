@@ -131,7 +131,7 @@ export function productConfigToCalcConfig(config, products, categories, options 
     .filter(item => item.productId && item.qty > 0 && productsById[item.productId]);
 
   const { batCap, batInv, eff } = inferTechnicalSpecs(items, productsById, categoriesById);
-  if (!(batCap > 0) || !(batInv > 0) || !(eff > 0)) return null;
+  if (!(batCap > 0) || (!(batInv > 0) && !readiness.requiresExistingInverterPower) || !(eff > 0)) return null;
 
   const subtotalExVat = configSubtotalExVat(items, productsById);
   const type = productConfigType(config.id);
@@ -146,6 +146,7 @@ export function productConfigToCalcConfig(config, products, categories, options 
     omschrijving,
     batCap,
     batInv,
+    requiresExistingInverterPower: readiness.requiresExistingInverterPower === true,
     eff,
     prices: {
       '6_no': subtotalExVat * 1.06,

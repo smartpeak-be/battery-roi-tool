@@ -169,6 +169,28 @@ describe('config composer', () => {
     ]));
   });
 
+  it('uses the entered existing inverter power for battery-only compositions', () => {
+    const resolved = resolveCompositionToCalculatorConfig({
+      type: 'CUSTOM_BATTERY_ONLY',
+      source: 'customComposition',
+      omschrijving: 'Batterij op bestaande omvormer',
+      prices: { '6_no': 0, '6_yes': 0, '21_no': 0, '21_yes': 0 },
+      items: [],
+    }, {
+      type: 'CUSTOM_BATTERY_ONLY',
+      lines: [{ id: 'battery-line', kind: 'product', productId: 'battery', qty: 2, vat: 6 }],
+    }, products, {
+      btwPercent: 6,
+      categories,
+      bebatPricePerKg: 0,
+      existingInverterPowerKw: 5,
+    });
+
+    expect(resolved.batCap).toBeCloseTo(7.68);
+    expect(resolved.batInv).toBeCloseTo(5);
+    expect(resolved.requiresExistingInverterPower).toBe(true);
+  });
+
   it('shows inspection products in composer product choices', () => {
     expect(selectableComposerProducts(products).map(p => p.id)).toEqual(['inspection', 'shelf', 'battery', 'inverter']);
   });

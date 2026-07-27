@@ -19,7 +19,7 @@ describe('index custom composition UI', () => {
     expect(source).toContain('id="compositionSearch"');
     expect(source).toContain('id="baseCompositionSelect"');
     expect(source).toContain('id="baseCompositionUse"');
-    expect(source).toContain('_openBaseCompositionModal();');
+    expect(source).toContain('_openBaseCompositionModal().catch');
   });
 
   it('lets custom compositions keep an explicit name, customer explanation and supports installation extra lines', () => {
