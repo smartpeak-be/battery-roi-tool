@@ -57,7 +57,7 @@ vi.mock('firebase-admin', () => {
 });
 
 // Re-import after mocks are in place.
-const { handleOcrSerial, shouldRun, shouldCleanup, ocrSerial } = await import('../index.js');
+const { handleOcrSerial, shouldRun, shouldCleanup, extractSerialFromOcr, ocrSerial } = await import('../index.js');
 
 function makeEvent({ before, after, projectId = 'P', photoId = 'PH' }) {
   return {
@@ -68,6 +68,19 @@ function makeEvent({ before, after, projectId = 'P', photoId = 'PH' }) {
     params: { projectId, photoId },
   };
 }
+
+describe('extractSerialFromOcr — real full-resolution label shapes', () => {
+  it('prefers a long numeric barcode value over specification labels after S/N', () => {
+    const annotations = [
+      { description: 'DYNESS\nS/N:\nNominal Voltage\nNominal Capacity\n0453202822601180289' },
+      { description: 'S/N' },
+      { description: 'Nominal' },
+      { description: 'Voltage' },
+      { description: '0453202822601180289' },
+    ];
+    expect(extractSerialFromOcr(annotations).value).toBe('0453202822601180289');
+  });
+});
 
 describe('handleOcrSerial — happy path', () => {
   beforeEach(() => {

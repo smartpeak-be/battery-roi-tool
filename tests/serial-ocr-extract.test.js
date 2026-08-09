@@ -80,6 +80,17 @@ describe('extractSerialFromOcr', () => {
     expect(extractSerialFromOcr(annotations).value).toBe('ZX987654321');
   });
 
+  it('prefers a long numeric barcode value over specification labels after S/N', () => {
+    const annotations = [
+      { description: 'DYNESS\nS/N:\nNominal Voltage\nNominal Capacity\n0453202822601180289' },
+      { description: 'S/N' },
+      { description: 'Nominal' },
+      { description: 'Voltage' },
+      { description: '0453202822601180289' },
+    ];
+    expect(extractSerialFromOcr(annotations).value).toBe('0453202822601180289');
+  });
+
   it('adds a lower-label bonus for battery stickers when there is no explicit SN label', () => {
     const annotations = [
       { description: 'TYPE-CODE-LONG-999\nZD-BAT-123456' },
