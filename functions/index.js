@@ -97,6 +97,8 @@ const COMMON_NON_SERIAL_TOKENS = new Set([
   'MARSTEK', 'ZENDURE', 'MODEL', 'TYPE', 'SERIAL', 'SERIENUMMER', 'BATTERY',
   'BATTERIJ', 'OMVORMER', 'INVERTER', 'WARNING', 'INPUT', 'OUTPUT', 'MADE',
   'CHINA', 'CE', 'FCC', 'WIFI', 'BLUETOOTH', 'APP', 'CODE', 'QRCODE',
+  'DYNESS', 'PRODUCT', 'LITHIUM', 'NOMINAL', 'VOLTAGE', 'CAPACITY', 'ENERGY',
+  'DIGITAL',
 ]);
 
 export function extractSerialFromOcr(textAnnotations, opts = {}) {
@@ -199,6 +201,7 @@ function _addLabelContextCandidates(textAnnotations, addCandidate, imageMaxY) {
 
 function _scoreCandidate(candidate, opts) {
   let score = candidate.value.length;
+  if (/^\d{10,}$/.test(candidate.value)) score += 500;
   if (/[A-Za-z]/.test(candidate.value) && /\d/.test(candidate.value)) score += 120;
   if (candidate.value.includes('-')) score += 30;
   for (const source of candidate.sources) {
@@ -404,7 +407,12 @@ async function cleanupSerialEntry(projectId, photoId, serialEntryId) {
 }
 
 export const ocrSerial = functions.firestore.onDocumentWritten(
-  { document: 'projects/{projectId}/photos/{photoId}', region: 'europe-west1' },
+  {
+    document: 'projects/{projectId}/photos/{photoId}',
+    region: 'europe-west1',
+    memory: '512MiB',
+    concurrency: 1,
+  },
   handleOcrSerial,
 );
 
