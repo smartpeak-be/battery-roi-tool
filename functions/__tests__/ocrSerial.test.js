@@ -57,7 +57,7 @@ vi.mock('firebase-admin', () => {
 });
 
 // Re-import after mocks are in place.
-const { handleOcrSerial, shouldRun, shouldCleanup } = await import('../index.js');
+const { handleOcrSerial, shouldRun, shouldCleanup, ocrSerial } = await import('../index.js');
 
 function makeEvent({ before, after, projectId = 'P', photoId = 'PH' }) {
   return {
@@ -167,6 +167,11 @@ describe('handleOcrSerial — happy path', () => {
 });
 
 describe('shouldRun / shouldCleanup guards', () => {
+  it('reserves enough memory and prevents concurrent full-resolution JPEG decodes', () => {
+    expect(ocrSerial.__endpoint.availableMemoryMb).toBe(512);
+    expect(ocrSerial.__endpoint.concurrency).toBe(1);
+  });
+
   it('runs when fresh tag→serial', () => {
     expect(shouldRun(null, { tag: 'serial', storagePath: 'x' })).toBe(true);
     expect(shouldRun({ tag: 'situatie' }, { tag: 'serial', storagePath: 'x' })).toBe(true);

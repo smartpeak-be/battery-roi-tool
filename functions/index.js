@@ -404,7 +404,12 @@ async function cleanupSerialEntry(projectId, photoId, serialEntryId) {
 }
 
 export const ocrSerial = functions.firestore.onDocumentWritten(
-  { document: 'projects/{projectId}/photos/{photoId}', region: 'europe-west1' },
+  {
+    document: 'projects/{projectId}/photos/{photoId}',
+    region: 'europe-west1',
+    memory: '512MiB',
+    concurrency: 1,
+  },
   handleOcrSerial,
 );
 
