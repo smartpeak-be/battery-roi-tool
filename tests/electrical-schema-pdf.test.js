@@ -16,10 +16,10 @@ function sampleDrawing(branchCount = 1) {
 function remTreeDrawing() {
   let drawing = createEmptyDrawing({ title: 'Boomschema' });
   const rootId = drawing.differentials[0].id;
-  drawing = addBranch(drawing, rootId, 'battery', { endpoint: { label: 'Batterij' } });
+  drawing = addBranch(drawing, rootId, 'battery', { endpoint: { label: 'Batterij', cable: '3G6', cablePlacement: 'surface', brand: 'Zendure', model: 'SolarFlow', serialNumber: 'SN-12345', powerKw: 2.4, capacityKwh: 5.76, note: 'Technische ruimte' } });
   drawing = addBranch(drawing, rootId, 'inverter', { endpoint: { label: 'Omvormer' } });
   drawing = addBranch(drawing, rootId, 'rem-breaker', { id: 'rem-branch', endpoint: { id: 'rem', label: 'REM verdeler' } });
-  drawing = addRemCircuit(drawing, 'rem', { endpoint: { id: 'kring-1', label: 'Verlichting' } });
+  drawing = addRemCircuit(drawing, 'rem', { endpoint: { id: 'kring-1', label: 'Verlichting', circuitLabel: 'A', cable: '3G1,5', cablePlacement: 'surface', note: 'Gelijkvloers' } });
   drawing = addRemCircuit(drawing, 'rem', { endpoint: { id: 'kring-2', label: 'Stopcontacten' } });
   return drawing;
 }
@@ -58,9 +58,16 @@ describe('electrical schema PDF', () => {
   it('places component labels beside their symbols in the bottom-up layout', () => {
     const text = pdfText(remTreeDrawing());
     // sideText uses x + 19; no component name is centered on the vertical conductor.
-    expect(text).toMatch(/BT \/F2 7 Tf [\d.]+ [\d.]+ Td \(Batterij\) Tj ET/);
+    expect(text).toMatch(/BT \/F2 6\.5 Tf [\d.]+ [\d.]+ Td \(Batterij\) Tj ET/);
     expect(text).toMatch(/BT \/F2 6\.5 Tf [\d.]+ [\d.]+ Td \(Hoofddifferentieel\) Tj ET/);
     expect(text).toMatch(/BT \/F2 7 Tf [\d.]+ [\d.]+ Td \(REM verdeler\) Tj ET/);
+  });
+
+  it('renders all entered metadata, cable placement and an open circuit end', () => {
+    const text = pdfText(remTreeDrawing());
+    ['3G6', 'Zendure SolarFlow', 'SN: SN-12345', '2.4kW', '5.76kWh', 'Technische ruimte', 'Kring A', '3G1,5', 'Gelijkvloers'].forEach(value => expect(text).toContain(`(${value})`));
+    expect(text).toContain('(O)');
+    expect(text).not.toContain('(K)');
   });
 
   it('paginates wide drawings', () => {

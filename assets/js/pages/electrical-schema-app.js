@@ -52,7 +52,7 @@ function renderEndpointSymbol(endpoint) {
 
 function renderBranch(branch) {
   const endpoint = branch.endpoint;
-  const specs = [endpoint.cable, endpoint.powerKw ? `${endpoint.powerKw} kW` : '', endpoint.capacityKwh ? `${endpoint.capacityKwh} kWh` : ''].filter(Boolean).join(' · ');
+  const specs = [endpoint.circuitLabel ? `Kring ${endpoint.circuitLabel}` : '', endpoint.cablePlacement === 'surface' ? `O ${endpoint.cable}` : endpoint.cable, endpoint.powerKw ? `${endpoint.powerKw} kW` : '', endpoint.capacityKwh ? `${endpoint.capacityKwh} kWh` : '', endpoint.serialNumber ? `SN ${endpoint.serialNumber}` : ''].filter(Boolean).join(' · ');
   const remChildren = endpoint.type === 'rem-breaker' ? `<div class="rem-circuits">
     <div class="rem-rail"></div>
     ${endpoint.circuits.map(renderBranch).join('')}
@@ -100,6 +100,17 @@ function field(label, name, value, { type = 'text', suffix = '', required = true
   return `<div class="${full ? 'schema-field-full' : ''}"><label class="form-label" for="field-${name}">${label}</label><div class="input-group"><input class="form-control form-control-lg" id="field-${name}" name="${name}" type="${type}" value="${escapeHtml(value ?? '')}" ${type === 'number' ? 'min="0" step="0.1" inputmode="decimal"' : ''} ${required ? 'required' : ''}>${suffix ? `<span class="input-group-text">${suffix}</span>` : ''}</div></div>`;
 }
 
+function selectField(label, name, value, options) {
+  return `<div><label class="form-label" for="field-${name}">${label}</label><select class="form-select form-select-lg" id="field-${name}" name="${name}">${options.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === value ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></div>`;
+}
+
+function cablePlacementField(value) {
+  return selectField('Plaatsing kabel', 'cablePlacement', value || '', [
+    { value: '', label: 'Geen aanduiding' },
+    { value: 'surface', label: 'Opbouw / in buis (O)' },
+  ]);
+}
+
 function openEditor(id) {
   const found = findElement(drawing, id); if (!found) return;
   editingId = id;
@@ -112,13 +123,15 @@ function openEditor(id) {
     fields.innerHTML = `<div class="schema-field-grid">${field('Naam', 'label', item.label, { full: true })}${field('Stroom', 'amperage', item.amperage, { type: 'number', suffix: 'A' })}${field('Polen', 'poles', item.poles, { type: 'number' })}${field('Curve', 'curve', item.curve)}</div>`;
   } else if (found.type === 'differential') {
     document.getElementById('elementModalTitle').textContent = 'Differentieel';
-    fields.innerHTML = `<div class="schema-field-grid">${field('Naam', 'label', item.label, { full: true })}${field('Stroom', 'amperage', item.amperage, { type: 'number', suffix: 'A' })}${field('Gevoeligheid', 'sensitivityMa', item.sensitivityMa, { type: 'number', suffix: 'mA' })}${field('Polen', 'poles', item.poles, { type: 'number' })}${field('Voedingskabel', 'cable', item.cable)}</div>`;
+    fields.innerHTML = `<div class="schema-field-grid">${field('Naam', 'label', item.label, { full: true })}${field('Stroom', 'amperage', item.amperage, { type: 'number', suffix: 'A' })}${field('Gevoeligheid', 'sensitivityMa', item.sensitivityMa, { type: 'number', suffix: 'mA' })}${field('Polen', 'poles', item.poles, { type: 'number' })}${field('Voedingskabel', 'cable', item.cable)}${cablePlacementField(item.cablePlacement)}</div>`;
   } else {
     document.getElementById('elementModalTitle').textContent = endpointLabels[found.type] || 'Eindpunt';
     const branch = findElement(drawing, found.branchId)?.element;
     fields.innerHTML = `<div class="schema-field-grid">
       ${field('Naam', 'label', item.label, { full: true })}
+      ${found.type === 'circuit' ? field('Kringlabel', 'circuitLabel', item.circuitLabel, { required: false }) : ''}
       ${field('Kabel', 'cable', item.cable)}
+      ${cablePlacementField(item.cablePlacement)}
       ${field('Automaat', 'breakerAmperage', branch?.breaker.amperage || 20, { type: 'number', suffix: 'A' })}
       ${field('Polen automaat', 'breakerPoles', branch?.breaker.poles || 2, { type: 'number' })}
       ${!['circuit', 'rem-breaker'].includes(found.type) ? field('Merk', 'brand', item.brand, { required: false }) + field('Model/type', 'model', item.model, { required: false }) + field('Vermogen', 'powerKw', item.powerKw, { type: 'number', suffix: 'kW' }) : ''}

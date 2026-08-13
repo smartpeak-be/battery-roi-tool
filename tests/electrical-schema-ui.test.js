@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
-describe('eendraadschema v4 UI integration', () => {
+describe('eendraadschema v5 UI integration', () => {
   const html = read('schema/index.html');
   const app = read('assets/js/pages/electrical-schema-app.js');
   const css = read('assets/css/electrical-schema.css');
@@ -36,10 +36,16 @@ describe('eendraadschema v4 UI integration', () => {
     expect(css).toContain('.symbol-circuit');
   });
 
-  it('has a real PDF action and persists model v4 including the main breaker', () => {
+  it('has a real PDF action and persists model v5 including the main breaker', () => {
     expect(html).toContain('id="btnPdf"');
     expect(app).toContain('downloadElectricalSchemaPdf');
     expect(firebase).toContain('mainBreaker:');
-    expect(firebase).toContain('Number(drawing?.version) || 4');
+    expect(firebase).toContain('Number(drawing?.version) || 5');
+  });
+
+  it('offers cable placement and a free circuit label in the editor', () => {
+    expect(app).toContain("field('Kringlabel', 'circuitLabel'");
+    expect(app).toContain("value: 'surface', label: 'Opbouw / in buis (O)'");
+    expect(app).toContain("'Plaatsing kabel'");
   });
 });
