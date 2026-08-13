@@ -41,6 +41,8 @@ describe('projectgestuurd eendraadschema', () => {
     const endpoints = drawing.differentials[0].branches.map(branch => branch.endpoint);
     expect(endpoints).toHaveLength(1);
     expect(endpoints[0]).toMatchObject({ type: 'hybrid-inverter', serialNumber: 'INV-001', powerKw: 2.4, capacityKwh: 5.76 });
+    expect(endpoints[0].label).toBe('Zendure SolarFlow 2400 AC');
+    expect(endpoints[0].customProperties.some(property => property.key === 'Bron')).toBe(false);
     expect(endpoints[0].customProperties).toEqual(expect.arrayContaining([
       { key: 'U', value: '51.2 V DC' }, { key: 'E totaal', value: '5.76 kWh' },
       { key: 'Batterijen', value: '2x Zendure AB3000X' },
