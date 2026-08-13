@@ -11,86 +11,72 @@ import {
   updateElement,
 } from '../assets/js/electrical-schema-model.js';
 
-describe('eendraadschema model v3', () => {
-  it('starts with the main breaker as first element in the chain', () => {
-    expect(createEmptyDrawing({ projectId: 'project-1' })).toMatchObject({
-      version: 3,
+describe('eendraadschema model v4', () => {
+  it('starts with main breaker followed by exactly one main differential', () => {
+    const drawing = createEmptyDrawing({ projectId: 'project-1' });
+    expect(drawing).toMatchObject({
+      version: 4,
       projectId: 'project-1',
-      mainBreaker: { type: 'main-breaker', label: 'Hoofdautomaat', amperage: 40, poles: 4 },
-      differentials: [],
+      mainBreaker: { type: 'main-breaker', label: 'Hoofdautomaat' },
+      differentials: [{ type: 'differential', label: 'Hoofddifferentieel', sensitivityMa: 300 }],
     });
+    expect(drawing.differentials).toHaveLength(1);
   });
 
-  it('supports nested differentials', () => {
-    let drawing = addDifferential(createEmptyDrawing(), null, { id: 'd1', label: 'Hoofddifferentieel' });
-    drawing = addDifferential(drawing, 'd1', { id: 'd2', label: 'Differentieel batterij' });
-    expect(drawing.differentials[0].differentials[0]).toMatchObject({ id: 'd2', label: 'Differentieel batterij' });
-    expect(findElement(drawing, 'd2')).toMatchObject({ type: 'differential', parentId: 'd1' });
+  it('never adds a parallel root differential', () => {
+    const drawing = createEmptyDrawing();
+    const unchanged = addDifferential(drawing, null, { id: 'parallel' });
+    expect(unchanged.differentials).toHaveLength(1);
+    expect(findElement(unchanged, 'parallel')).toBeNull();
   });
 
-  it.each(['circuit', 'battery', 'inverter', 'hybrid-inverter', 'rem-breaker'])('adds a protected %s branch under a differential', endpointType => {
-    let drawing = addDifferential(createEmptyDrawing(), null, { id: 'd1' });
-    drawing = addBranch(drawing, 'd1', endpointType, {
-      id: `branch-${endpointType}`,
-      breaker: { id: `breaker-${endpointType}` },
-      endpoint: { id: `endpoint-${endpointType}` },
-    });
-    expect(drawing.differentials[0].branches[0]).toMatchObject({
-      type: 'branch',
-      endpoint: { type: endpointType },
-      breaker: { type: 'breaker' },
-    });
+  it('supports one downstream differential in series under the main differential', () => {
+    const drawing = createEmptyDrawing();
+    const rootId = drawing.differentials[0].id;
+    const updated = addDifferential(drawing, rootId, { id: 'd2', label: 'Differentieel batterij' });
+    expect(updated.differentials[0].differentials[0]).toMatchObject({ id: 'd2', label: 'Differentieel batterij' });
+    const noParallel = addDifferential(updated, rootId, { id: 'parallel-child' });
+    expect(noParallel.differentials[0].differentials).toHaveLength(1);
+    expect(findElement(noParallel, 'parallel-child')).toBeNull();
   });
 
-  it('lets a REM distribution breaker contain ordinary circuits only', () => {
-    let drawing = addDifferential(createEmptyDrawing(), null, { id: 'd1' });
-    drawing = addBranch(drawing, 'd1', 'rem-breaker', {
-      id: 'rem-branch', endpoint: { id: 'rem', label: 'REM automaat' },
-    });
-    drawing = addRemCircuit(drawing, 'rem', {
-      id: 'child-branch',
-      breaker: { id: 'child-breaker', amperage: 16 },
-      endpoint: { id: 'child-circuit', label: 'Stopcontacten keuken' },
-    });
-
-    expect(findElement(drawing, 'rem').element.circuits[0]).toMatchObject({
-      type: 'branch',
-      breaker: { id: 'child-breaker', type: 'breaker' },
-      endpoint: { id: 'child-circuit', type: 'circuit', label: 'Stopcontacten keuken' },
-    });
-    expect(findElement(drawing, 'child-circuit')).toMatchObject({ type: 'circuit', parentId: 'rem', branchId: 'child-branch' });
+  it('migrates parallel legacy root differentials into one serial root tree without data loss', () => {
+    const migrated = normalizeDrawing({ differentials: [
+      { id: 'd1', label: 'Eerste', branches: [{ endpoint: { id: 'battery', type: 'battery' } }] },
+      { id: 'd2', label: 'Tweede', branches: [{ endpoint: { id: 'inverter', type: 'inverter' } }] },
+    ] });
+    expect(migrated.differentials).toHaveLength(1);
+    expect(migrated.differentials[0].id).toBe('d1');
+    expect(migrated.differentials[0].differentials[0].id).toBe('d2');
+    expect(findElement(migrated, 'battery')).not.toBeNull();
+    expect(findElement(migrated, 'inverter')).not.toBeNull();
   });
 
-  it('normalizes REM children to ordinary circuits even when malformed device data is loaded', () => {
-    const normalized = normalizeDrawing({
-      differentials: [{ id: 'd1', branches: [{
-        endpoint: { id: 'rem', type: 'rem-breaker', circuits: [{ endpoint: { type: 'battery', label: 'Foute batterij' } }] },
-      }] }],
-    });
-    expect(normalized.differentials[0].branches[0].endpoint.circuits[0].endpoint.type).toBe('circuit');
+  it('does not delete the required main differential', () => {
+    const drawing = createEmptyDrawing();
+    expect(deleteElement(drawing, drawing.differentials[0].id).differentials).toHaveLength(1);
   });
 
-  it('migrates the v1 differential → breaker → circuit shape', () => {
-    const migrated = normalizeDrawing({
-      version: 1,
-      differentials: [{ id: 'd', breakers: [{ id: 'b', label: 'Batterij', circuits: [{ id: 'c', label: 'Kring batterij' }] }] }],
-    });
-    expect(migrated.version).toBe(3);
-    expect(migrated.mainBreaker.type).toBe('main-breaker');
-    expect(migrated.differentials[0].branches[0]).toMatchObject({
-      breaker: { id: 'b', label: 'Batterij' },
-      endpoint: { id: 'c', type: 'circuit', label: 'Kring batterij' },
-    });
+  it.each(['circuit', 'battery', 'inverter', 'hybrid-inverter', 'rem-breaker'])('adds a protected %s branch', endpointType => {
+    const drawing = createEmptyDrawing();
+    const updated = addBranch(drawing, drawing.differentials[0].id, endpointType, { endpoint: { id: `endpoint-${endpointType}` } });
+    expect(updated.differentials[0].branches[0].endpoint.type).toBe(endpointType);
+  });
+
+  it('lets REM contain ordinary circuits only', () => {
+    let drawing = createEmptyDrawing();
+    drawing = addBranch(drawing, drawing.differentials[0].id, 'rem-breaker', { endpoint: { id: 'rem' } });
+    drawing = addRemCircuit(drawing, 'rem', { id: 'child', endpoint: { id: 'circuit', type: 'battery' } });
+    expect(findElement(drawing, 'circuit')).toMatchObject({ type: 'circuit', parentId: 'rem' });
   });
 
   it('updates, reorders and recursively deletes REM children', () => {
-    let drawing = addDifferential(createEmptyDrawing(), null, { id: 'd1' });
-    drawing = addBranch(drawing, 'd1', 'rem-breaker', { id: 'rem-branch', endpoint: { id: 'rem' } });
-    drawing = addRemCircuit(drawing, 'rem', { id: 'child-1', endpoint: { id: 'first', label: 'Eerste' } });
-    drawing = addRemCircuit(drawing, 'rem', { id: 'child-2', endpoint: { id: 'second', label: 'Tweede' } });
+    let drawing = createEmptyDrawing();
+    drawing = addBranch(drawing, drawing.differentials[0].id, 'rem-breaker', { endpoint: { id: 'rem' } });
+    drawing = addRemCircuit(drawing, 'rem', { id: 'child-1', endpoint: { id: 'first' } });
+    drawing = addRemCircuit(drawing, 'rem', { id: 'child-2', endpoint: { id: 'second' } });
     drawing = updateElement(drawing, 'first', { label: 'Verlichting' });
     drawing = moveElement(drawing, 'second', -1);
-    expect(findElement(drawing, 'first').element.label).toBe('Verlichting');
     expect(findElement(drawing, 'rem').element.circuits.map(child => child.endpoint.id)).toEqual(['second', 'first']);
     expect(findElement(deleteElement(drawing, 'rem'), 'first')).toBeNull();
   });

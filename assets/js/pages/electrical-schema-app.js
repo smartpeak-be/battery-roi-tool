@@ -73,7 +73,7 @@ function renderBranch(branch) {
 function renderDifferential(diff, depth = 0) {
   return `<section class="schema-differential depth-${Math.min(depth, 3)}" data-id="${diff.id}">
     <div class="schema-diff-head">
-      <div class="schema-symbol">Δ<br>${diff.sensitivityMa}mA</div>
+      <div class="schema-symbol symbol-differential"><i></i><small>${diff.sensitivityMa}mA</small></div>
       <div class="schema-label"><strong>${escapeHtml(diff.label)}</strong><small>${diff.amperage} A · ${diff.poles}-polig · ${escapeHtml(diff.cable)}</small></div>
       ${elementActions(diff.id)}
     </div>
@@ -88,7 +88,7 @@ function renderDifferential(diff, depth = 0) {
 function render() {
   document.getElementById('drawingTitle').value = drawing.title;
   document.getElementById('mainBreaker').innerHTML = `<div class="schema-main-breaker">
-    <div class="schema-symbol symbol-main">A</div><div class="schema-label"><strong>${escapeHtml(drawing.mainBreaker.label)}</strong><small>${drawing.mainBreaker.curve}${drawing.mainBreaker.amperage} A · ${drawing.mainBreaker.poles}-polig</small></div>
+    <div class="schema-symbol symbol-breaker"><i></i></div><div class="schema-label"><strong>${escapeHtml(drawing.mainBreaker.label)}</strong><small>${drawing.mainBreaker.curve}${drawing.mainBreaker.amperage} A · ${drawing.mainBreaker.poles}-polig</small></div>
     ${elementActions(drawing.mainBreaker.id, false)}</div>`;
   document.getElementById('schemaCanvas').innerHTML = drawing.differentials.length
     ? drawing.differentials.map(diff => renderDifferential(diff)).join('')
@@ -105,7 +105,8 @@ function openEditor(id) {
   editingId = id;
   const item = found.element;
   const fields = document.getElementById('elementFields');
-  document.getElementById('btnDeleteElement').classList.toggle('hide', found.type === 'main-breaker');
+  const isRequiredRoot = found.type === 'main-breaker' || (found.type === 'differential' && !found.parentId);
+  document.getElementById('btnDeleteElement').classList.toggle('hide', isRequiredRoot);
   if (found.type === 'main-breaker') {
     document.getElementById('elementModalTitle').textContent = 'Hoofdautomaat';
     fields.innerHTML = `<div class="schema-field-grid">${field('Naam', 'label', item.label, { full: true })}${field('Stroom', 'amperage', item.amperage, { type: 'number', suffix: 'A' })}${field('Polen', 'poles', item.poles, { type: 'number' })}${field('Curve', 'curve', item.curve)}</div>`;
@@ -129,7 +130,12 @@ function openEditor(id) {
   elementModal.show();
 }
 
-function openAdd(parentId) { addingParentId = parentId; addModal.show(); }
+function openAdd(parentId) {
+  addingParentId = parentId;
+  const parent = findElement(drawing, parentId)?.element;
+  document.querySelector('[data-add-type="differential"]').classList.toggle('hide', Boolean(parent?.differentials?.length));
+  addModal.show();
+}
 function addChoice(type) {
   drawing = type === 'differential'
     ? addDifferential(drawing, addingParentId)
@@ -186,7 +192,7 @@ function wireActions() {
     if (action === 'add-rem-circuit') return addCircuitUnderRem(parentId);
     if (action.startsWith('move-')) { drawing = moveElement(drawing, id, action === 'move-up' ? -1 : 1); markDirty(); render(); }
   }
-  document.getElementById('btnAddDifferential').addEventListener('click', () => { drawing = addDifferential(drawing, null); markDirty(); render(); });
+
   document.querySelectorAll('[data-add-type]').forEach(button => button.addEventListener('click', () => addChoice(button.dataset.addType)));
   document.getElementById('drawingTitle').addEventListener('input', event => { drawing = { ...drawing, title: event.target.value }; markDirty(); });
   document.getElementById('btnSave').addEventListener('click', saveDrawing);
