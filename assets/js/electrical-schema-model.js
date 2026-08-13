@@ -1,4 +1,4 @@
-const DRAWING_VERSION = 5;
+const DRAWING_VERSION = 6;
 export const ENDPOINT_TYPES = ['circuit', 'battery', 'inverter', 'hybrid-inverter', 'rem-breaker'];
 
 function cleanString(value, fallback = '') {
@@ -8,6 +8,16 @@ function cleanString(value, fallback = '') {
 function cleanNumber(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeCustomProperties(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(item => ({
+      key: typeof item?.key === 'string' ? item.key.trim() : '',
+      value: typeof item?.value === 'string' ? item.value.trim() : '',
+    }))
+    .filter(item => item.key && item.value);
 }
 
 export function createId(prefix = 'item') {
@@ -23,6 +33,7 @@ function normalizeMainBreaker(raw = {}) {
     amperage: cleanNumber(raw?.amperage, 40),
     poles: cleanNumber(raw?.poles, 4),
     curve: cleanString(raw?.curve, 'C'),
+    customProperties: normalizeCustomProperties(raw?.customProperties),
   };
 }
 
@@ -34,6 +45,7 @@ function normalizeBreaker(raw = {}) {
     amperage: cleanNumber(raw?.amperage, 20),
     poles: cleanNumber(raw?.poles, 2),
     curve: cleanString(raw?.curve, 'C'),
+    customProperties: normalizeCustomProperties(raw?.customProperties),
   };
 }
 
@@ -61,6 +73,7 @@ function normalizeEndpoint(raw = {}, forcedType = '') {
     powerKw: ['circuit', 'rem-breaker'].includes(type) ? null : cleanNumber(raw?.powerKw, defaults.powerKw),
     capacityKwh: ['battery', 'hybrid-inverter'].includes(type) ? cleanNumber(raw?.capacityKwh, defaults.capacityKwh) : null,
     note: typeof raw?.note === 'string' ? raw.note.trim() : '',
+    customProperties: normalizeCustomProperties(raw?.customProperties),
   };
   if (type === 'rem-breaker') {
     endpoint.circuits = Array.isArray(raw?.circuits)
@@ -103,6 +116,7 @@ function normalizeDifferential(raw = {}) {
     poles: cleanNumber(raw?.poles, 4),
     cable: cleanString(raw?.cable, '4x10'),
     cablePlacement: raw?.cablePlacement === 'surface' ? 'surface' : '',
+    customProperties: normalizeCustomProperties(raw?.customProperties),
     branches: legacyBranches(raw),
     differentials: Array.isArray(raw?.differentials) ? raw.differentials.map(normalizeDifferential) : [],
   };

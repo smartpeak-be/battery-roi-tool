@@ -11,11 +11,11 @@ import {
   updateElement,
 } from '../assets/js/electrical-schema-model.js';
 
-describe('eendraadschema model v5', () => {
+describe('eendraadschema model v6', () => {
   it('starts with main breaker followed by exactly one main differential', () => {
     const drawing = createEmptyDrawing({ projectId: 'project-1' });
     expect(drawing).toMatchObject({
-      version: 5,
+      version: 6,
       projectId: 'project-1',
       mainBreaker: { type: 'main-breaker', label: 'Hoofdautomaat' },
       differentials: [{ type: 'differential', label: 'Hoofddifferentieel', sensitivityMa: 300 }],
@@ -79,6 +79,23 @@ describe('eendraadschema model v5', () => {
     expect(endpoint).toMatchObject({ circuitLabel: 'A1', cablePlacement: 'surface', note: 'Aparte voeding' });
     const legacy = normalizeDrawing({ differentials: [{ branches: [{ endpoint: { id: 'legacy', type: 'circuit', cablePlacement: 'invalid' } }] }] });
     expect(legacy.differentials[0].branches[0].endpoint.cablePlacement).toBe('');
+  });
+
+  it('normalizes custom key/value properties on every editable electrical element', () => {
+    const drawing = normalizeDrawing({
+      mainBreaker: { customProperties: [{ key: 'Kast', value: 'Hoofdbord' }, { key: '', value: 'negeren' }] },
+      differentials: [{
+        customProperties: [{ key: 'Type', value: 'A' }],
+        branches: [{
+          breaker: { customProperties: [{ key: 'Merk', value: 'Hager' }] },
+          endpoint: { id: 'custom-device', type: 'inverter', customProperties: [{ key: 'Firmware', value: '1.2.3' }, { key: 'Leeg', value: '' }] },
+        }],
+      }],
+    });
+    expect(drawing.mainBreaker.customProperties).toEqual([{ key: 'Kast', value: 'Hoofdbord' }]);
+    expect(drawing.differentials[0].customProperties).toEqual([{ key: 'Type', value: 'A' }]);
+    expect(drawing.differentials[0].branches[0].breaker.customProperties).toEqual([{ key: 'Merk', value: 'Hager' }]);
+    expect(findElement(drawing, 'custom-device').element.customProperties).toEqual([{ key: 'Firmware', value: '1.2.3' }]);
   });
 
   it('updates, reorders and recursively deletes REM children', () => {
