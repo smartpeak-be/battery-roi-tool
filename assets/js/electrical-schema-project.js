@@ -86,6 +86,31 @@ function expandedSolutionItems(project, data) {
   return expanded;
 }
 
+function existingProjectInverters(project) {
+  return (project?.solar?.inverters || []).filter(inverter => inverter && (inverter.brand || inverter.model || number(inverter.powerKw) > 0)).map(inverter => ({
+    kind: 'inverter',
+    product: { brand: inverter.brand || '', model: inverter.model || '' },
+    specs: { inverterPowerKw: number(inverter.powerKw) },
+    label: [inverter.brand, inverter.model].filter(Boolean).join(' ') || 'Bestaande omvormer',
+    source: 'Bestaande installatie',
+  }));
+}
+
+function distributeEvenly(items, groups) {
+  const result = Array.from({ length: groups.length }, () => []);
+  items.forEach((item, index) => result[index % groups.length].push(item));
+  return result;
+}
+
+function batterySummary(items) {
+  const counts = new Map();
+  items.forEach(item => {
+    const label = [item.product.brand, item.product.model].filter(Boolean).join(' ') || item.label;
+    counts.set(label, (counts.get(label) || 0) + 1);
+  });
+  return [...counts].map(([label, count]) => `${count}x ${label}`).join(' + ');
+}
+
 export function drawingFromProject(project = {}, data = {}) {
   const connectionType = project?.electrical?.connectionType || '';
   const mainAmperage = number(project?.electrical?.fuseRatingA, 40);
@@ -103,34 +128,42 @@ export function drawingFromProject(project = {}, data = {}) {
   const rootId = drawing.differentials[0].id;
   const items = expandedSolutionItems(project, data);
   const serials = serialQueues(project);
-  const totalStorage = items.reduce((sum, item) => sum + number(item.specs.capacityKwh), 0);
   const inverters = items.filter(item => item.kind === 'inverter');
-  const batteries = items.filter(item => item.kind === 'battery');
+  const standaloneAcBatteries = items.filter(item => item.kind === 'battery' && number(item.specs.inverterPowerKw) > 0);
+  const batteries = items.filter(item => item.kind === 'battery' && !(number(item.specs.inverterPowerKw) > 0));
   const systems = items.filter(item => item.kind === 'system');
-  const branches = [];
-
-  systems.forEach(item => branches.push({ item, endpointType: 'hybrid-inverter', batteryItems: [item] }));
-  if (inverters.length === 1 && batteries.length) branches.push({ item: inverters[0], endpointType: 'hybrid-inverter', batteryItems: batteries });
-  else {
-    inverters.forEach(item => branches.push({ item, endpointType: 'inverter', batteryItems: [] }));
-    batteries.forEach(item => branches.push({ item, endpointType: 'battery', batteryItems: [item] }));
-  }
+  const controllers = [...systems, ...inverters];
+  if (!controllers.length && batteries.length) controllers.push(...existingProjectInverters(project));
+  if (!controllers.length && batteries.length) controllers.push({
+    kind: 'inverter', product: {}, specs: {},
+    label: 'Bestaande omvormer', source: 'Projectaanname - gegevens controleren',
+  });
+  const distributed = distributeEvenly(batteries, controllers);
+  const branches = controllers.map((item, index) => ({
+    item,
+    endpointType: item.kind === 'system' || distributed[index].length ? 'hybrid-inverter' : 'inverter',
+    batteryItems: distributed[index],
+  }));
+  standaloneAcBatteries.forEach(item => branches.push({ item, endpointType: 'hybrid-inverter', batteryItems: [] }));
 
   branches.forEach(({ item, endpointType, batteryItems }) => {
-    const branchStorage = batteryItems.reduce((sum, battery) => sum + number(battery.specs.capacityKwh), 0);
+    const builtInStorage = ['system', 'battery'].includes(item.kind) ? number(item.specs.capacityKwh) : 0;
+    const branchStorage = batteryItems.reduce((sum, battery) => sum + number(battery.specs.capacityKwh), builtInStorage);
     const batteryVoltage = batteryItems.map(battery => number(battery.specs.nominalVoltage)).find(Boolean) || number(item.specs.nominalVoltage);
     const powerKw = number(item.specs.inverterPowerKw || item.specs.maxDischargePowerW / 1000);
     const breakerAmperage = recommendedBreakerAmperage(powerKw, connectionType, mainAmperage);
     const customProperties = [];
     if (batteryVoltage > 0) customProperties.push({ key: 'U', value: `${batteryVoltage} V DC` });
-    if (totalStorage > 0 && endpointType === 'hybrid-inverter') customProperties.push({ key: 'E totaal', value: `${Math.round(totalStorage * 100) / 100} kWh` });
+    if (branchStorage > 0) customProperties.push({ key: 'E totaal', value: `${Math.round(branchStorage * 100) / 100} kWh` });
     if (item.specs.chemistry) customProperties.push({ key: 'Chemie', value: String(item.specs.chemistry) });
     customProperties.push({ key: 'Bron', value: item.source });
+    if (!powerKw) customProperties.push({ key: 'Controle', value: 'Omvormervermogen en automaat nazien' });
     const batterySerials = batteryItems.map(() => serials.battery.shift()).filter(Boolean);
+    if (batteryItems.length) customProperties.push({ key: 'Batterijen', value: batterySummary(batteryItems) });
     batterySerials.forEach((value, index) => customProperties.push({ key: `Batterij SN ${index + 1}`, value }));
     const serialNumber = item.kind === 'system'
       ? serials.system.shift() || serials.inverter.shift() || ''
-      : item.kind === 'inverter' ? serials.inverter.shift() || '' : batterySerials[0] || '';
+      : item.kind === 'inverter' ? serials.inverter.shift() || '' : serials.system.shift() || serials.battery.shift() || '';
     const batteryLabel = batteryItems.length ? batteryItems[0].label : '';
     const label = endpointType === 'hybrid-inverter' && batteryLabel && item.kind === 'inverter' ? `${item.label} + ${batteryItems.length}x ${batteryLabel}` : item.label;
     drawing = addBranch(drawing, rootId, endpointType, {

@@ -43,11 +43,11 @@ describe('electrical schema PDF', () => {
   it('renders a tree where shared differential and REM distributor occur once', () => {
     const text = pdfText(remTreeDrawing());
     expect(text.match(/Hoofddifferentieel/g)).toHaveLength(1);
-    expect(text.match(/REM verdeler/g)).toHaveLength(1);
+    expect(text).not.toContain('REM verdeler');
     expect(text).toContain('(Batterij)');
     expect(text).toContain('(Omvormer)');
-    expect(text).toContain('(Verlichting)');
-    expect(text).toContain('(Stopcontacten)');
+    expect(text).not.toContain('(Verlichting)');
+    expect(text).not.toContain('(Stopcontacten)');
     // Graphical AREI/IEC contacts replace the temporary A/D letter icons.
     expect(text).not.toContain('(A)');
     expect(text).not.toContain('(D)');
@@ -62,7 +62,7 @@ describe('electrical schema PDF', () => {
     // sideText uses x + 19; no component name is centered on the vertical conductor.
     expect(text).toMatch(/BT \/F2 6\.5 Tf [\d.]+ [\d.]+ Td \(Batterij\) Tj ET/);
     expect(text).toMatch(/BT \/F2 6\.5 Tf [\d.]+ [\d.]+ Td \(Hoofddifferentieel\) Tj ET/);
-    expect(text).toMatch(/BT \/F2 7 Tf [\d.]+ [\d.]+ Td \(REM verdeler\) Tj ET/);
+    expect(text).not.toContain('REM verdeler');
   });
 
   it('renders all entered metadata, cable placement and an open circuit end', () => {
@@ -70,6 +70,18 @@ describe('electrical schema PDF', () => {
     ['3G6', 'Zendure SolarFlow', 'SN: SN-12345', '2.4kW', '5.76kWh', 'Protocol: Modbus', 'Ref: QF2', 'Kring A', '3G1,5', 'Gelijkvloers'].forEach(value => expect(text).toContain(`(${value})`));
     expect(text).toContain('(O)');
     expect(text).not.toContain('(K)');
+  });
+
+  it('omits internal circuit and breaker names while retaining an explicit circuit label', () => {
+    let drawing = createEmptyDrawing({ title: 'Geen interne namen' });
+    drawing = addBranch(drawing, drawing.differentials[0].id, 'circuit', {
+      breaker: { label: 'Interne zekeringnaam' },
+      endpoint: { label: 'Interne kringnaam', circuitLabel: 'B2', cable: '3G2,5' },
+    });
+    const text = pdfText(drawing);
+    expect(text).not.toContain('Interne zekeringnaam');
+    expect(text).not.toContain('Interne kringnaam');
+    expect(text).toContain('Kring B2');
   });
 
   it('omits the extra sensing circle beside a differential and lays wrapped text top-to-bottom', () => {

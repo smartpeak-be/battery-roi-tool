@@ -75,7 +75,6 @@ function breakerSymbol(x, y, breaker, main = false) {
   out += line(x - 1, y - 4, x + 10, y + 5, 1.5);
   out += `${x + 10} ${y + 5} m ${x + 15} ${y + 3} ${x + 15} ${y - 2} ${x + 10} ${y - 4} c S\n`;
   out += sideText(x, y - 3, `${breaker.curve}${breaker.amperage}A ${breaker.poles}P`, true);
-  if (breaker.label && breaker.label !== 'Automaat') out += sideText(x, y + 8, breaker.label, false, 5.8);
   out += renderPropertyRows(x, y - 13, breaker.customProperties);
   return out;
 }
@@ -98,10 +97,11 @@ function endpointSymbol(x, y, endpoint) {
   return out;
 }
 function endpointLabels(x, y, endpoint) {
+  const productLabel = [endpoint.brand, endpoint.model].filter(Boolean).join(' ');
   const rows = [
     endpoint.circuitLabel ? `Kring ${endpoint.circuitLabel}` : '',
-    endpoint.label,
-    [endpoint.brand, endpoint.model].filter(Boolean).join(' '),
+    ['circuit', 'rem-breaker'].includes(endpoint.type) ? '' : endpoint.label,
+    endpoint.label && endpoint.label.includes(productLabel) ? '' : productLabel,
     endpoint.powerKw ? `${endpoint.powerKw}kW` : '',
     endpoint.capacityKwh ? `${endpoint.capacityKwh}kWh` : '',
     endpoint.serialNumber ? `SN: ${endpoint.serialNumber}` : '',
@@ -111,7 +111,7 @@ function endpointLabels(x, y, endpoint) {
   let row = 0;
   let out = '';
   rows.forEach((value, index) => {
-    out += wrappedSideText(x, y + 80 - row * 8, value, index < 2, index < 2 ? 6.5 : 5.8);
+    out += wrappedSideText(x, y + 112 - row * 8, value, index < 2, index < 2 ? 6.5 : 5.8);
     row += Math.max(1, Math.ceil(ascii(value).length / 22));
   });
   return out;
@@ -132,7 +132,6 @@ function renderRemBranch(branch, leafIds, positions, railY) {
   const remBreakerY = railY + 38;
   const childRailY = remBreakerY + 68;
   let out = line(x, railY, x, remBreakerY - 16, 1.2) + breakerSymbol(x, remBreakerY, branch.breaker);
-  out += sideText(x, remBreakerY + 18, branch.endpoint.label, true, 7);
   if (branch.endpoint.note) out += wrappedSideText(x, remBreakerY + 36, branch.endpoint.note);
   out += renderPropertyRows(x, remBreakerY + 27, branch.endpoint.customProperties);
   const firstX = positions.get(leafIds[0]);
