@@ -417,6 +417,40 @@ function currentUserEmail() {
 
 function projectsCol() { return getDb().collection('projects'); }
 function projectDoc(id) { return projectsCol().doc(id); }
+function electricalDrawingsCol() { return getDb().collection('electricalDrawings'); }
+
+async function getElectricalDrawing(id) {
+  const snap = await electricalDrawingsCol().doc(id).get();
+  return snap.exists ? { id: snap.id, ...snap.data() } : null;
+}
+
+async function listElectricalDrawingsForProject(projectId) {
+  if (!projectId) return [];
+  const snap = await electricalDrawingsCol().where('projectId', '==', projectId).get();
+  return snap.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+}
+
+async function saveElectricalDrawing(id, drawing) {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const data = {
+    version: 1,
+    title: String(drawing?.title || 'Eendraadschema').trim() || 'Eendraadschema',
+    projectId: typeof drawing?.projectId === 'string' && drawing.projectId ? drawing.projectId : null,
+    differentials: Array.isArray(drawing?.differentials) ? drawing.differentials : [],
+    updatedAt: now,
+    updatedBy: email,
+  };
+  if (id) {
+    await electricalDrawingsCol().doc(id).set(data, { merge: true });
+    return id;
+  }
+  const ref = await electricalDrawingsCol().add({ ...data, createdAt: now, createdBy: email });
+  return ref.id;
+}
 
 // Create a project. csvData is the optional output of extractCsvForStorage(); pass null
 // if no CSV was uploaded at creation. `metadata` is an optional object with any subset
@@ -2680,3 +2714,6 @@ window.googleMapsUrlForCustomerAddress = googleMapsUrlForCustomerAddress;
 window.wazeUrlForCustomerAddress = wazeUrlForCustomerAddress;
 window.bebatSummaryForProject = bebatSummaryForProject;
 window.bebatRowsForProjects = bebatRowsForProjects;
+window.getElectricalDrawing = getElectricalDrawing;
+window.listElectricalDrawingsForProject = listElectricalDrawingsForProject;
+window.saveElectricalDrawing = saveElectricalDrawing;

@@ -303,6 +303,11 @@ service cloud.firestore {
       }
     }
 
+    // ─── Electrical drawings (unique drawing ID, optionally linked to a project) ─
+    match /electricalDrawings/{drawingId} {
+      allow read, write: if isWhitelisted();
+    }
+
     // ─── Shares (public read, whitelisted create/delete) ─────────
     match /shares/{shareId} {
       allow read:   if !('expiresAt' in resource.data) || resource.data.expiresAt > request.time;
