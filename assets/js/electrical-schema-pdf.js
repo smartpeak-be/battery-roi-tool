@@ -28,7 +28,11 @@ function wrappedSideText(x, y, value, bold = false, size = 5.8, maxChars = 22) {
     if (!rows.length || `${rows.at(-1)} ${word}`.length > maxChars) rows.push(word);
     else rows[rows.length - 1] += ` ${word}`;
   });
-  return rows.map((row, index) => sideText(x, y + index * 8, row, bold, size)).join('');
+  return rows.map((row, index) => sideText(x, y - index * 8, row, bold, size)).join('');
+}
+function customPropertyRows(properties = []) { return properties.map(item => `${item.key}: ${item.value}`); }
+function renderPropertyRows(x, y, properties = [], size = 5.6) {
+  return customPropertyRows(properties).map((value, index) => wrappedSideText(x, y - index * 8, value, false, size)).join('');
 }
 
 function terminalIds(differentials, ids = []) {
@@ -72,13 +76,13 @@ function breakerSymbol(x, y, breaker, main = false) {
   out += `${x + 10} ${y + 5} m ${x + 15} ${y + 3} ${x + 15} ${y - 2} ${x + 10} ${y - 4} c S\n`;
   out += sideText(x, y - 3, `${breaker.curve}${breaker.amperage}A ${breaker.poles}P`, true);
   if (breaker.label && breaker.label !== 'Automaat') out += sideText(x, y + 8, breaker.label, false, 5.8);
+  out += renderPropertyRows(x, y - 13, breaker.customProperties);
   return out;
 }
 function differentialSymbol(x, y, diff) {
   let out = line(x, y + 20, x, y + 7, 1.3) + line(x, y - 7, x, y - 20, 1.3);
   out += filledCircle(x, y + 5, 2) + filledCircle(x, y - 5, 2);
   out += line(x, y - 4, x + 14, y + 7, 1.6);
-  out += circle(x - 10, y, 5) + line(x - 15, y, x - 5, y, .8);
   out += sideText(x, y - 4, `I dN ${diff.sensitivityMa}mA  ${diff.amperage}A`, true);
   return out;
 }
@@ -102,11 +106,12 @@ function endpointLabels(x, y, endpoint) {
     endpoint.capacityKwh ? `${endpoint.capacityKwh}kWh` : '',
     endpoint.serialNumber ? `SN: ${endpoint.serialNumber}` : '',
     endpoint.note || '',
+    ...customPropertyRows(endpoint.customProperties),
   ].filter(Boolean);
   let row = 0;
   let out = '';
   rows.forEach((value, index) => {
-    out += wrappedSideText(x, y + 8 + row * 8, value, index < 2, index < 2 ? 6.5 : 5.8);
+    out += wrappedSideText(x, y + 64 - row * 8, value, index < 2, index < 2 ? 6.5 : 5.8);
     row += Math.max(1, Math.ceil(ascii(value).length / 22));
   });
   return out;
@@ -128,7 +133,8 @@ function renderRemBranch(branch, leafIds, positions, railY) {
   const childRailY = remBreakerY + 68;
   let out = line(x, railY, x, remBreakerY - 16, 1.2) + breakerSymbol(x, remBreakerY, branch.breaker);
   out += sideText(x, remBreakerY + 18, branch.endpoint.label, true, 7);
-  if (branch.endpoint.note) out += wrappedSideText(x, remBreakerY + 27, branch.endpoint.note);
+  if (branch.endpoint.note) out += wrappedSideText(x, remBreakerY + 36, branch.endpoint.note);
+  out += renderPropertyRows(x, remBreakerY + 27, branch.endpoint.customProperties);
   const firstX = positions.get(leafIds[0]);
   const lastX = positions.get(leafIds[leafIds.length - 1]);
   out += line(x, remBreakerY + 16, x, childRailY, 1.2);
@@ -146,6 +152,7 @@ function renderDifferentialTree(diff, allowed, positions, parentRailY) {
   let out = line(x, parentRailY, x, diffY - 20, 1.3) + differentialSymbol(x, diffY, diff);
   out += cableAnnotation(x, parentRailY + 8, diff.cable, diff.cablePlacement);
   out += sideText(x, diffY + 10, diff.label, true, 6.5);
+  out += renderPropertyRows(x, diffY + 1, diff.customProperties);
   const childGroups = [];
   diff.branches.forEach(branch => { const ids = branchLeaves(branch, allowed); if (ids.length) childGroups.push({ type: 'branch', branch, ids }); });
   diff.differentials.forEach(child => { const ids = subtreeLeaves(child, allowed); if (ids.length) childGroups.push({ type: 'diff', diff: child, ids }); });
@@ -165,7 +172,7 @@ function titleBlock(meta, page, pageCount) {
   const y = 30;
   let out = rect(28, y, 786, 62) + line(250, y, 250, y + 62) + line(545, y, 545, y + 62) + line(735, y, 735, y + 62);
   out += text(36, y + 47, 7, 'PLAATS VAN DE ELEKTRISCHE INSTALLATIE', true) + text(36, y + 33, 9, meta.projectName || meta.customerName || 'Project') + text(36, y + 19, 8, meta.address || '');
-  out += text(258, y + 47, 7, 'INSTALLATEUR', true) + text(258, y + 33, 9, meta.installer || 'SmartPeak') + text(258, y + 19, 8, meta.installerDetails || 'Terwestvaart 11 - 9180 Moerbeke-Waas');
+  out += text(258, y + 49, 7, 'INSTALLATEUR', true) + text(258, y + 35, 9, meta.installer || 'SmartPeak') + text(258, y + 21, 7, meta.installerDetails || 'Terwestvaart 11 - 9180 Moerbeke-Waas') + text(258, y + 9, 7, meta.installerVat || 'BTW BE0730.696.050', true);
   out += text(553, y + 47, 7, 'TEKENING', true) + text(553, y + 31, 9, meta.title || 'Eendraadschema') + text(553, y + 17, 8, '3 x 230/400 V - 50 Hz');
   out += text(750, y + 42, 8, `P. ${page}/${pageCount}`, true) + text(741, y + 22, 5.8, 'EENDRAADSCHEMA', true);
   return out;

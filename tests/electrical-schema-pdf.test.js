@@ -16,7 +16,7 @@ function sampleDrawing(branchCount = 1) {
 function remTreeDrawing() {
   let drawing = createEmptyDrawing({ title: 'Boomschema' });
   const rootId = drawing.differentials[0].id;
-  drawing = addBranch(drawing, rootId, 'battery', { endpoint: { label: 'Batterij', cable: '3G6', cablePlacement: 'surface', brand: 'Zendure', model: 'SolarFlow', serialNumber: 'SN-12345', powerKw: 2.4, capacityKwh: 5.76, note: 'Technische ruimte' } });
+  drawing = addBranch(drawing, rootId, 'battery', { breaker: { customProperties: [{ key: 'Ref', value: 'QF2' }] }, endpoint: { label: 'Batterij', cable: '3G6', cablePlacement: 'surface', brand: 'Zendure', model: 'SolarFlow', serialNumber: 'SN-12345', powerKw: 2.4, capacityKwh: 5.76, note: 'Eerste regel tweede regel derde regel', customProperties: [{ key: 'Protocol', value: 'Modbus' }] } });
   drawing = addBranch(drawing, rootId, 'inverter', { endpoint: { label: 'Omvormer' } });
   drawing = addBranch(drawing, rootId, 'rem-breaker', { id: 'rem-branch', endpoint: { id: 'rem', label: 'REM verdeler' } });
   drawing = addRemCircuit(drawing, 'rem', { endpoint: { id: 'kring-1', label: 'Verlichting', circuitLabel: 'A', cable: '3G1,5', cablePlacement: 'surface', note: 'Gelijkvloers' } });
@@ -34,6 +34,7 @@ describe('electrical schema PDF', () => {
     expect(text).toContain('EENDRAADSCHEMA');
     expect(text).toContain('Project Test');
     expect(text).toContain('Zendure');
+    expect(text).toContain('BTW BE0730.696.050');
     expect(text).toContain('/MediaBox [0 0 842 595]');
     expect(text.endsWith('%%EOF\n')).toBe(true);
   });
@@ -65,9 +66,17 @@ describe('electrical schema PDF', () => {
 
   it('renders all entered metadata, cable placement and an open circuit end', () => {
     const text = pdfText(remTreeDrawing());
-    ['3G6', 'Zendure SolarFlow', 'SN: SN-12345', '2.4kW', '5.76kWh', 'Technische ruimte', 'Kring A', '3G1,5', 'Gelijkvloers'].forEach(value => expect(text).toContain(`(${value})`));
+    ['3G6', 'Zendure SolarFlow', 'SN: SN-12345', '2.4kW', '5.76kWh', 'Protocol: Modbus', 'Ref: QF2', 'Kring A', '3G1,5', 'Gelijkvloers'].forEach(value => expect(text).toContain(`(${value})`));
     expect(text).toContain('(O)');
     expect(text).not.toContain('(K)');
+  });
+
+  it('omits the extra sensing circle beside a differential and lays wrapped text top-to-bottom', () => {
+    const text = pdfText(remTreeDrawing());
+    expect(text).not.toContain('402.5 220 c');
+    const first = text.match(/([\d.]+) Td \(Eerste regel tweede\) Tj ET/);
+    const second = text.match(/([\d.]+) Td \(regel derde regel\) Tj ET/);
+    expect(Number(first?.[1])).toBeGreaterThan(Number(second?.[1]));
   });
 
   it('paginates wide drawings', () => {

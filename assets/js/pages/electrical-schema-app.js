@@ -111,6 +111,15 @@ function cablePlacementField(value) {
   ]);
 }
 
+function customPropertyRow(item = {}, index = 0, prefix = 'customProperty') {
+  return `<div class="custom-property-row" data-property-row data-property-prefix="${prefix}"><input class="form-control form-control-lg" name="${prefix}Key" value="${escapeHtml(item.key || '')}" placeholder="Eigenschap" aria-label="Eigenschap ${index + 1}"><input class="form-control form-control-lg" name="${prefix}Value" value="${escapeHtml(item.value || '')}" placeholder="Waarde" aria-label="Waarde ${index + 1}"></div>`;
+}
+
+function appendCustomProperties(fields, item, { prefix = 'customProperty', label = 'Extra eigenschappen' } = {}) {
+  const rows = [...(item.customProperties || []), { key: '', value: '' }];
+  fields.querySelector('.schema-field-grid').insertAdjacentHTML('beforeend', `<div class="schema-field-full custom-properties-field"><label class="form-label">${label}</label><div data-properties-container="${prefix}">${rows.map((row, index) => customPropertyRow(row, index, prefix)).join('')}</div><small class="text-muted">Vul de laatste rij in om automatisch een nieuwe rij toe te voegen.</small></div>`);
+}
+
 function openEditor(id) {
   const found = findElement(drawing, id); if (!found) return;
   editingId = id;
@@ -140,6 +149,8 @@ function openEditor(id) {
       ${field('Notitie', 'note', item.note, { required: false, full: true })}
     </div>`;
   }
+  appendCustomProperties(fields, item);
+  if (found.branchId) appendCustomProperties(fields, findElement(drawing, found.branchId)?.element?.breaker || {}, { prefix: 'breakerCustomProperty', label: 'Extra eigenschappen automaat' });
   elementModal.show();
 }
 
@@ -164,7 +175,7 @@ function addCircuitUnderRem(remEndpointId) {
 function projectMetadata() {
   const customer = project?.customer || {};
   const address = customer.address || customer.addressLine || [customer.street, customer.postalCode, customer.city].filter(Boolean).join(' ');
-  return { projectName: project?.projectName || '', customerName: project?.customerName || '', address, installer: 'SmartPeak', installerDetails: 'Terwestvaart 11 - 9180 Moerbeke-Waas' };
+  return { projectName: project?.projectName || '', customerName: project?.customerName || '', address, installer: 'SmartPeak', installerDetails: 'Terwestvaart 11 - 9180 Moerbeke-Waas', installerVat: 'BTW BE0730.696.050' };
 }
 function exportPdf() {
   drawing = normalizeDrawing({ ...drawing, title: document.getElementById('drawingTitle').value });
@@ -211,15 +222,28 @@ function wireActions() {
   document.getElementById('btnSave').addEventListener('click', saveDrawing);
   document.getElementById('btnPdf').addEventListener('click', exportPdf);
   document.getElementById('elementForm').addEventListener('submit', event => {
-    event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget));
+    event.preventDefault(); const formData = new FormData(event.currentTarget); const values = Object.fromEntries(formData);
+    const keys = formData.getAll('customPropertyKey'); const propertyValues = formData.getAll('customPropertyValue');
+    values.customProperties = keys.map((key, index) => ({ key, value: propertyValues[index] || '' })).filter(item => item.key.trim() && item.value.trim());
+    delete values.customPropertyKey; delete values.customPropertyValue;
     ['amperage', 'sensitivityMa', 'poles', 'powerKw', 'capacityKwh'].forEach(key => { if (values[key] !== undefined && values[key] !== '') values[key] = Number(values[key]); });
     const found = findElement(drawing, editingId);
     if (found?.branchId && values.breakerAmperage) {
       const branch = findElement(drawing, found.branchId)?.element;
-      drawing = updateElement(drawing, branch.breaker.id, { amperage: Number(values.breakerAmperage), poles: Number(values.breakerPoles) });
+      const breakerKeys = formData.getAll('breakerCustomPropertyKey'); const breakerValues = formData.getAll('breakerCustomPropertyValue');
+      const customProperties = breakerKeys.map((key, index) => ({ key, value: breakerValues[index] || '' })).filter(item => item.key.trim() && item.value.trim());
+      drawing = updateElement(drawing, branch.breaker.id, { amperage: Number(values.breakerAmperage), poles: Number(values.breakerPoles), customProperties });
       delete values.breakerAmperage; delete values.breakerPoles;
+      delete values.breakerCustomPropertyKey; delete values.breakerCustomPropertyValue;
     }
     drawing = updateElement(drawing, editingId, values); markDirty(); render(); elementModal.hide();
+  });
+  document.getElementById('elementFields').addEventListener('input', event => {
+    if (!event.target.closest('[data-property-row]')) return;
+    const container = event.target.closest('[data-properties-container]');
+    const rows = [...container.querySelectorAll('[data-property-row]')];
+    const last = rows.at(-1); const inputs = last?.querySelectorAll('input');
+    if (inputs?.[0].value.trim() && inputs?.[1].value.trim()) last.insertAdjacentHTML('afterend', customPropertyRow({}, rows.length, container.dataset.propertiesContainer));
   });
   document.getElementById('btnDeleteElement').addEventListener('click', () => { if (editingId && window.confirm('Dit element en alles eronder verwijderen?')) { drawing = deleteElement(drawing, editingId); markDirty(); render(); elementModal.hide(); } });
   window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
