@@ -1,6 +1,7 @@
 import {
   addBranch,
   addDifferential,
+  addRemCircuit,
   createEmptyDrawing,
   deleteElement,
   findElement,
@@ -22,7 +23,7 @@ let elementModal = null;
 let addModal = null;
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
-const endpointLabels = { circuit: 'Gewone kring', battery: 'Batterij', inverter: 'Omvormer', 'hybrid-inverter': 'Hybride omvormer' };
+const endpointLabels = { circuit: 'Gewone kring', battery: 'Batterij', inverter: 'Omvormer', 'hybrid-inverter': 'Hybride omvormer', 'rem-breaker': 'REM-automaatkring' };
 
 
 function setState(id) {
@@ -45,13 +46,19 @@ function renderEndpointSymbol(endpoint) {
   if (endpoint.type === 'battery') return '<span class="electrical-symbol symbol-battery"><i></i><i></i></span>';
   if (endpoint.type === 'inverter') return '<span class="electrical-symbol symbol-inverter"><b>~</b><em>=</em></span>';
   if (endpoint.type === 'hybrid-inverter') return '<span class="electrical-symbol symbol-hybrid"><b>~</b><em>±</em></span>';
+  if (endpoint.type === 'rem-breaker') return '<span class="electrical-symbol symbol-rem"><b>REM</b></span>';
   return '<span class="electrical-symbol symbol-circuit"><i class="fa-solid fa-plug"></i></span>';
 }
 
 function renderBranch(branch) {
   const endpoint = branch.endpoint;
   const specs = [endpoint.cable, endpoint.powerKw ? `${endpoint.powerKw} kW` : '', endpoint.capacityKwh ? `${endpoint.capacityKwh} kWh` : ''].filter(Boolean).join(' · ');
-  return `<article class="schema-branch" data-id="${branch.id}">
+  const remChildren = endpoint.type === 'rem-breaker' ? `<div class="rem-circuits">
+    <div class="rem-rail"></div>
+    ${endpoint.circuits.map(renderBranch).join('')}
+    <button class="schema-add schema-add-rem-circuit" data-action="add-rem-circuit" data-parent-id="${endpoint.id}"><i class="fa-solid fa-plus me-1"></i> Gewone kring onder REM</button>
+  </div>` : '';
+  return `<article class="schema-branch ${endpoint.type === 'rem-breaker' ? 'schema-rem-branch' : ''}" data-id="${branch.id}">
     <div class="branch-line"></div>
     <div class="schema-breaker-mini"><span>${escapeHtml(branch.breaker.curve)}${branch.breaker.amperage}</span><small>${branch.breaker.poles}P</small></div>
     <div class="endpoint-card endpoint-${endpoint.type}">
@@ -59,6 +66,7 @@ function renderBranch(branch) {
       <div class="schema-label"><strong>${escapeHtml(endpoint.label)}</strong><small>${escapeHtml([endpoint.brand, endpoint.model].filter(Boolean).join(' ') || endpointLabels[endpoint.type])}</small><small>${escapeHtml(specs)}</small></div>
       ${elementActions(endpoint.id)}
     </div>
+    ${remChildren}
   </article>`;
 }
 
@@ -112,9 +120,9 @@ function openEditor(id) {
       ${field('Kabel', 'cable', item.cable)}
       ${field('Automaat', 'breakerAmperage', branch?.breaker.amperage || 20, { type: 'number', suffix: 'A' })}
       ${field('Polen automaat', 'breakerPoles', branch?.breaker.poles || 2, { type: 'number' })}
-      ${found.type !== 'circuit' ? field('Merk', 'brand', item.brand, { required: false }) + field('Model/type', 'model', item.model, { required: false }) + field('Vermogen', 'powerKw', item.powerKw, { type: 'number', suffix: 'kW' }) : ''}
+      ${!['circuit', 'rem-breaker'].includes(found.type) ? field('Merk', 'brand', item.brand, { required: false }) + field('Model/type', 'model', item.model, { required: false }) + field('Vermogen', 'powerKw', item.powerKw, { type: 'number', suffix: 'kW' }) : ''}
       ${['battery', 'hybrid-inverter'].includes(found.type) ? field('Capaciteit', 'capacityKwh', item.capacityKwh, { type: 'number', suffix: 'kWh' }) : ''}
-      ${found.type !== 'circuit' ? field('Serienummer', 'serialNumber', item.serialNumber, { required: false, full: true }) : ''}
+      ${!['circuit', 'rem-breaker'].includes(found.type) ? field('Serienummer', 'serialNumber', item.serialNumber, { required: false, full: true }) : ''}
       ${field('Notitie', 'note', item.note, { required: false, full: true })}
     </div>`;
   }
@@ -127,6 +135,11 @@ function addChoice(type) {
     ? addDifferential(drawing, addingParentId)
     : addBranch(drawing, addingParentId, type, { breaker: { label: `${endpointLabels[type]} automaat` } });
   markDirty(); render(); addModal.hide();
+}
+
+function addCircuitUnderRem(remEndpointId) {
+  drawing = addRemCircuit(drawing, remEndpointId);
+  markDirty(); render();
 }
 
 function projectMetadata() {
@@ -170,6 +183,7 @@ function wireActions() {
     const { action, id, parentId } = button.dataset;
     if (action === 'edit') return openEditor(id);
     if (action === 'open-add') return openAdd(parentId);
+    if (action === 'add-rem-circuit') return addCircuitUnderRem(parentId);
     if (action.startsWith('move-')) { drawing = moveElement(drawing, id, action === 'move-up' ? -1 : 1); markDirty(); render(); }
   }
   document.getElementById('btnAddDifferential').addEventListener('click', () => { drawing = addDifferential(drawing, null); markDirty(); render(); });
