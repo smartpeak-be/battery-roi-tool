@@ -38,17 +38,34 @@
         <input id="drawingTitle" class="schema-title" value="Eendraadschema" aria-label="Naam tekening">
         <div id="drawingContext" class="schema-context">Nieuwe tekening</div>
       </div>
-      <button id="btnSave" class="btn btn-primary schema-save"><i class="fa-solid fa-floppy-disk me-1"></i> Bewaar</button>
+      <div class="schema-toolbar-actions">
+        <button id="btnPdf" class="btn btn-outline-primary schema-pdf"><i class="fa-solid fa-file-pdf me-1"></i> PDF</button>
+        <button id="btnSave" class="btn btn-primary schema-save"><i class="fa-solid fa-floppy-disk me-1"></i> Bewaar</button>
+      </div>
     </header>
 
     <main class="schema-main">
       <div id="projectDrawings" class="schema-project-drawings hide"></div>
       <div id="schemaStatus" class="schema-status" aria-live="polite">Nog niet bewaard</div>
+      <div id="mainBreaker"></div>
       <div id="schemaCanvas" class="schema-canvas"></div>
       <button id="btnAddDifferential" class="schema-add schema-add-main">
         <i class="fa-solid fa-plus"></i><span>Differentieel toevoegen</span>
       </button>
     </main>
+  </div>
+
+  <div class="modal fade" id="addModal" tabindex="-1" aria-labelledby="addModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title h5" id="addModalTitle">Wat wil je toevoegen?</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button></div>
+      <div class="modal-body"><div class="schema-add-grid">
+        <button class="schema-choice" data-add-type="circuit"><i class="fa-solid fa-plug"></i><span>Gewone kring</span></button>
+        <button class="schema-choice" data-add-type="battery"><i class="fa-solid fa-battery-full"></i><span>Batterij</span></button>
+        <button class="schema-choice" data-add-type="inverter"><i class="fa-solid fa-solar-panel"></i><span>Omvormer</span></button>
+        <button class="schema-choice" data-add-type="hybrid-inverter"><i class="fa-solid fa-arrows-rotate"></i><span>Hybride omvormer</span></button>
+        <button class="schema-choice schema-choice-wide" data-add-type="differential"><strong>Δ</strong><span>Onderliggend differentieel</span></button>
+      </div></div>
+    </div></div>
   </div>
 
   <div class="modal fade" id="elementModal" tabindex="-1" aria-labelledby="elementModalTitle" aria-hidden="true">

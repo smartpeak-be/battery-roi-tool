@@ -1,65 +1,64 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addCircuit,
+  addBranch,
   addDifferential,
-  addBreaker,
   createEmptyDrawing,
   deleteElement,
   findElement,
-  moveElement,
   normalizeDrawing,
   updateElement,
 } from '../assets/js/electrical-schema-model.js';
 
-describe('eendraadschema model', () => {
-  it('starts as an empty project-ready drawing', () => {
+describe('eendraadschema model v2', () => {
+  it('starts with the main breaker as first element in the chain', () => {
     expect(createEmptyDrawing({ projectId: 'project-1' })).toMatchObject({
-      version: 1,
+      version: 2,
       projectId: 'project-1',
-      title: 'Eendraadschema',
+      mainBreaker: { type: 'main-breaker', label: 'Hoofdautomaat', amperage: 40, poles: 4 },
       differentials: [],
     });
   });
 
-  it('builds a differential → breaker → circuit hierarchy', () => {
-    let drawing = createEmptyDrawing();
-    drawing = addDifferential(drawing, { id: 'diff-1', label: 'Hoofddifferentieel', amperage: 40, sensitivityMa: 300 });
-    drawing = addBreaker(drawing, 'diff-1', { id: 'breaker-1', label: 'Batterij', poles: 2, amperage: 20 });
-    drawing = addCircuit(drawing, 'breaker-1', { id: 'circuit-1', label: 'Thuisbatterij', cable: '3G2,5' });
-
-    expect(drawing.differentials[0].breakers[0].circuits[0]).toMatchObject({
-      id: 'circuit-1',
-      label: 'Thuisbatterij',
-      cable: '3G2,5',
-    });
-    expect(findElement(drawing, 'breaker-1')).toMatchObject({ type: 'breaker', parentId: 'diff-1' });
+  it('supports nested differentials', () => {
+    let drawing = addDifferential(createEmptyDrawing(), null, { id: 'd1', label: 'Hoofddifferentieel' });
+    drawing = addDifferential(drawing, 'd1', { id: 'd2', label: 'Differentieel batterij' });
+    expect(drawing.differentials[0].differentials[0]).toMatchObject({ id: 'd2', label: 'Differentieel batterij' });
+    expect(findElement(drawing, 'd2')).toMatchObject({ type: 'differential', parentId: 'd1' });
   });
 
-  it('updates, reorders and recursively deletes elements without mutating the source', () => {
-    const source = addDifferential(
-      addDifferential(createEmptyDrawing(), { id: 'd1', label: 'D1' }),
-      { id: 'd2', label: 'D2' },
-    );
-    const updated = updateElement(source, 'd1', { label: 'Diff 1' });
-    const moved = moveElement(updated, 'd2', -1);
-    const deleted = deleteElement(moved, 'd1');
-
-    expect(source.differentials.map(item => item.label)).toEqual(['D1', 'D2']);
-    expect(moved.differentials.map(item => item.id)).toEqual(['d2', 'd1']);
-    expect(deleted.differentials.map(item => item.id)).toEqual(['d2']);
+  it.each(['circuit', 'battery', 'inverter', 'hybrid-inverter'])('adds a protected %s branch under a differential', endpointType => {
+    let drawing = addDifferential(createEmptyDrawing(), null, { id: 'd1' });
+    drawing = addBranch(drawing, 'd1', endpointType, {
+      id: `branch-${endpointType}`,
+      breaker: { id: `breaker-${endpointType}` },
+      endpoint: { id: `endpoint-${endpointType}` },
+    });
+    expect(drawing.differentials[0].branches[0]).toMatchObject({
+      type: 'branch',
+      endpoint: { type: endpointType },
+      breaker: { type: 'breaker' },
+    });
   });
 
-  it('normalizes legacy or malformed values to safe defaults', () => {
-    const normalized = normalizeDrawing({
-      title: '',
-      projectId: 42,
-      differentials: [{ id: 'd', breakers: [{ id: 'b', circuits: [{}] }] }],
+  it('migrates the v1 differential → breaker → circuit shape', () => {
+    const migrated = normalizeDrawing({
+      version: 1,
+      differentials: [{ id: 'd', breakers: [{ id: 'b', label: 'Batterij', circuits: [{ id: 'c', label: 'Kring batterij' }] }] }],
     });
+    expect(migrated.version).toBe(2);
+    expect(migrated.mainBreaker.type).toBe('main-breaker');
+    expect(migrated.differentials[0].branches[0]).toMatchObject({
+      breaker: { id: 'b', label: 'Batterij' },
+      endpoint: { id: 'c', type: 'circuit', label: 'Kring batterij' },
+    });
+  });
 
-    expect(normalized.title).toBe('Eendraadschema');
-    expect(normalized.projectId).toBeNull();
-    expect(normalized.differentials[0]).toMatchObject({ amperage: 40, sensitivityMa: 300 });
-    expect(normalized.differentials[0].breakers[0]).toMatchObject({ amperage: 20, poles: 2 });
-    expect(normalized.differentials[0].breakers[0].circuits[0].label).toBe('Nieuwe kring');
+  it('updates and recursively deletes nested elements', () => {
+    let drawing = addDifferential(createEmptyDrawing(), null, { id: 'd1' });
+    drawing = addDifferential(drawing, 'd1', { id: 'd2' });
+    drawing = addBranch(drawing, 'd2', 'battery', { id: 'branch', endpoint: { id: 'device' } });
+    drawing = updateElement(drawing, 'device', { brand: 'Zendure', model: 'SolarFlow' });
+    expect(findElement(drawing, 'device').element).toMatchObject({ brand: 'Zendure', model: 'SolarFlow' });
+    expect(findElement(deleteElement(drawing, 'd2'), 'device')).toBeNull();
   });
 });
