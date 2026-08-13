@@ -1608,6 +1608,7 @@ function renderDrawer(project) {
     <section class="border-bottom pb-3 mb-3">
       <div class="d-grid d-md-flex gap-2">
         <a class="btn btn-primary flex-md-grow-1" href="${calcHref}"><i class="fa-solid fa-calculator me-1" aria-hidden="true"></i> Open berekening</a>
+        <a class="btn btn-outline-primary flex-md-grow-1" href="schema/?project=${encodeURIComponent(project.id)}"><i class="fa-solid fa-diagram-project me-1" aria-hidden="true"></i> Eendraadschema</a>
         <button type="button" class="btn btn-outline-primary flex-md-grow-1" id="drawerReviewLinkBtn"><i class="fa-solid fa-star me-1" aria-hidden="true"></i> Reviewlink</button>
         <button type="button" class="btn btn-outline-primary flex-md-grow-1" id="drawerClosingDossierBtn"><i class="fa-solid fa-file-pdf me-1" aria-hidden="true"></i> Afsluitdossier</button>
         <a class="btn btn-outline-primary flex-md-grow-1" href="project-edit.html?project=${project.id}"><i class="fa-solid fa-pen-to-square me-1" aria-hidden="true"></i> Bewerk project</a>
