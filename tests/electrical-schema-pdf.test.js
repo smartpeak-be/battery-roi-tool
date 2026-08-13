@@ -28,13 +28,14 @@ function pdfText(drawing) { return new TextDecoder('latin1').decode(buildElectri
 
 describe('electrical schema PDF', () => {
   it('generates a valid landscape PDF with schema labels and title block', () => {
-    const bytes = buildElectricalSchemaPdf(sampleDrawing(), { projectName: 'Project Test', address: 'Teststraat 1', installer: 'SmartPeak' });
+    const bytes = buildElectricalSchemaPdf({ ...sampleDrawing(), connectionType: '3x230' }, { projectName: 'Project Test', address: 'Teststraat 1', installer: 'SmartPeak' });
     const text = new TextDecoder('latin1').decode(bytes);
     expect(text.startsWith('%PDF-1.4')).toBe(true);
     expect(text).toContain('EENDRAADSCHEMA');
     expect(text).toContain('Project Test');
     expect(text).toContain('Zendure');
     expect(text).toContain('BTW BE0730.696.050');
+    expect(text).toContain('3 x 230 V - 50 Hz');
     expect(text).toContain('/MediaBox [0 0 842 595]');
     expect(text.endsWith('%%EOF\n')).toBe(true);
   });

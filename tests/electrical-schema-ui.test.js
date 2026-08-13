@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
-describe('eendraadschema v6 UI integration', () => {
+describe('eendraadschema v7 UI integration', () => {
   const html = read('schema/index.html');
   const app = read('assets/js/pages/electrical-schema-app.js');
+  const projectGenerator = read('assets/js/electrical-schema-project.js');
   const css = read('assets/css/electrical-schema.css');
   const firebase = read('assets/js/firebase-init.js');
 
@@ -33,11 +34,11 @@ describe('eendraadschema v6 UI integration', () => {
     expect(css).toContain('.symbol-circuit');
   });
 
-  it('has a real PDF action and persists model v6 including the main breaker', () => {
+  it('has a real PDF action and persists model v7 including the main breaker', () => {
     expect(html).toContain('id="btnPdf"');
     expect(app).toContain('downloadElectricalSchemaPdf');
     expect(firebase).toContain('mainBreaker:');
-    expect(firebase).toContain('Number(drawing?.version) || 6');
+    expect(firebase).toContain('Number(drawing?.version) || 7');
   });
 
   it('offers cable placement and a free circuit label in the editor', () => {
@@ -52,5 +53,24 @@ describe('eendraadschema v6 UI integration', () => {
     expect(app).toContain("last.insertAdjacentHTML('afterend'");
     expect(app).toContain('BTW BE0730.696.050');
     expect(css).toContain('.custom-property-row');
+  });
+
+  it('uses project electrical values and keeps long editors scrollable with reachable actions', () => {
+    expect(projectGenerator).toContain('project?.electrical?.connectionType');
+    expect(projectGenerator).toContain('project?.electrical?.fuseRatingA');
+    expect(app).toContain('GRID_CONNECTION_TYPES');
+    expect(app).toContain('polesForConnection');
+    expect(css).toContain('#elementModal .modal-content');
+    expect(css).toContain('#elementModal .modal-body');
+    expect(css).toContain('overflow-y:auto');
+  });
+
+  it('generates a project proposal and publishes its PDF into project documents', () => {
+    expect(app).toContain('drawingFromProject(project');
+    expect(app).toContain('listProductConfigs()');
+    expect(app).toContain('saveElectricalSchemaProjectDocument');
+    expect(firebase).toContain("documentKind: 'electrical_schema'");
+    expect(firebase).toContain('includeInInspectionPack: true');
+    expect(firebase).toContain('sourceDrawingId: drawingId');
   });
 });

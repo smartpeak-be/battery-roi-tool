@@ -7,9 +7,12 @@ import {
   findElement,
   moveElement,
   normalizeDrawing,
+  polesForConnection,
   updateElement,
 } from '../electrical-schema-model.js';
-import { downloadElectricalSchemaPdf } from '../electrical-schema-pdf.js';
+import { buildElectricalSchemaPdf, downloadElectricalSchemaPdf } from '../electrical-schema-pdf.js';
+import { drawingFromProject } from '../electrical-schema-project.js';
+import { GRID_CONNECTION_TYPES } from '../grid-compatibility.js';
 
 const params = new URLSearchParams(window.location.search);
 let drawingId = params.get('drawing') || '';
@@ -111,6 +114,13 @@ function cablePlacementField(value) {
   ]);
 }
 
+function connectionTypeField(value) {
+  return selectField('Spanning / aansluiting', 'connectionType', value || '', [
+    { value: '', label: 'Niet bepaald' },
+    ...GRID_CONNECTION_TYPES.map(type => ({ value: type.value, label: type.label })),
+  ]);
+}
+
 function customPropertyRow(item = {}, index = 0, prefix = 'customProperty') {
   return `<div class="custom-property-row" data-property-row data-property-prefix="${prefix}"><input class="form-control form-control-lg" name="${prefix}Key" value="${escapeHtml(item.key || '')}" placeholder="Eigenschap" aria-label="Eigenschap ${index + 1}"><input class="form-control form-control-lg" name="${prefix}Value" value="${escapeHtml(item.value || '')}" placeholder="Waarde" aria-label="Waarde ${index + 1}"></div>`;
 }
@@ -129,7 +139,7 @@ function openEditor(id) {
   document.getElementById('btnDeleteElement').classList.toggle('hide', isRequiredRoot);
   if (found.type === 'main-breaker') {
     document.getElementById('elementModalTitle').textContent = 'Hoofdautomaat';
-    fields.innerHTML = `<div class="schema-field-grid">${field('Naam', 'label', item.label, { full: true })}${field('Stroom', 'amperage', item.amperage, { type: 'number', suffix: 'A' })}${field('Polen', 'poles', item.poles, { type: 'number' })}${field('Curve', 'curve', item.curve)}</div>`;
+    fields.innerHTML = `<div class="schema-field-grid">${field('Naam', 'label', item.label, { full: true })}${connectionTypeField(drawing.connectionType)}${field('Stroom hoofdschakelaar', 'amperage', item.amperage, { type: 'number', suffix: 'A' })}${field('Polen', 'poles', item.poles, { type: 'number' })}${field('Curve', 'curve', item.curve)}</div>`;
   } else if (found.type === 'differential') {
     document.getElementById('elementModalTitle').textContent = 'Differentieel';
     fields.innerHTML = `<div class="schema-field-grid">${field('Naam', 'label', item.label, { full: true })}${field('Stroom', 'amperage', item.amperage, { type: 'number', suffix: 'A' })}${field('Gevoeligheid', 'sensitivityMa', item.sensitivityMa, { type: 'number', suffix: 'mA' })}${field('Polen', 'poles', item.poles, { type: 'number' })}${field('Voedingskabel', 'cable', item.cable)}${cablePlacementField(item.cablePlacement)}</div>`;
@@ -192,7 +202,11 @@ function renderProjectDrawings(items) {
 async function loadContext() {
   if (requestedProjectId) { project = await getProject(requestedProjectId); if (!project) throw new Error('Project niet gevonden.'); renderProjectDrawings(await listElectricalDrawingsForProject(requestedProjectId)); }
   if (drawingId) { const stored = await getElectricalDrawing(drawingId); if (!stored) throw new Error('Tekening niet gevonden.'); drawing = normalizeDrawing(stored); setStatus('Bewaarde tekening geladen', 'saved'); }
-  else { drawing = createEmptyDrawing({ projectId: requestedProjectId || null }); setStatus('Nog niet bewaard'); }
+  else if (project) {
+    const [products, categories, configs] = await Promise.all([listProducts(), listProductCategories(), listProductConfigs()]);
+    drawing = drawingFromProject(project, { products, categories, configs });
+    setStatus(drawing.differentials[0].branches.length ? 'Voorstel uit projectgegevens — nog niet bewaard' : 'Projectgegevens overgenomen — nog niet bewaard');
+  } else { drawing = createEmptyDrawing({ projectId: requestedProjectId || null }); setStatus('Nog niet bewaard'); }
   render();
 }
 async function saveDrawing() {
@@ -200,6 +214,10 @@ async function saveDrawing() {
   const button = document.getElementById('btnSave'); button.disabled = true; setStatus('Bewaren…');
   try {
     drawingId = await saveElectricalDrawing(drawingId || null, drawing); dirty = false;
+    if (drawing.projectId) {
+      const bytes = buildElectricalSchemaPdf(drawing, projectMetadata());
+      await window.saveElectricalSchemaProjectDocument(drawing.projectId, drawingId, bytes, `${drawing.title || 'Eendraadschema'}.pdf`);
+    }
     const next = new URL(window.location.href); next.searchParams.set('drawing', drawingId); if (drawing.projectId) next.searchParams.set('project', drawing.projectId); window.history.replaceState({}, '', next);
     if (requestedProjectId) renderProjectDrawings(await listElectricalDrawingsForProject(requestedProjectId)); setStatus('Bewaard', 'saved'); render();
   } catch (error) { setStatus(`Bewaren mislukt: ${error.message}`); } finally { button.disabled = false; }
@@ -228,6 +246,11 @@ function wireActions() {
     delete values.customPropertyKey; delete values.customPropertyValue;
     ['amperage', 'sensitivityMa', 'poles', 'powerKw', 'capacityKwh'].forEach(key => { if (values[key] !== undefined && values[key] !== '') values[key] = Number(values[key]); });
     const found = findElement(drawing, editingId);
+    if (found?.type === 'main-breaker' && values.connectionType !== undefined) {
+      drawing = { ...drawing, connectionType: values.connectionType };
+      values.poles = polesForConnection(values.connectionType);
+      delete values.connectionType;
+    }
     if (found?.branchId && values.breakerAmperage) {
       const branch = findElement(drawing, found.branchId)?.element;
       const breakerKeys = formData.getAll('breakerCustomPropertyKey'); const breakerValues = formData.getAll('breakerCustomPropertyValue');
@@ -237,6 +260,11 @@ function wireActions() {
       delete values.breakerCustomPropertyKey; delete values.breakerCustomPropertyValue;
     }
     drawing = updateElement(drawing, editingId, values); markDirty(); render(); elementModal.hide();
+  });
+  document.getElementById('elementFields').addEventListener('change', event => {
+    if (event.target.name !== 'connectionType') return;
+    const poles = document.querySelector('#elementForm [name="poles"]');
+    if (poles) poles.value = polesForConnection(event.target.value);
   });
   document.getElementById('elementFields').addEventListener('input', event => {
     if (!event.target.closest('[data-property-row]')) return;

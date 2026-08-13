@@ -437,9 +437,10 @@ async function saveElectricalDrawing(id, drawing) {
   if (!email) throw new Error('Niet ingelogd');
   const now = firebase.firestore.FieldValue.serverTimestamp();
   const data = {
-    version: Number(drawing?.version) || 6,
+    version: Number(drawing?.version) || 7,
     title: String(drawing?.title || 'Eendraadschema').trim() || 'Eendraadschema',
     projectId: typeof drawing?.projectId === 'string' && drawing.projectId ? drawing.projectId : null,
+    connectionType: typeof drawing?.connectionType === 'string' ? drawing.connectionType : '',
     mainBreaker: drawing?.mainBreaker && typeof drawing.mainBreaker === 'object' ? drawing.mainBreaker : null,
     differentials: Array.isArray(drawing?.differentials) ? drawing.differentials : [],
     updatedAt: now,
@@ -1424,6 +1425,32 @@ async function uploadProjectDocument(projectId, file, meta = {}) {
     throw new Error('Firestore metadata schrijven mislukt: ' + (e && e.message ? e.message : e), { cause: e });
   }
 
+  await projectDoc(projectId).update({ updatedAt: now });
+  return { id: ref.id, storagePath };
+}
+
+async function saveElectricalSchemaProjectDocument(projectId, drawingId, pdfBytes, filename = 'Eendraadschema.pdf') {
+  const email = currentUserEmail();
+  if (!email) throw new Error('Niet ingelogd');
+  if (!projectId || !drawingId) throw new Error('Project en tekening zijn vereist');
+  const safeName = sanitizeStorageName(filename.endsWith('.pdf') ? filename : `${filename}.pdf`);
+  const storagePath = `projects/${projectId}/documents/electrical-schemas/${drawingId}.pdf`;
+  const contentType = 'application/pdf';
+  await getStorage().ref(storagePath).put(pdfBytes, { contentType });
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const ref = projectDocumentsCol(projectId).doc(`electrical-schema-${drawingId}`);
+  await ref.set({
+    type: 'file', parentId: null,
+    title: cleanDocumentTitle(filename.replace(/\.pdf$/i, ''), 'Eendraadschema'),
+    description: 'Automatisch bijgewerkt vanuit de eendraadschema-tool.',
+    storagePath, name: safeName, contentType,
+    sizeBytes: Number(pdfBytes?.byteLength || pdfBytes?.size || 0),
+    documentKind: 'electrical_schema',
+    includeInCloseoutPdf: true, includeInInspectionPack: true,
+    sourceDrawingId: drawingId,
+    uploadedAt: now, updatedAt: now, uploadedBy: email, updatedBy: email,
+    createdAt: now, createdBy: email,
+  }, { merge: true });
   await projectDoc(projectId).update({ updatedAt: now });
   return { id: ref.id, storagePath };
 }
@@ -2697,6 +2724,7 @@ window.listProductPhotos = listProductPhotos;
 window.deleteProductPhoto = deleteProductPhoto;
 window.createProjectDocumentFolder = createProjectDocumentFolder;
 window.uploadProjectDocument = uploadProjectDocument;
+window.saveElectricalSchemaProjectDocument = saveElectricalSchemaProjectDocument;
 window.listProjectDocuments = listProjectDocuments;
 window.updateProjectDocument = updateProjectDocument;
 window.moveProjectDocument = moveProjectDocument;
