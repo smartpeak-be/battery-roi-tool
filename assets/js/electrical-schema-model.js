@@ -1,4 +1,4 @@
-const DRAWING_VERSION = 4;
+const DRAWING_VERSION = 5;
 export const ENDPOINT_TYPES = ['circuit', 'battery', 'inverter', 'hybrid-inverter', 'rem-breaker'];
 
 function cleanString(value, fallback = '') {
@@ -53,6 +53,8 @@ function normalizeEndpoint(raw = {}, forcedType = '') {
     type,
     label: cleanString(raw?.label, defaults.label),
     cable: cleanString(raw?.cable, defaults.cable),
+    cablePlacement: raw?.cablePlacement === 'surface' ? 'surface' : '',
+    circuitLabel: type === 'circuit' && typeof raw?.circuitLabel === 'string' ? raw.circuitLabel.trim() : '',
     brand: typeof raw?.brand === 'string' ? raw.brand.trim() : '',
     model: typeof raw?.model === 'string' ? raw.model.trim() : '',
     serialNumber: typeof raw?.serialNumber === 'string' ? raw.serialNumber.trim() : '',
@@ -100,6 +102,7 @@ function normalizeDifferential(raw = {}) {
     sensitivityMa: cleanNumber(raw?.sensitivityMa, 300),
     poles: cleanNumber(raw?.poles, 4),
     cable: cleanString(raw?.cable, '4x10'),
+    cablePlacement: raw?.cablePlacement === 'surface' ? 'surface' : '',
     branches: legacyBranches(raw),
     differentials: Array.isArray(raw?.differentials) ? raw.differentials.map(normalizeDifferential) : [],
   };

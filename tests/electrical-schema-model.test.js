@@ -11,11 +11,11 @@ import {
   updateElement,
 } from '../assets/js/electrical-schema-model.js';
 
-describe('eendraadschema model v4', () => {
+describe('eendraadschema model v5', () => {
   it('starts with main breaker followed by exactly one main differential', () => {
     const drawing = createEmptyDrawing({ projectId: 'project-1' });
     expect(drawing).toMatchObject({
-      version: 4,
+      version: 5,
       projectId: 'project-1',
       mainBreaker: { type: 'main-breaker', label: 'Hoofdautomaat' },
       differentials: [{ type: 'differential', label: 'Hoofddifferentieel', sensitivityMa: 300 }],
@@ -68,6 +68,17 @@ describe('eendraadschema model v4', () => {
     drawing = addBranch(drawing, drawing.differentials[0].id, 'rem-breaker', { endpoint: { id: 'rem' } });
     drawing = addRemCircuit(drawing, 'rem', { id: 'child', endpoint: { id: 'circuit', type: 'battery' } });
     expect(findElement(drawing, 'circuit')).toMatchObject({ type: 'circuit', parentId: 'rem' });
+  });
+
+  it('stores cable placement and a free circuit label while preserving empty optional metadata', () => {
+    let drawing = createEmptyDrawing();
+    drawing = addBranch(drawing, drawing.differentials[0].id, 'circuit', {
+      endpoint: { id: 'circuit-meta', label: 'Stopcontacten keuken', circuitLabel: 'A1', cable: '3G2,5', cablePlacement: 'surface', note: 'Aparte voeding' },
+    });
+    const endpoint = findElement(drawing, 'circuit-meta').element;
+    expect(endpoint).toMatchObject({ circuitLabel: 'A1', cablePlacement: 'surface', note: 'Aparte voeding' });
+    const legacy = normalizeDrawing({ differentials: [{ branches: [{ endpoint: { id: 'legacy', type: 'circuit', cablePlacement: 'invalid' } }] }] });
+    expect(legacy.differentials[0].branches[0].endpoint.cablePlacement).toBe('');
   });
 
   it('updates, reorders and recursively deletes REM children', () => {

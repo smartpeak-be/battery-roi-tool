@@ -15,6 +15,21 @@ function circle(x, y, radius) { return `${x + radius} ${y} m ${x + radius} ${y +
 function filledCircle(x, y, radius) { return circle(x, y, radius).replace(/ S\n$/, ' f\n'); }
 function text(x, y, size, value, bold = false) { return `BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${pdfText(value)}) Tj ET\n`; }
 function sideText(x, y, value, bold = false, size = 6.5) { return text(x + 19, y, size, value, bold); }
+function cableAnnotation(x, y, cable, placement) {
+  if (!cable) return '';
+  let out = sideText(x, y, cable, true, 6.2);
+  if (placement === 'surface') out += text(x - 15, y, 7, 'O', true);
+  return out;
+}
+function wrappedSideText(x, y, value, bold = false, size = 5.8, maxChars = 22) {
+  const words = ascii(value).split(/\s+/).filter(Boolean);
+  const rows = [];
+  words.forEach(word => {
+    if (!rows.length || `${rows.at(-1)} ${word}`.length > maxChars) rows.push(word);
+    else rows[rows.length - 1] += ` ${word}`;
+  });
+  return rows.map((row, index) => sideText(x, y + index * 8, row, bold, size)).join('');
+}
 
 function terminalIds(differentials, ids = []) {
   differentials.forEach(diff => {
@@ -56,6 +71,7 @@ function breakerSymbol(x, y, breaker, main = false) {
   out += line(x - 1, y - 4, x + 10, y + 5, 1.5);
   out += `${x + 10} ${y + 5} m ${x + 15} ${y + 3} ${x + 15} ${y - 2} ${x + 10} ${y - 4} c S\n`;
   out += sideText(x, y - 3, `${breaker.curve}${breaker.amperage}A ${breaker.poles}P`, true);
+  if (breaker.label && breaker.label !== 'Automaat') out += sideText(x, y + 8, breaker.label, false, 5.8);
   return out;
 }
 function differentialSymbol(x, y, diff) {
@@ -74,14 +90,25 @@ function endpointSymbol(x, y, endpoint) {
   } else if (endpoint.type === 'inverter' || endpoint.type === 'hybrid-inverter') {
     out += rect(x - 18, y - 14, 36, 28) + line(x - 15, y + 11, x + 15, y - 11, 1.2);
     out += text(x - 13, y + 2, 8, '~', true) + text(x + 7, y - 8, 7, endpoint.type === 'hybrid-inverter' ? '+-' : '=', true);
-  } else out += circle(x, y, 13) + text(x - 3, y - 4, 9, 'K', true);
+  } else out += line(x, y - 15, x, y + 15, 1.2);
   return out;
 }
 function endpointLabels(x, y, endpoint) {
-  let out = sideText(x, y + 8, endpoint.label, true, 7);
-  if (endpoint.brand || endpoint.model) out += sideText(x, y - 3, [endpoint.brand, endpoint.model].filter(Boolean).join(' '), false, 6.2);
-  const specs = [endpoint.cable, endpoint.powerKw ? `${endpoint.powerKw}kW` : '', endpoint.capacityKwh ? `${endpoint.capacityKwh}kWh` : ''].filter(Boolean).join(' ');
-  if (specs) out += sideText(x, y - 14, specs, false, 6);
+  const rows = [
+    endpoint.circuitLabel ? `Kring ${endpoint.circuitLabel}` : '',
+    endpoint.label,
+    [endpoint.brand, endpoint.model].filter(Boolean).join(' '),
+    endpoint.powerKw ? `${endpoint.powerKw}kW` : '',
+    endpoint.capacityKwh ? `${endpoint.capacityKwh}kWh` : '',
+    endpoint.serialNumber ? `SN: ${endpoint.serialNumber}` : '',
+    endpoint.note || '',
+  ].filter(Boolean);
+  let row = 0;
+  let out = '';
+  rows.forEach((value, index) => {
+    out += wrappedSideText(x, y + 8 + row * 8, value, index < 2, index < 2 ? 6.5 : 5.8);
+    row += Math.max(1, Math.ceil(ascii(value).length / 22));
+  });
   return out;
 }
 
@@ -91,18 +118,22 @@ function renderTerminalBranch(branch, x, railY) {
   let out = line(x, railY, x, breakerY - 16, 1.2);
   out += breakerSymbol(x, breakerY, branch.breaker);
   out += line(x, breakerY + 16, x, endpointY - 15, 1.2);
+  out += cableAnnotation(x, (breakerY + endpointY) / 2, branch.endpoint.cable, branch.endpoint.cablePlacement);
   out += endpointSymbol(x, endpointY, branch.endpoint) + endpointLabels(x, endpointY, branch.endpoint);
   return out;
 }
 function renderRemBranch(branch, leafIds, positions, railY) {
   const x = centerFor(leafIds, positions);
   const remBreakerY = railY + 38;
-  const childRailY = remBreakerY + 52;
+  const childRailY = remBreakerY + 68;
   let out = line(x, railY, x, remBreakerY - 16, 1.2) + breakerSymbol(x, remBreakerY, branch.breaker);
-  out += sideText(x, remBreakerY + 9, branch.endpoint.label, true, 7);
+  out += sideText(x, remBreakerY + 18, branch.endpoint.label, true, 7);
+  if (branch.endpoint.note) out += wrappedSideText(x, remBreakerY + 27, branch.endpoint.note);
   const firstX = positions.get(leafIds[0]);
   const lastX = positions.get(leafIds[leafIds.length - 1]);
-  out += line(x, remBreakerY + 16, x, childRailY, 1.2) + line(firstX, childRailY, lastX, childRailY, 2);
+  out += line(x, remBreakerY + 16, x, childRailY, 1.2);
+  out += cableAnnotation(x, remBreakerY + 43, branch.endpoint.cable, branch.endpoint.cablePlacement);
+  out += line(firstX, childRailY, lastX, childRailY, 2);
   branch.endpoint.circuits.forEach(child => { if (leafIds.includes(child.endpoint.id)) out += renderTerminalBranch(child, positions.get(child.endpoint.id), childRailY); });
   return out;
 }
@@ -113,6 +144,7 @@ function renderDifferentialTree(diff, allowed, positions, parentRailY) {
   const diffY = parentRailY + 42;
   const railY = diffY + 48;
   let out = line(x, parentRailY, x, diffY - 20, 1.3) + differentialSymbol(x, diffY, diff);
+  out += cableAnnotation(x, parentRailY + 8, diff.cable, diff.cablePlacement);
   out += sideText(x, diffY + 10, diff.label, true, 6.5);
   const childGroups = [];
   diff.branches.forEach(branch => { const ids = branchLeaves(branch, allowed); if (ids.length) childGroups.push({ type: 'branch', branch, ids }); });
@@ -146,7 +178,6 @@ function drawPage(drawing, meta, leafIds, page, pageCount) {
   const mainX = 70;
   out += text(35, MAIN_Y - 39, 7, 'NET / METER', true);
   out += breakerSymbol(mainX, MAIN_Y, drawing.mainBreaker, true);
-  out += sideText(mainX, MAIN_Y + 10, drawing.mainBreaker.label, true, 7);
   const root = drawing.differentials[0];
   if (root && subtreeLeaves(root, allowed).length) {
     const rootX = centerFor(subtreeLeaves(root, allowed), positions);
