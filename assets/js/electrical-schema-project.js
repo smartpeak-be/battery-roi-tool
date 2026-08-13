@@ -156,7 +156,6 @@ export function drawingFromProject(project = {}, data = {}) {
     if (batteryVoltage > 0) customProperties.push({ key: 'U', value: `${batteryVoltage} V DC` });
     if (branchStorage > 0) customProperties.push({ key: 'E totaal', value: `${Math.round(branchStorage * 100) / 100} kWh` });
     if (item.specs.chemistry) customProperties.push({ key: 'Chemie', value: String(item.specs.chemistry) });
-    customProperties.push({ key: 'Bron', value: item.source });
     if (!powerKw) customProperties.push({ key: 'Controle', value: 'Omvormervermogen en automaat nazien' });
     const batterySerials = batteryItems.map(() => serials.battery.shift()).filter(Boolean);
     if (batteryItems.length) customProperties.push({ key: 'Batterijen', value: batterySummary(batteryItems) });
@@ -164,15 +163,13 @@ export function drawingFromProject(project = {}, data = {}) {
     const serialNumber = item.kind === 'system'
       ? serials.system.shift() || serials.inverter.shift() || ''
       : item.kind === 'inverter' ? serials.inverter.shift() || '' : serials.system.shift() || serials.battery.shift() || '';
-    const batteryLabel = batteryItems.length ? batteryItems[0].label : '';
-    const label = endpointType === 'hybrid-inverter' && batteryLabel && item.kind === 'inverter' ? `${item.label} + ${batteryItems.length}x ${batteryLabel}` : item.label;
     drawing = addBranch(drawing, rootId, endpointType, {
       breaker: {
         label: `${item.label} automaat`, amperage: breakerAmperage,
         poles: polesForConnection(connectionType), curve: 'C',
       },
       endpoint: {
-        label,
+        label: item.label,
         brand: item.product.brand || '', model: item.product.model || '', serialNumber,
         powerKw: powerKw || null,
         capacityKwh: branchStorage || null,
