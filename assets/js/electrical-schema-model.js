@@ -1,4 +1,5 @@
-const DRAWING_VERSION = 6;
+const DRAWING_VERSION = 7;
+const GRID_CONNECTION_TYPES = new Set(['1x230', '1x230-delta', '3x230', '3x400+N']);
 export const ENDPOINT_TYPES = ['circuit', 'battery', 'inverter', 'hybrid-inverter', 'rem-breaker'];
 
 function cleanString(value, fallback = '') {
@@ -37,6 +38,12 @@ function normalizeMainBreaker(raw = {}) {
   };
 }
 
+export function polesForConnection(connectionType) {
+  if (connectionType === '3x230') return 3;
+  if (connectionType === '3x400+N') return 4;
+  return 2;
+}
+
 function normalizeBreaker(raw = {}) {
   return {
     id: cleanString(raw?.id, createId('breaker')),
@@ -70,8 +77,8 @@ function normalizeEndpoint(raw = {}, forcedType = '') {
     brand: typeof raw?.brand === 'string' ? raw.brand.trim() : '',
     model: typeof raw?.model === 'string' ? raw.model.trim() : '',
     serialNumber: typeof raw?.serialNumber === 'string' ? raw.serialNumber.trim() : '',
-    powerKw: ['circuit', 'rem-breaker'].includes(type) ? null : cleanNumber(raw?.powerKw, defaults.powerKw),
-    capacityKwh: ['battery', 'hybrid-inverter'].includes(type) ? cleanNumber(raw?.capacityKwh, defaults.capacityKwh) : null,
+    powerKw: ['circuit', 'rem-breaker'].includes(type) ? null : (Object.hasOwn(raw, 'powerKw') && raw.powerKw == null ? null : cleanNumber(raw?.powerKw, defaults.powerKw)),
+    capacityKwh: ['battery', 'hybrid-inverter'].includes(type) ? (Object.hasOwn(raw, 'capacityKwh') && raw.capacityKwh == null ? null : cleanNumber(raw?.capacityKwh, defaults.capacityKwh)) : null,
     note: typeof raw?.note === 'string' ? raw.note.trim() : '',
     customProperties: normalizeCustomProperties(raw?.customProperties),
   };
@@ -138,17 +145,19 @@ function normalizeRootDifferential(rawDifferentials) {
 }
 
 export function normalizeDrawing(raw = {}) {
+  const connectionType = GRID_CONNECTION_TYPES.has(raw?.connectionType) ? raw.connectionType : '';
   return {
     version: DRAWING_VERSION,
     title: cleanString(raw?.title, 'Eendraadschema'),
     projectId: typeof raw?.projectId === 'string' && raw.projectId.trim() ? raw.projectId.trim() : null,
+    connectionType,
     mainBreaker: normalizeMainBreaker(raw?.mainBreaker || {}),
     differentials: [normalizeRootDifferential(raw?.differentials)],
   };
 }
 
-export function createEmptyDrawing({ projectId = null, title = 'Eendraadschema' } = {}) {
-  return normalizeDrawing({ projectId, title });
+export function createEmptyDrawing({ projectId = null, title = 'Eendraadschema', connectionType = '', mainBreakerAmperage = 40 } = {}) {
+  return normalizeDrawing({ projectId, title, connectionType, mainBreaker: { amperage: mainBreakerAmperage, poles: polesForConnection(connectionType) } });
 }
 
 function mapDifferentials(items, targetId, callback) {

@@ -111,7 +111,7 @@ function endpointLabels(x, y, endpoint) {
   let row = 0;
   let out = '';
   rows.forEach((value, index) => {
-    out += wrappedSideText(x, y + 64 - row * 8, value, index < 2, index < 2 ? 6.5 : 5.8);
+    out += wrappedSideText(x, y + 80 - row * 8, value, index < 2, index < 2 ? 6.5 : 5.8);
     row += Math.max(1, Math.ceil(ascii(value).length / 22));
   });
   return out;
@@ -173,7 +173,7 @@ function titleBlock(meta, page, pageCount) {
   let out = rect(28, y, 786, 62) + line(250, y, 250, y + 62) + line(545, y, 545, y + 62) + line(735, y, 735, y + 62);
   out += text(36, y + 47, 7, 'PLAATS VAN DE ELEKTRISCHE INSTALLATIE', true) + text(36, y + 33, 9, meta.projectName || meta.customerName || 'Project') + text(36, y + 19, 8, meta.address || '');
   out += text(258, y + 49, 7, 'INSTALLATEUR', true) + text(258, y + 35, 9, meta.installer || 'SmartPeak') + text(258, y + 21, 7, meta.installerDetails || 'Terwestvaart 11 - 9180 Moerbeke-Waas') + text(258, y + 9, 7, meta.installerVat || 'BTW BE0730.696.050', true);
-  out += text(553, y + 47, 7, 'TEKENING', true) + text(553, y + 31, 9, meta.title || 'Eendraadschema') + text(553, y + 17, 8, '3 x 230/400 V - 50 Hz');
+  out += text(553, y + 47, 7, 'TEKENING', true) + text(553, y + 31, 9, meta.title || 'Eendraadschema') + text(553, y + 17, 8, meta.connectionLabel || 'Aansluiting niet bepaald');
   out += text(750, y + 42, 8, `P. ${page}/${pageCount}`, true) + text(741, y + 22, 5.8, 'EENDRAADSCHEMA', true);
   return out;
 }
@@ -193,7 +193,8 @@ function drawPage(drawing, meta, leafIds, page, pageCount) {
     out += line(mainX, feedY, rootX, feedY, 2);
     out += renderDifferentialTree(root, allowed, positions, feedY);
   }
-  out += titleBlock({ ...meta, title: drawing.title }, page, pageCount);
+  const connectionLabels = { '1x230': '1 x 230 V - 50 Hz', '1x230-delta': '1 x 230 V delta - 50 Hz', '3x230': '3 x 230 V - 50 Hz', '3x400+N': '3 x 400 V + N - 50 Hz' };
+  out += titleBlock({ ...meta, title: drawing.title, connectionLabel: connectionLabels[drawing.connectionType] }, page, pageCount);
   return out;
 }
 function makePdf(streams) {
