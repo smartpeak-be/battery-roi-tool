@@ -21,6 +21,7 @@ describe('eendraadschema v2 UI integration', () => {
     ['battery', 'Batterij'],
     ['inverter', 'Omvormer'],
     ['hybrid-inverter', 'Hybride omvormer'],
+    ['rem-breaker', 'REM-automaatkring'],
   ])('offers the %s endpoint choice', (type, label) => {
     expect(html).toContain(`data-add-type="${type}"`);
     expect(html).toContain(label);
@@ -38,6 +39,6 @@ describe('eendraadschema v2 UI integration', () => {
     expect(html).toContain('id="btnPdf"');
     expect(app).toContain('downloadElectricalSchemaPdf');
     expect(firebase).toContain('mainBreaker:');
-    expect(firebase).toContain('Number(drawing?.version) || 2');
+    expect(firebase).toContain('Number(drawing?.version) || 3');
   });
 });

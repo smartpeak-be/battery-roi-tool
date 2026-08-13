@@ -1,5 +1,5 @@
-const DRAWING_VERSION = 2;
-export const ENDPOINT_TYPES = ['circuit', 'battery', 'inverter', 'hybrid-inverter'];
+const DRAWING_VERSION = 3;
+export const ENDPOINT_TYPES = ['circuit', 'battery', 'inverter', 'hybrid-inverter', 'rem-breaker'];
 
 function cleanString(value, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
@@ -42,12 +42,13 @@ const ENDPOINT_DEFAULTS = {
   battery: { label: 'Batterij', cable: '3G2,5', powerKw: 2.4, capacityKwh: 5 },
   inverter: { label: 'Omvormer', cable: '3G2,5', powerKw: 5 },
   'hybrid-inverter': { label: 'Hybride omvormer', cable: '5G2,5', powerKw: 5, capacityKwh: 5 },
+  'rem-breaker': { label: 'REM automaat', cable: '5G6' },
 };
 
 function normalizeEndpoint(raw = {}, forcedType = '') {
   const type = ENDPOINT_TYPES.includes(forcedType || raw?.type) ? (forcedType || raw.type) : 'circuit';
   const defaults = ENDPOINT_DEFAULTS[type];
-  return {
+  const endpoint = {
     id: cleanString(raw?.id, createId('endpoint')),
     type,
     label: cleanString(raw?.label, defaults.label),
@@ -55,10 +56,16 @@ function normalizeEndpoint(raw = {}, forcedType = '') {
     brand: typeof raw?.brand === 'string' ? raw.brand.trim() : '',
     model: typeof raw?.model === 'string' ? raw.model.trim() : '',
     serialNumber: typeof raw?.serialNumber === 'string' ? raw.serialNumber.trim() : '',
-    powerKw: type === 'circuit' ? null : cleanNumber(raw?.powerKw, defaults.powerKw),
+    powerKw: ['circuit', 'rem-breaker'].includes(type) ? null : cleanNumber(raw?.powerKw, defaults.powerKw),
     capacityKwh: ['battery', 'hybrid-inverter'].includes(type) ? cleanNumber(raw?.capacityKwh, defaults.capacityKwh) : null,
     note: typeof raw?.note === 'string' ? raw.note.trim() : '',
   };
+  if (type === 'rem-breaker') {
+    endpoint.circuits = Array.isArray(raw?.circuits)
+      ? raw.circuits.map(branch => normalizeBranch(branch, 'circuit'))
+      : [];
+  }
+  return endpoint;
 }
 
 function normalizeBranch(raw = {}, forcedType = '') {
@@ -142,6 +149,28 @@ export function addBranch(drawing, differentialId, endpointType = 'circuit', val
   };
 }
 
+function mapRemEndpoints(items, remEndpointId, callback) {
+  return items.map(diff => ({
+    ...diff,
+    branches: diff.branches.map(branch => branch.endpoint.id === remEndpointId && branch.endpoint.type === 'rem-breaker'
+      ? { ...branch, endpoint: callback(branch.endpoint) }
+      : branch),
+    differentials: mapRemEndpoints(diff.differentials, remEndpointId, callback),
+  }));
+}
+
+export function addRemCircuit(drawing, remEndpointId, values = {}) {
+  const next = normalizeDrawing(drawing);
+  const circuit = normalizeBranch(values, 'circuit');
+  return {
+    ...next,
+    differentials: mapRemEndpoints(next.differentials, remEndpointId, endpoint => ({
+      ...endpoint,
+      circuits: [...endpoint.circuits, circuit],
+    })),
+  };
+}
+
 // Compatibility helpers for v1 callers.
 export function addBreaker(drawing, differentialId, values = {}) {
   return addBranch(drawing, differentialId, 'circuit', { breaker: values });
@@ -160,6 +189,13 @@ function findInDifferentials(items, id, parentId = null) {
       if (branch.id === id) return { type: 'branch', element: branch, parentId: diff.id };
       if (branch.breaker.id === id) return { type: 'breaker', element: branch.breaker, parentId: diff.id, branchId: branch.id };
       if (branch.endpoint.id === id) return { type: branch.endpoint.type, element: branch.endpoint, parentId: branch.breaker.id, branchId: branch.id };
+      if (branch.endpoint.type === 'rem-breaker') {
+        for (const child of branch.endpoint.circuits) {
+          if (child.id === id) return { type: 'branch', element: child, parentId: branch.endpoint.id };
+          if (child.breaker.id === id) return { type: 'breaker', element: child.breaker, parentId: branch.endpoint.id, branchId: child.id };
+          if (child.endpoint.id === id) return { type: 'circuit', element: child.endpoint, parentId: branch.endpoint.id, branchId: child.id };
+        }
+      }
     }
     const nested = findInDifferentials(diff.differentials, id, diff.id);
     if (nested) return nested;
@@ -182,6 +218,20 @@ function updateDifferentials(items, id, patch) {
         if (branch.id === id) return normalizeBranch({ ...branch, ...patch, id: branch.id });
         if (branch.breaker.id === id) return { ...branch, breaker: normalizeBreaker({ ...branch.breaker, ...patch, id: branch.breaker.id }) };
         if (branch.endpoint.id === id) return { ...branch, endpoint: normalizeEndpoint({ ...branch.endpoint, ...patch, id: branch.endpoint.id }, branch.endpoint.type) };
+        if (branch.endpoint.type === 'rem-breaker') {
+          return {
+            ...branch,
+            endpoint: {
+              ...branch.endpoint,
+              circuits: branch.endpoint.circuits.map(child => {
+                if (child.id === id) return normalizeBranch({ ...child, ...patch, id: child.id }, 'circuit');
+                if (child.breaker.id === id) return { ...child, breaker: normalizeBreaker({ ...child.breaker, ...patch, id: child.breaker.id }) };
+                if (child.endpoint.id === id) return { ...child, endpoint: normalizeEndpoint({ ...child.endpoint, ...patch, id: child.endpoint.id }, 'circuit') };
+                return child;
+              }),
+            },
+          };
+        }
         return branch;
       }),
       differentials: updateDifferentials(diff.differentials, id, patch),
@@ -200,7 +250,11 @@ function deleteFromDifferentials(items, id) {
     .filter(diff => diff.id !== id)
     .map(diff => ({
       ...diff,
-      branches: diff.branches.filter(branch => ![branch.id, branch.breaker.id, branch.endpoint.id].includes(id)),
+      branches: diff.branches
+        .filter(branch => ![branch.id, branch.breaker.id, branch.endpoint.id].includes(id))
+        .map(branch => branch.endpoint.type === 'rem-breaker'
+          ? { ...branch, endpoint: { ...branch.endpoint, circuits: branch.endpoint.circuits.filter(child => ![child.id, child.breaker.id, child.endpoint.id].includes(id)) } }
+          : branch),
       differentials: deleteFromDifferentials(diff.differentials, id),
     }));
 }
@@ -230,11 +284,25 @@ function moveInDifferentials(items, found, id, direction) {
   }));
 }
 
+function moveInRemEndpoints(items, remEndpointId, branchId, direction) {
+  return items.map(diff => ({
+    ...diff,
+    branches: diff.branches.map(branch => branch.endpoint.id === remEndpointId && branch.endpoint.type === 'rem-breaker'
+      ? { ...branch, endpoint: { ...branch.endpoint, circuits: reorder(branch.endpoint.circuits, branchId, direction) } }
+      : branch),
+    differentials: moveInRemEndpoints(diff.differentials, remEndpointId, branchId, direction),
+  }));
+}
+
 export function moveElement(drawing, id, direction) {
   const next = normalizeDrawing(drawing);
   const found = findElement(next, id);
   if (!found) return next;
   if (found.type === 'differential' && !found.parentId) return { ...next, differentials: reorder(next.differentials, id, direction) };
+  const parent = found.parentId ? findElement(next, found.parentId) : null;
+  if (found.branchId && parent?.type === 'rem-breaker') {
+    return { ...next, differentials: moveInRemEndpoints(next.differentials, parent.element.id, found.branchId, direction) };
+  }
   const movableId = found.branchId || id;
   const movable = found.branchId ? { type: 'branch', parentId: findElement(next, found.branchId)?.parentId } : found;
   return { ...next, differentials: moveInDifferentials(next.differentials, movable, movableId, direction) };

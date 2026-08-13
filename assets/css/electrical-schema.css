@@ -34,6 +34,12 @@
 .symbol-battery i { position:absolute; left:7px; right:7px; border-top:3px solid #111; }.symbol-battery i:first-child { top:17px; }.symbol-battery i:last-child { top:29px; left:12px; right:12px; border-width:1px; }.symbol-battery::before { content:'+'; position:absolute; top:-1px; }.symbol-battery::after { content:'−'; position:absolute; bottom:-1px; }
 .symbol-inverter,.symbol-hybrid { border:2px solid #111; }.symbol-inverter::after,.symbol-hybrid::after { content:''; position:absolute; width:58px; border-top:1px solid #111; transform:rotate(-45deg); }.symbol-inverter b,.symbol-hybrid b { position:absolute; left:6px; top:5px; }.symbol-inverter em,.symbol-hybrid em { position:absolute; right:6px; bottom:5px; font-style:normal; }
 .symbol-circuit { border:2px solid #111; border-radius:50%; }
+.symbol-rem { border:3px double #111; font-size:.7rem; }
+.schema-rem-branch { grid-column:1/-1; }
+.rem-circuits { position:relative; display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:.7rem; margin:1rem .25rem .25rem 2rem; padding-top:1.4rem; border-left:2px solid var(--schema-line); }
+.rem-rail { position:absolute; left:0; right:0; top:0; border-top:3px solid var(--schema-line); }
+.rem-circuits > .schema-branch { margin-left:.5rem; }
+.schema-add-rem-circuit { min-height:58px; align-self:end; }
 .schema-add { border:2px dashed #9ab0cd; border-radius:12px; color:#31547d; background:#f7faff; min-height:48px; font-weight:650; }.schema-add:hover { border-color:var(--bs-primary); background:#edf5ff; }
 .schema-add-child { width:calc(100% - 1.5rem); margin:0 .75rem .75rem; }.schema-add-main { display:flex; justify-content:center; align-items:center; gap:.5rem; width:100%; min-height:58px; margin-top:1rem; }
 .schema-add-grid { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; }.schema-choice { min-height:105px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.55rem; border:2px solid #c5d2e3; border-radius:14px; background:#fff; color:#203a5f; font-weight:700; }.schema-choice i,.schema-choice strong { font-size:1.7rem; }.schema-choice:hover { border-color:var(--bs-primary); background:#edf5ff; }.schema-choice-wide { grid-column:1/-1; min-height:78px; flex-direction:row; }
