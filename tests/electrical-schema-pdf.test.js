@@ -50,6 +50,17 @@ describe('electrical schema PDF', () => {
     expect(text).not.toContain('(A)');
     expect(text).not.toContain('(D)');
     expect(text).toContain('I dN 300mA  40A');
+    // Bottom-up feed: main breaker rises from y=145 and joins the tree on y=173.
+    expect(text).toContain('70 164 m 70 173 l S');
+    expect(text).toContain('70 173 m');
+  });
+
+  it('places component labels beside their symbols in the bottom-up layout', () => {
+    const text = pdfText(remTreeDrawing());
+    // sideText uses x + 19; no component name is centered on the vertical conductor.
+    expect(text).toMatch(/BT \/F2 7 Tf [\d.]+ [\d.]+ Td \(Batterij\) Tj ET/);
+    expect(text).toMatch(/BT \/F2 6\.5 Tf [\d.]+ [\d.]+ Td \(Hoofddifferentieel\) Tj ET/);
+    expect(text).toMatch(/BT \/F2 7 Tf [\d.]+ [\d.]+ Td \(REM verdeler\) Tj ET/);
   });
 
   it('paginates wide drawings', () => {
