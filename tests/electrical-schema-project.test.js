@@ -9,6 +9,7 @@ const categories = [
 const products = [
   { id: 'b1', categoryId: 'bat', brand: 'Zendure', model: 'AB3000X', specs: { capacityKwh: 2.88, nominalVoltage: 51.2 } },
   { id: 'i1', categoryId: 'inv', brand: 'Zendure', model: 'SolarFlow 2400 AC', specs: { inverterPowerKw: 2.4, phases: '1' } },
+  { id: 'plug1', categoryId: 'bat', brand: 'Marstek', model: 'Venus E', specs: { capacityKwh: 5.12, nominalVoltage: 51.2, inverterPowerKw: 2.5 } },
 ];
 
 function project() {
@@ -42,6 +43,7 @@ describe('projectgestuurd eendraadschema', () => {
     expect(endpoints[0]).toMatchObject({ type: 'hybrid-inverter', serialNumber: 'INV-001', powerKw: 2.4, capacityKwh: 5.76 });
     expect(endpoints[0].customProperties).toEqual(expect.arrayContaining([
       { key: 'U', value: '51.2 V DC' }, { key: 'E totaal', value: '5.76 kWh' },
+      { key: 'Batterijen', value: '2x Zendure AB3000X' },
       { key: 'Batterij SN 1', value: 'BAT-001' }, { key: 'Batterij SN 2', value: 'BAT-002' },
     ]));
     expect(drawing.differentials[0].branches[0].breaker.amperage).toBe(16);
@@ -53,5 +55,54 @@ describe('projectgestuurd eendraadschema', () => {
     p.lastCalcRun = { results: { configResults: [{ cfg: { productConfigId: 'cfg1' } }] } };
     const drawing = drawingFromProject(p, { products, categories, configs: [{ id: 'cfg1', items: [{ productId: 'b1', qty: 1 }, { productId: 'i1', qty: 1 }] }] });
     expect(drawing.differentials[0].branches.map(branch => branch.endpoint.type)).toEqual(['hybrid-inverter']);
+  });
+
+  it('creates one branch per inverter and distributes batteries as evenly as possible', () => {
+    const p = project();
+    p.installedSolution.items = [
+      { productId: 'i1', kind: 'inverter', quantity: 2, specs: products[1].specs },
+      { productId: 'b1', kind: 'battery', quantity: 5, specs: products[0].specs },
+    ];
+    p.serialNumbers = [
+      { category: 'omvormer', value: 'INV-1' }, { category: 'omvormer', value: 'INV-2' },
+      ...Array.from({ length: 5 }, (_, index) => ({ category: 'batterij', value: `BAT-${index + 1}` })),
+    ];
+    const branches = drawingFromProject(p, { products, categories, configs: [] }).differentials[0].branches;
+    expect(branches).toHaveLength(2);
+    expect(branches.map(branch => branch.endpoint.serialNumber)).toEqual(['INV-1', 'INV-2']);
+    expect(branches.map(branch => branch.endpoint.capacityKwh)).toEqual([8.64, 5.76]);
+    expect(branches.map(branch => branch.endpoint.customProperties.filter(prop => prop.key.startsWith('Batterij SN')).length)).toEqual([3, 2]);
+  });
+
+  it('uses existing project inverters when the installed solution only adds battery modules', () => {
+    const p = project();
+    p.installedSolution.items = [{ productId: 'b1', kind: 'battery', quantity: 4, specs: products[0].specs }];
+    p.solar = { inverters: [{ brand: 'Huawei', model: 'SUN2000', powerKw: 5 }, { brand: 'Huawei', model: 'SUN2000', powerKw: 5 }] };
+    const branches = drawingFromProject(p, { products, categories, configs: [] }).differentials[0].branches;
+    expect(branches).toHaveLength(2);
+    expect(branches.map(branch => branch.endpoint.capacityKwh)).toEqual([5.76, 5.76]);
+    expect(branches.every(branch => branch.endpoint.model === 'SUN2000')).toBe(true);
+  });
+
+  it('keeps battery-only projects editable when existing inverter details are missing', () => {
+    const p = project();
+    p.installedSolution.items = [{ productId: 'b1', kind: 'battery', quantity: 2, specs: products[0].specs }];
+    p.solar = { inverters: [] };
+    const branches = drawingFromProject(p, { products, categories, configs: [] }).differentials[0].branches;
+    expect(branches).toHaveLength(1);
+    expect(branches[0].endpoint.label).toContain('Bestaande omvormer');
+    expect(branches[0].endpoint.customProperties).toContainEqual({ key: 'Controle', value: 'Omvormervermogen en automaat nazien' });
+  });
+
+  it('keeps batteries with their own AC inverter as independent plug-in branches', () => {
+    const p = project();
+    p.installedSolution.items = [
+      { productId: 'i1', kind: 'inverter', quantity: 1, specs: products[1].specs },
+      { productId: 'b1', kind: 'battery', quantity: 2, specs: products[0].specs },
+      { productId: 'plug1', kind: 'battery', quantity: 1, specs: products[2].specs },
+    ];
+    const branches = drawingFromProject(p, { products, categories, configs: [] }).differentials[0].branches;
+    expect(branches).toHaveLength(2);
+    expect(branches.map(branch => branch.endpoint.model)).toEqual(['SolarFlow 2400 AC', 'Venus E']);
   });
 });
