@@ -12,6 +12,7 @@ function pdfText(value) { return ascii(value).replace(/([\\()])/g, '\\$1'); }
 function line(x1, y1, x2, y2, width = 1) { return `${width} w ${x1} ${y1} m ${x2} ${y2} l S\n`; }
 function rect(x, y, width, height) { return `${x} ${y} ${width} ${height} re S\n`; }
 function circle(x, y, radius) { return `${x + radius} ${y} m ${x + radius} ${y + radius * .552} ${x + radius * .552} ${y + radius} ${x} ${y + radius} c ${x - radius * .552} ${y + radius} ${x - radius} ${y + radius * .552} ${x - radius} ${y} c ${x - radius} ${y - radius * .552} ${x - radius * .552} ${y - radius} ${x} ${y - radius} c ${x + radius * .552} ${y - radius} ${x + radius} ${y - radius * .552} ${x + radius} ${y} c S\n`; }
+function filledCircle(x, y, radius) { return circle(x, y, radius).replace(/ S\n$/, ' f\n'); }
 function text(x, y, size, value, bold = false) { return `BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${pdfText(value)}) Tj ET\n`; }
 function centeredText(x, y, width, size, value, bold = false) {
   const estimated = ascii(value).length * size * .52;
@@ -58,17 +59,26 @@ function positionsFor(ids) {
 function centerFor(ids, positions) { return (positions.get(ids[0]) + positions.get(ids[ids.length - 1])) / 2; }
 
 function breakerSymbol(x, y, breaker, main = false) {
-  let out = circle(x, y, main ? 15 : 12);
-  out += line(x - 8, y - 7, x + 8, y + 7, 1.5);
-  out += centeredText(x - 15, y - 3, 30, 7, 'A', true);
-  out += centeredText(x - 34, y - 29, 68, 6.5, `${breaker.curve}${breaker.amperage}A ${breaker.poles}P`, true);
+  const half = main ? 19 : 16;
+  let out = line(x, y + half, x, y + 7, 1.3);
+  out += line(x, y - 7, x, y - half, 1.3);
+  out += filledCircle(x, y + 5, 1.8) + filledCircle(x, y - 5, 1.8);
+  // AREI/IEC miniature circuit-breaker: switching blade plus magnetic/thermal hook.
+  out += line(x - 1, y - 4, x + 10, y + 5, 1.5);
+  out += `${x + 10} ${y + 5} m ${x + 15} ${y + 3} ${x + 15} ${y - 2} ${x + 10} ${y - 4} c S\n`;
+  out += centeredText(x - 36, y - 31, 72, 6.5, `${breaker.curve}${breaker.amperage}A ${breaker.poles}P`, true);
   return out;
 }
 function differentialSymbol(x, y, diff) {
-  let out = rect(x - 18, y - 14, 36, 28);
-  out += circle(x, y, 8);
-  out += centeredText(x - 8, y - 3, 16, 8, 'D', true);
-  out += centeredText(x - 37, y - 29, 74, 6.5, `${diff.sensitivityMa}mA ${diff.amperage}A`, true);
+  let out = line(x, y + 20, x, y + 7, 1.3);
+  out += line(x, y - 7, x, y - 20, 1.3);
+  out += filledCircle(x, y + 5, 2) + filledCircle(x, y - 5, 2);
+  // Differential switch contact as in Belgian one-line diagrams: open diagonal blade.
+  out += line(x, y - 4, x + 14, y + 7, 1.6);
+  // Residual-current sensing toroid/test mark beside the contact.
+  out += circle(x - 10, y, 5);
+  out += line(x - 15, y, x - 5, y, .8);
+  out += centeredText(x - 43, y - 33, 86, 6.5, `I dN ${diff.sensitivityMa}mA  ${diff.amperage}A`, true);
   return out;
 }
 function endpointSymbol(x, y, endpoint) {

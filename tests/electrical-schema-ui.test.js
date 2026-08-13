@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
-describe('eendraadschema v2 UI integration', () => {
+describe('eendraadschema v4 UI integration', () => {
   const html = read('schema/index.html');
   const app = read('assets/js/pages/electrical-schema-app.js');
   const css = read('assets/css/electrical-schema.css');
@@ -14,6 +14,7 @@ describe('eendraadschema v2 UI integration', () => {
     expect(html).toContain('Onderliggend differentieel');
     expect(app).toContain("addDifferential(drawing, addingParentId)");
     expect(app).toContain('Hoofdautomaat');
+    expect(html).not.toContain('id="btnAddDifferential"');
   });
 
   it.each([
@@ -35,10 +36,10 @@ describe('eendraadschema v2 UI integration', () => {
     expect(css).toContain('.symbol-circuit');
   });
 
-  it('has a real PDF action and persists model v2 including the main breaker', () => {
+  it('has a real PDF action and persists model v4 including the main breaker', () => {
     expect(html).toContain('id="btnPdf"');
     expect(app).toContain('downloadElectricalSchemaPdf');
     expect(firebase).toContain('mainBreaker:');
-    expect(firebase).toContain('Number(drawing?.version) || 3');
+    expect(firebase).toContain('Number(drawing?.version) || 4');
   });
 });

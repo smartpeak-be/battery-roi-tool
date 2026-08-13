@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { buildElectricalSchemaPdf } from '../assets/js/electrical-schema-pdf.js';
-import { addBranch, addDifferential, addRemCircuit, createEmptyDrawing } from '../assets/js/electrical-schema-model.js';
+import { addBranch, addRemCircuit, createEmptyDrawing } from '../assets/js/electrical-schema-model.js';
 
 function sampleDrawing(branchCount = 1) {
-  let drawing = addDifferential(createEmptyDrawing({ title: 'Schema woning' }), null, { id: 'd1', label: 'Hoofddifferentieel' });
+  let drawing = createEmptyDrawing({ title: 'Schema woning' });
+  const rootId = drawing.differentials[0].id;
   for (let index = 0; index < branchCount; index += 1) {
-    drawing = addBranch(drawing, 'd1', index % 2 ? 'inverter' : 'battery', {
+    drawing = addBranch(drawing, rootId, index % 2 ? 'inverter' : 'battery', {
       endpoint: { label: `Toestel ${index + 1}`, brand: 'Zendure', model: 'SolarFlow', powerKw: 2.4 },
     });
   }
@@ -13,10 +14,11 @@ function sampleDrawing(branchCount = 1) {
 }
 
 function remTreeDrawing() {
-  let drawing = addDifferential(createEmptyDrawing({ title: 'Boomschema' }), null, { id: 'main-diff', label: 'Hoofddifferentieel' });
-  drawing = addBranch(drawing, 'main-diff', 'battery', { endpoint: { label: 'Batterij' } });
-  drawing = addBranch(drawing, 'main-diff', 'inverter', { endpoint: { label: 'Omvormer' } });
-  drawing = addBranch(drawing, 'main-diff', 'rem-breaker', { id: 'rem-branch', endpoint: { id: 'rem', label: 'REM verdeler' } });
+  let drawing = createEmptyDrawing({ title: 'Boomschema' });
+  const rootId = drawing.differentials[0].id;
+  drawing = addBranch(drawing, rootId, 'battery', { endpoint: { label: 'Batterij' } });
+  drawing = addBranch(drawing, rootId, 'inverter', { endpoint: { label: 'Omvormer' } });
+  drawing = addBranch(drawing, rootId, 'rem-breaker', { id: 'rem-branch', endpoint: { id: 'rem', label: 'REM verdeler' } });
   drawing = addRemCircuit(drawing, 'rem', { endpoint: { id: 'kring-1', label: 'Verlichting' } });
   drawing = addRemCircuit(drawing, 'rem', { endpoint: { id: 'kring-2', label: 'Stopcontacten' } });
   return drawing;
@@ -44,9 +46,10 @@ describe('electrical schema PDF', () => {
     expect(text).toContain('(Omvormer)');
     expect(text).toContain('(Verlichting)');
     expect(text).toContain('(Stopcontacten)');
-    // Explicit breaker/differential symbols are labelled A and D inside their shapes.
-    expect(text).toContain('(A)');
-    expect(text).toContain('(D)');
+    // Graphical AREI/IEC contacts replace the temporary A/D letter icons.
+    expect(text).not.toContain('(A)');
+    expect(text).not.toContain('(D)');
+    expect(text).toContain('I dN 300mA  40A');
   });
 
   it('paginates wide drawings', () => {

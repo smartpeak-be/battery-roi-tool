@@ -22,7 +22,13 @@
 .schema-differential.depth-1 { margin:1rem; border-color:#476c98; }.schema-differential.depth-2 { margin:1rem; border-color:#718bab; }
 .schema-diff-head { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.65rem; padding:.75rem; background:#dfe9f8; border-bottom:2px solid var(--schema-line); }
 .schema-symbol { display:grid; place-items:center; min-width:48px; min-height:48px; border:2px solid var(--schema-line); border-radius:7px; background:#fff; color:var(--schema-line); font-size:.72rem; font-weight:800; text-align:center; }
-.symbol-main { border-color:#111; color:#111; font-size:1.2rem; }
+.symbol-breaker,.symbol-differential { position:relative; border:0; border-radius:0; background:transparent; }
+.symbol-breaker::before,.symbol-breaker::after,.symbol-differential::before,.symbol-differential::after { content:""; position:absolute; left:23px; width:3px; height:12px; background:var(--schema-line); }
+.symbol-breaker::before,.symbol-differential::before { top:2px; }.symbol-breaker::after,.symbol-differential::after { bottom:2px; }
+.symbol-breaker i,.symbol-differential i { position:absolute; left:23px; top:25px; width:19px; height:3px; background:var(--schema-line); transform:rotate(-38deg); transform-origin:left center; }
+.symbol-breaker i::after { content:""; position:absolute; right:-5px; top:-5px; width:10px; height:10px; border:2px solid var(--schema-line); border-left:0; border-radius:0 8px 8px 0; }
+.symbol-differential i::before { content:""; position:absolute; left:-13px; top:-6px; width:13px; height:13px; border:2px solid var(--schema-line); border-radius:50%; }
+.symbol-differential small { position:absolute; top:39px; left:-4px; width:56px; font-size:.6rem; }
 .schema-label { min-width:0; }.schema-label strong,.schema-label small { display:block; overflow-wrap:anywhere; }.schema-label small { color:#50647e; }
 .schema-actions { display:flex; gap:.15rem; }.schema-icon-btn { width:42px; height:42px; border:0; border-radius:9px; background:transparent; color:#3f526b; }.schema-icon-btn:hover { background:rgba(255,255,255,.8); }
 .schema-children { padding:.75rem; }.schema-branches { display:grid; grid-template-columns:repeat(auto-fit,minmax(255px,1fr)); gap:.75rem; }

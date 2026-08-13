@@ -437,7 +437,7 @@ async function saveElectricalDrawing(id, drawing) {
   if (!email) throw new Error('Niet ingelogd');
   const now = firebase.firestore.FieldValue.serverTimestamp();
   const data = {
-    version: Number(drawing?.version) || 3,
+    version: Number(drawing?.version) || 4,
     title: String(drawing?.title || 'Eendraadschema').trim() || 'Eendraadschema',
     projectId: typeof drawing?.projectId === 'string' && drawing.projectId ? drawing.projectId : null,
     mainBreaker: drawing?.mainBreaker && typeof drawing.mainBreaker === 'object' ? drawing.mainBreaker : null,

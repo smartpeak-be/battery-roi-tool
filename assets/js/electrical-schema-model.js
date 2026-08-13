@@ -1,4 +1,4 @@
-const DRAWING_VERSION = 3;
+const DRAWING_VERSION = 4;
 export const ENDPOINT_TYPES = ['circuit', 'battery', 'inverter', 'hybrid-inverter', 'rem-breaker'];
 
 function cleanString(value, fallback = '') {
@@ -105,13 +105,28 @@ function normalizeDifferential(raw = {}) {
   };
 }
 
+function normalizeRootDifferential(rawDifferentials) {
+  const roots = Array.isArray(rawDifferentials) ? rawDifferentials.map(normalizeDifferential) : [];
+  if (!roots.length) return normalizeDifferential({
+    id: 'main-differential', label: 'Hoofddifferentieel', amperage: 40, sensitivityMa: 300, poles: 4,
+  });
+  const [root, ...parallelRoots] = roots;
+  if (!parallelRoots.length) return root;
+  let tail = root;
+  parallelRoots.forEach(parallel => {
+    tail.differentials = [...tail.differentials, parallel];
+    tail = parallel;
+  });
+  return root;
+}
+
 export function normalizeDrawing(raw = {}) {
   return {
     version: DRAWING_VERSION,
     title: cleanString(raw?.title, 'Eendraadschema'),
     projectId: typeof raw?.projectId === 'string' && raw.projectId.trim() ? raw.projectId.trim() : null,
     mainBreaker: normalizeMainBreaker(raw?.mainBreaker || {}),
-    differentials: Array.isArray(raw?.differentials) ? raw.differentials.map(normalizeDifferential) : [],
+    differentials: [normalizeRootDifferential(raw?.differentials)],
   };
 }
 
@@ -129,12 +144,12 @@ function mapDifferentials(items, targetId, callback) {
 export function addDifferential(drawing, parentDifferentialId = null, values = {}) {
   const next = normalizeDrawing(drawing);
   const child = normalizeDifferential(values);
-  if (!parentDifferentialId) return { ...next, differentials: [...next.differentials, child] };
+  if (!parentDifferentialId) return next;
   return {
     ...next,
-    differentials: mapDifferentials(next.differentials, parentDifferentialId, diff => ({
-      ...diff, differentials: [...diff.differentials, child],
-    })),
+    differentials: mapDifferentials(next.differentials, parentDifferentialId, diff => diff.differentials.length
+      ? diff
+      : { ...diff, differentials: [child] }),
   };
 }
 
@@ -261,7 +276,7 @@ function deleteFromDifferentials(items, id) {
 
 export function deleteElement(drawing, id) {
   const next = normalizeDrawing(drawing);
-  if (id === next.mainBreaker.id) return next;
+  if (id === next.mainBreaker.id || id === next.differentials[0].id) return next;
   return { ...next, differentials: deleteFromDifferentials(next.differentials, id) };
 }
 
@@ -298,7 +313,7 @@ export function moveElement(drawing, id, direction) {
   const next = normalizeDrawing(drawing);
   const found = findElement(next, id);
   if (!found) return next;
-  if (found.type === 'differential' && !found.parentId) return { ...next, differentials: reorder(next.differentials, id, direction) };
+  if (found.type === 'differential' && !found.parentId) return next;
   const parent = found.parentId ? findElement(next, found.parentId) : null;
   if (found.branchId && parent?.type === 'rem-breaker') {
     return { ...next, differentials: moveInRemEndpoints(next.differentials, parent.element.id, found.branchId, direction) };
