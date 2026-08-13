@@ -53,6 +53,10 @@ describe('eendraadschema v7 UI integration', () => {
     expect(app).toContain("last.insertAdjacentHTML('afterend'");
     expect(app).toContain('BTW BE0730.696.050');
     expect(css).toContain('.custom-property-row');
+    expect(app).toContain('class="custom-property-input"');
+    expect(app).toContain('<span>Eigenschap</span>');
+    expect(app).toContain('<span>Waarde</span>');
+    expect(css).toContain('.custom-property-row{grid-template-columns:1fr;gap:.7rem');
   });
 
   it('uses project electrical values and keeps long editors scrollable with reachable actions', () => {

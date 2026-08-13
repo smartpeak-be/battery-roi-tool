@@ -122,7 +122,7 @@ function connectionTypeField(value) {
 }
 
 function customPropertyRow(item = {}, index = 0, prefix = 'customProperty') {
-  return `<div class="custom-property-row" data-property-row data-property-prefix="${prefix}"><input class="form-control form-control-lg" name="${prefix}Key" value="${escapeHtml(item.key || '')}" placeholder="Eigenschap" aria-label="Eigenschap ${index + 1}"><input class="form-control form-control-lg" name="${prefix}Value" value="${escapeHtml(item.value || '')}" placeholder="Waarde" aria-label="Waarde ${index + 1}"></div>`;
+  return `<div class="custom-property-row" data-property-row data-property-prefix="${prefix}"><label class="custom-property-input"><span>Eigenschap</span><input class="form-control form-control-lg" name="${prefix}Key" value="${escapeHtml(item.key || '')}" placeholder="Bijv. protocol" aria-label="Eigenschap ${index + 1}"></label><label class="custom-property-input"><span>Waarde</span><input class="form-control form-control-lg" name="${prefix}Value" value="${escapeHtml(item.value || '')}" placeholder="Bijv. Modbus" aria-label="Waarde ${index + 1}"></label></div>`;
 }
 
 function appendCustomProperties(fields, item, { prefix = 'customProperty', label = 'Extra eigenschappen' } = {}) {
