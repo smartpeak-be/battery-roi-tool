@@ -75,8 +75,8 @@ describe('situatieschema model v1', () => {
   it('projects doors and windows onto the nearest wall and adopts its angle', () => {
     let situation = addSituationElement(createEmptySituation(), 'wall', { id: 'wall', x1: 20, y1: 40, x2: 300, y2: 40 });
     situation = addSituationElement(situation, 'wall', { id: 'diagonal', x1: 300, y1: 40, x2: 440, y2: 180 });
-    expect(projectSituationPointToWall(situation, { x: 145, y: 52 })).toMatchObject({ x: 140, y: 40, rotation: 0, wallId: 'wall' });
-    expect(projectSituationPointToWall(situation, { x: 370, y: 118 })).toMatchObject({ x: 380, y: 120, rotation: 45, wallId: 'diagonal' });
+    expect(projectSituationPointToWall(situation, { x: 145, y: 52 })).toMatchObject({ x: 145, y: 40, rotation: 0, wallId: 'wall' });
+    expect(projectSituationPointToWall(situation, { x: 370, y: 118 })).toMatchObject({ x: 374, y: 114, rotation: 45, wallId: 'diagonal' });
     const withDoor = addSituationElement(situation, 'door', { x: 380, y: 120, rotation: 45 });
     expect(withDoor.elements.at(-1).rotation).toBe(45);
     expect(projectSituationPointToWall(situation, { x: 700, y: 600 }, 30)).toBeNull();

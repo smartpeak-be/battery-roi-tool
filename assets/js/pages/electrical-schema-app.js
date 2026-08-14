@@ -44,6 +44,9 @@ let activeTab = 'electrical';
 let situationTool = 'select';
 let selectedSituationId = '';
 let situationPointer = null;
+let situationView = null;
+const situationPointers = new Map();
+let situationPinch = null;
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 const endpointLabels = { circuit: 'Gewone kring', battery: 'Batterij', inverter: 'Omvormer', 'hybrid-inverter': 'Hybride omvormer', 'rem-breaker': 'REM-automaatkring' };
@@ -130,10 +133,21 @@ function situationElementSvg(item) {
   </g>`;
 }
 
+function defaultSituationView() {
+  const viewport = drawing.situation.viewport;
+  return { x: 0, y: 0, width: viewport.width, height: viewport.height };
+}
+
+function ensureSituationView() {
+  if (!situationView) situationView = defaultSituationView();
+  return situationView;
+}
+
 function renderSituation() {
   const canvas = document.getElementById('situationCanvas');
   const situation = drawing.situation;
-  canvas.setAttribute('viewBox', `0 0 ${situation.viewport.width} ${situation.viewport.height}`);
+  const view = ensureSituationView();
+  canvas.setAttribute('viewBox', `${view.x} ${view.y} ${view.width} ${view.height}`);
   let preview = '';
   if (situationPointer?.mode === 'rectangle' && situationPointer.current) {
     const { start, current } = situationPointer;
@@ -280,6 +294,7 @@ async function loadContext() {
     drawing = drawingFromProject(project, { products, categories, configs });
     setStatus(drawing.differentials[0].branches.length ? 'Voorstel uit projectgegevens — nog niet bewaard' : 'Projectgegevens overgenomen — nog niet bewaard');
   } else { drawing = createEmptyDrawing({ projectId: requestedProjectId || null }); setStatus('Nog niet bewaard'); }
+  situationView = null;
   render();
 }
 async function saveDrawing() {
@@ -300,15 +315,40 @@ async function saveDrawing() {
   } catch (error) { setStatus(`Bewaren mislukt: ${error.message}`); } finally { button.disabled = false; }
 }
 
+function situationCoordinatesFromClient(clientX, clientY) {
+  const canvas = document.getElementById('situationCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const view = ensureSituationView();
+  return {
+    x: view.x + (clientX - rect.left) * view.width / rect.width,
+    y: view.y + (clientY - rect.top) * view.height / rect.height,
+  };
+}
+
 function situationCoordinates(event) {
+  return situationCoordinatesFromClient(event.clientX, event.clientY);
+}
+
+function zoomSituationView(factor, clientX = null, clientY = null) {
   const canvas = document.getElementById('situationCanvas');
   const rect = canvas.getBoundingClientRect();
   const viewport = drawing.situation.viewport;
-  return { x: (event.clientX - rect.left) * viewport.width / rect.width, y: (event.clientY - rect.top) * viewport.height / rect.height };
+  const current = ensureSituationView();
+  const anchorClientX = clientX ?? rect.left + rect.width / 2;
+  const anchorClientY = clientY ?? rect.top + rect.height / 2;
+  const anchor = situationCoordinatesFromClient(anchorClientX, anchorClientY);
+  const width = Math.max(viewport.width / 4, Math.min(viewport.width * 2, current.width / factor));
+  const height = width * viewport.height / viewport.width;
+  const ratioX = (anchorClientX - rect.left) / rect.width;
+  const ratioY = (anchorClientY - rect.top) / rect.height;
+  situationView = { x: anchor.x - ratioX * width, y: anchor.y - ratioY * height, width, height };
+  renderSituation();
 }
 
 function setSituationTool(tool) {
   situationTool = tool;
+  const canvas = document.getElementById('situationCanvas');
+  canvas.classList.toggle('is-pan-tool', tool === 'pan');
   document.querySelectorAll('[data-situation-tool]').forEach(button => button.classList.toggle('is-active', button.dataset.situationTool === tool));
 }
 
@@ -323,6 +363,54 @@ function projectOnWall(point, wallId, maxDistance = Infinity) {
   const wall = findSituationElement(drawing.situation, wallId);
   if (!wall || wall.type !== 'wall') return null;
   return projectSituationPointToWall({ ...drawing.situation, elements: [wall] }, point, maxDistance);
+}
+
+function beginSituationPinch(canvas) {
+  const points = [...situationPointers.values()].slice(0, 2);
+  if (points.length < 2) return;
+  const center = { x: (points[0].clientX + points[1].clientX) / 2, y: (points[0].clientY + points[1].clientY) / 2 };
+  situationPinch = {
+    distance: Math.max(1, Math.hypot(points[1].clientX - points[0].clientX, points[1].clientY - points[0].clientY)),
+    view: { ...ensureSituationView() },
+    anchor: situationCoordinatesFromClient(center.x, center.y),
+  };
+  situationPointer = null;
+  canvas.classList.add('is-panning');
+  points.forEach(point => { try { canvas.setPointerCapture(point.pointerId); } catch { /* pointer may already be captured */ } });
+}
+
+function updateSituationPinch() {
+  if (!situationPinch || situationPointers.size < 2) return;
+  const canvas = document.getElementById('situationCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const points = [...situationPointers.values()].slice(0, 2);
+  const center = { x: (points[0].clientX + points[1].clientX) / 2, y: (points[0].clientY + points[1].clientY) / 2 };
+  const distance = Math.max(1, Math.hypot(points[1].clientX - points[0].clientX, points[1].clientY - points[0].clientY));
+  const viewport = drawing.situation.viewport;
+  const width = Math.max(viewport.width / 4, Math.min(viewport.width * 2, situationPinch.view.width * situationPinch.distance / distance));
+  const height = width * viewport.height / viewport.width;
+  const ratioX = (center.x - rect.left) / rect.width;
+  const ratioY = (center.y - rect.top) / rect.height;
+  situationView = { x: situationPinch.anchor.x - ratioX * width, y: situationPinch.anchor.y - ratioY * height, width, height };
+  renderSituation();
+}
+
+function moveWindowAlongWall(item, point) {
+  const projection = projectSituationPointToWall(drawing.situation, point, Infinity);
+  const wall = projection && findSituationElement(drawing.situation, projection.wallId);
+  if (!wall) return;
+  const dx = wall.x2 - wall.x1; const dy = wall.y2 - wall.y1;
+  const wallLength = Math.hypot(dx, dy) || 1;
+  const half = Math.min(Math.hypot(item.x2 - item.x1, item.y2 - item.y1) / 2, wallLength / 2);
+  const margin = half / wallLength;
+  const t = Math.max(margin, Math.min(1 - margin, projection.t));
+  const center = { x: wall.x1 + t * dx, y: wall.y1 + t * dy };
+  const ux = dx / wallLength; const uy = dy / wallLength;
+  drawing = { ...drawing, situation: updateSituationElement(drawing.situation, item.id, {
+    x1: center.x - ux * half, y1: center.y - uy * half,
+    x2: center.x + ux * half, y2: center.y + uy * half,
+    rotation: projection.rotation,
+  }) };
 }
 
 function snapMovedSituationElement(elementId) {
@@ -348,9 +436,14 @@ function snapMovedSituationElement(elementId) {
 function wireSituationEditor() {
   const canvas = document.getElementById('situationCanvas');
   canvas.addEventListener('pointerdown', event => {
+    situationPointers.set(event.pointerId, { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, pointerType: event.pointerType });
+    if (situationPointers.size === 2) { beginSituationPinch(canvas); return; }
     const point = situationCoordinates(event);
     const existing = event.target.closest('[data-situation-id]');
-    if (existing && situationTool === 'select') {
+    if (situationTool === 'pan') {
+      situationPointer = { mode: 'pan', previousClient: { x: event.clientX, y: event.clientY } };
+      canvas.classList.add('is-panning');
+    } else if (existing && situationTool === 'select') {
       selectedSituationId = existing.dataset.situationId;
       situationPointer = { mode: 'move', id: selectedSituationId, previous: point };
     } else if (situationTool === 'wall') {
@@ -395,9 +488,18 @@ function wireSituationEditor() {
     renderSituation();
   });
   canvas.addEventListener('pointermove', event => {
+    if (situationPointers.has(event.pointerId)) situationPointers.set(event.pointerId, { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, pointerType: event.pointerType });
+    if (situationPinch) { updateSituationPinch(); return; }
     if (!situationPointer) return;
     const point = situationCoordinates(event);
-    if (situationPointer.mode === 'draw-wall') {
+    if (situationPointer.mode === 'pan') {
+      const view = ensureSituationView();
+      const rect = canvas.getBoundingClientRect();
+      const dx = (event.clientX - situationPointer.previousClient.x) * view.width / rect.width;
+      const dy = (event.clientY - situationPointer.previousClient.y) * view.height / rect.height;
+      situationView = { ...view, x: view.x - dx, y: view.y - dy };
+      situationPointer.previousClient = { x: event.clientX, y: event.clientY };
+    } else if (situationPointer.mode === 'draw-wall') {
       const segment = constrainSituationSegment(situationPointer.start, point);
       drawing = { ...drawing, situation: updateSituationElement(drawing.situation, situationPointer.id, segment) };
     } else if (situationPointer.mode === 'draw-window') {
@@ -407,7 +509,9 @@ function wireSituationEditor() {
       situationPointer.current = snapSituationPoint(point);
     } else {
       const item = findSituationElement(drawing.situation, situationPointer.id);
-      if (item?.type === 'door') {
+      if (item?.type === 'window') {
+        moveWindowAlongWall(item, point);
+      } else if (item?.type === 'door') {
         const wall = projectSituationPointToWall(drawing.situation, point, Infinity);
         if (wall) drawing = { ...drawing, situation: updateSituationElement(drawing.situation, item.id, wall) };
       } else {
@@ -415,9 +519,16 @@ function wireSituationEditor() {
       }
       situationPointer.previous = point;
     }
-    markDirty(); renderSituation();
+    if (situationPointer.mode !== 'pan') markDirty();
+    renderSituation();
   });
   canvas.addEventListener('pointerup', event => {
+    situationPointers.delete(event.pointerId);
+    if (situationPinch) {
+      if (situationPointers.size < 2) { situationPinch = null; canvas.classList.remove('is-panning'); }
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      return;
+    }
     if (!situationPointer) return;
     const completed = situationPointer;
     if (completed.mode === 'rectangle') {
@@ -433,13 +544,24 @@ function wireSituationEditor() {
       selectedSituationId = completed.id;
     }
     situationPointer = null;
+    canvas.classList.remove('is-panning');
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     renderSituation();
   });
-  canvas.addEventListener('pointercancel', () => { situationPointer = null; renderSituation(); });
+  canvas.addEventListener('pointercancel', event => {
+    situationPointers.delete(event.pointerId); situationPointer = null; situationPinch = null;
+    canvas.classList.remove('is-panning'); renderSituation();
+  });
 
   document.querySelectorAll('[data-schema-tab]').forEach(button => button.addEventListener('click', () => switchSchemaTab(button.dataset.schemaTab)));
   document.querySelectorAll('[data-situation-tool]').forEach(button => button.addEventListener('click', () => setSituationTool(button.dataset.situationTool)));
+  document.getElementById('btnSituationZoomIn').addEventListener('click', () => zoomSituationView(1.35));
+  document.getElementById('btnSituationZoomOut').addEventListener('click', () => zoomSituationView(1 / 1.35));
+  document.getElementById('btnSituationZoomReset').addEventListener('click', () => { situationView = defaultSituationView(); renderSituation(); });
+  canvas.addEventListener('wheel', event => {
+    event.preventDefault();
+    zoomSituationView(event.deltaY < 0 ? 1.18 : 1 / 1.18, event.clientX, event.clientY);
+  }, { passive: false });
   document.getElementById('situationLabel').addEventListener('input', event => {
     if (!selectedSituationId) return;
     drawing = { ...drawing, situation: updateSituationElement(drawing.situation, selectedSituationId, { label: event.target.value }) };

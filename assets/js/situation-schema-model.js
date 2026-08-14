@@ -126,9 +126,8 @@ export function projectSituationPointToWall(situation, point = {}, maxDistance =
     const projected = { x: wall.x1 + t * dx, y: wall.y1 + t * dy };
     const distance = Math.hypot(target.x - projected.x, target.y - projected.y);
     if (distance > maxDistance || (nearest && distance >= nearest.distance)) return;
-    const snapped = snapSituationPoint(projected);
     const angle = ((Math.round(Math.atan2(dy, dx) * 180 / Math.PI / 45) * 45) % 360 + 360) % 360;
-    nearest = { ...snapped, rotation: angle, wallId: wall.id, distance };
+    nearest = { ...projected, rotation: angle, wallId: wall.id, distance, t };
   });
   return nearest;
 }

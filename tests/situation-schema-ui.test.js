@@ -18,7 +18,7 @@ describe('situatieschema static UI integration', () => {
   });
 
   it.each([
-    ['wall', 'Muur'], ['rectangle', 'Rechthoek'], ['window', 'Raam'], ['door', 'Deur'],
+    ['pan', 'Verplaats'], ['wall', 'Muur'], ['rectangle', 'Rechthoek'], ['window', 'Raam'], ['door', 'Deur'],
     ['distribution-board', 'Verdeelkast'], ['inverter', 'Omvormer'],
     ['battery', 'Batterij'], ['earth', 'Aardingspunt'],
   ])('offers the touch tool %s', (tool, label) => {
@@ -39,6 +39,18 @@ describe('situatieschema static UI integration', () => {
     expect(app).toContain('addSituationRectangle');
     expect(app).toContain('projectSituationPointToWall');
     expect(app).toContain("existing && situationTool === 'select'");
+  });
+
+  it('keeps the canvas stable and supports pan, pinch zoom and explicit zoom controls', () => {
+    expect(css).toContain('#situationSelection.hide');
+    expect(css).toContain('visibility:hidden');
+    expect(html).toContain('id="btnSituationZoomIn"');
+    expect(html).toContain('id="btnSituationZoomOut"');
+    expect(html).toContain('id="btnSituationZoomReset"');
+    expect(app).toContain('situationPointers');
+    expect(app).toContain('situationPinch');
+    expect(app).toContain('zoomSituationView');
+    expect(app).toContain("situationTool === 'pan'");
   });
 
   it('exposes selection label, rotate, mirror and delete actions', () => {
