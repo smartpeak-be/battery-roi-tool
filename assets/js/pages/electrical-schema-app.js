@@ -10,9 +10,21 @@ import {
   polesForConnection,
   updateElement,
 } from '../electrical-schema-model.js';
-import { buildElectricalSchemaPdf, downloadElectricalSchemaPdf } from '../electrical-schema-pdf.js';
+import {
+  buildElectricalSchemaPdf,
+  buildSituationSchemaPdf,
+  downloadElectricalSchemaPdf,
+  downloadSituationSchemaPdf,
+} from '../electrical-schema-pdf.js';
 import { drawingFromProject } from '../electrical-schema-project.js';
 import { GRID_CONNECTION_TYPES } from '../grid-compatibility.js';
+import {
+  addSituationElement,
+  deleteSituationElement,
+  findSituationElement,
+  transformSituationElement,
+  updateSituationElement,
+} from '../situation-schema-model.js';
 
 const params = new URLSearchParams(window.location.search);
 let drawingId = params.get('drawing') || '';
@@ -24,6 +36,10 @@ let editingId = '';
 let addingParentId = '';
 let elementModal = null;
 let addModal = null;
+let activeTab = 'electrical';
+let situationTool = 'select';
+let selectedSituationId = '';
+let situationPointer = null;
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 const endpointLabels = { circuit: 'Gewone kring', battery: 'Batterij', inverter: 'Omvormer', 'hybrid-inverter': 'Hybride omvormer', 'rem-breaker': 'REM-automaatkring' };
@@ -88,6 +104,52 @@ function renderDifferential(diff, depth = 0) {
   </section>`;
 }
 
+function situationElementSvg(item) {
+  const selected = item.id === selectedSituationId ? ' is-selected' : '';
+  if (item.type === 'wall' || item.type === 'window') {
+    return `<g class="situation-element${selected}" data-situation-id="${escapeHtml(item.id)}">
+      <line class="situation-${item.type}" x1="${item.x1}" y1="${item.y1}" x2="${item.x2}" y2="${item.y2}"></line>
+      <line class="situation-hit" x1="${item.x1}" y1="${item.y1}" x2="${item.x2}" y2="${item.y2}"></line>
+      <text class="situation-label" x="${(item.x1 + item.x2) / 2 + 8}" y="${(item.y1 + item.y2) / 2 - 10}">${escapeHtml(item.label)}</text>
+    </g>`;
+  }
+  let symbol = '';
+  if (item.type === 'door') symbol = '<path class="situation-symbol-line" d="M-32 0 H32 M-32 0 V58 M32 0 A64 64 0 0 1 -32 58"></path>';
+  else if (item.type === 'distribution-board') symbol = '<rect class="situation-symbol" x="-35" y="-18" width="70" height="36"></rect>';
+  else if (item.type === 'inverter') symbol = '<rect class="situation-symbol" x="-30" y="-26" width="60" height="52"></rect><path class="situation-symbol-line" d="M-24 20 L24 -20"></path><text x="-20" y="-3" font-size="20">~</text><text x="10" y="18" font-size="20">=</text>';
+  else if (item.type === 'battery') symbol = '<path class="situation-symbol-line" d="M-28 -9 H28 M-19 9 H19"></path><text x="-6" y="-18" font-size="20">+</text><text x="-5" y="27" font-size="20">−</text>';
+  else symbol = '<path class="situation-symbol-line" d="M0 -30 V2 M-25 2 H25 M-17 12 H17 M-9 22 H9"></path>';
+  const mirror = item.mirrored ? -1 : 1;
+  return `<g class="situation-element${selected}" data-situation-id="${escapeHtml(item.id)}" transform="translate(${item.x} ${item.y})">
+    <g transform="rotate(${item.rotation}) scale(${mirror} 1)">${symbol}<circle class="situation-hit situation-point-hit" r="48"></circle></g>
+    <text class="situation-label" x="42" y="6">${escapeHtml(item.label)}</text>
+  </g>`;
+}
+
+function renderSituation() {
+  const canvas = document.getElementById('situationCanvas');
+  const situation = drawing.situation;
+  canvas.setAttribute('viewBox', `0 0 ${situation.viewport.width} ${situation.viewport.height}`);
+  canvas.innerHTML = situation.elements.map(situationElementSvg).join('');
+  const selected = findSituationElement(situation, selectedSituationId);
+  document.getElementById('situationSelection').classList.toggle('hide', !selected);
+  if (selected && document.activeElement !== document.getElementById('situationLabel')) document.getElementById('situationLabel').value = selected.label;
+}
+
+function selectSituationElement(id = '') {
+  selectedSituationId = id;
+  renderSituation();
+}
+
+function switchSchemaTab(tab) {
+  if (tab === 'situation') activeTab = 'situation';
+  else activeTab = 'electrical';
+  document.getElementById('electricalPanel').classList.toggle('hide', activeTab !== 'electrical');
+  document.getElementById('situationPanel').classList.toggle('hide', activeTab !== 'situation');
+  document.querySelectorAll('[data-schema-tab]').forEach(button => button.classList.toggle('is-active', button.dataset.schemaTab === activeTab));
+  if (activeTab === 'situation') renderSituation();
+}
+
 function render() {
   document.getElementById('drawingTitle').value = drawing.title;
   document.getElementById('mainBreaker').innerHTML = `<div class="schema-main-breaker">
@@ -97,6 +159,7 @@ function render() {
     ? drawing.differentials.map(diff => renderDifferential(diff)).join('')
     : '<div class="schema-empty">Voeg onder de hoofdautomaat eerst een differentieel toe.</div>';
   document.getElementById('drawingContext').textContent = [project?.projectName || project?.customerName, drawingId ? `Tekening ${drawingId.slice(0, 8)}` : 'Nieuwe tekening'].filter(Boolean).join(' · ');
+  renderSituation();
 }
 
 function field(label, name, value, { type = 'text', suffix = '', required = true, full = false } = {}) {
@@ -185,11 +248,12 @@ function addCircuitUnderRem(remEndpointId) {
 function projectMetadata() {
   const customer = project?.customer || {};
   const address = customer.address || customer.addressLine || [customer.street, customer.postalCode, customer.city].filter(Boolean).join(' ');
-  return { projectName: project?.projectName || '', customerName: project?.customerName || '', address, installer: 'SmartPeak', installerDetails: 'Terwestvaart 11 - 9180 Moerbeke-Waas', installerVat: 'BTW BE0730.696.050' };
+  return { projectName: project?.projectName || '', customerName: project?.customerName || '', address, connectionType: drawing.connectionType, installer: 'SmartPeak', installerDetails: 'Terwestvaart 11 - 9180 Moerbeke-Waas', installerVat: 'BTW BE0730.696.050' };
 }
 function exportPdf() {
   drawing = normalizeDrawing({ ...drawing, title: document.getElementById('drawingTitle').value });
-  downloadElectricalSchemaPdf(drawing, projectMetadata());
+  if (activeTab === 'situation') downloadSituationSchemaPdf(drawing.situation, projectMetadata());
+  else downloadElectricalSchemaPdf(drawing, projectMetadata());
   setStatus('PDF gedownload', 'saved');
 }
 
@@ -215,15 +279,107 @@ async function saveDrawing() {
   try {
     drawingId = await saveElectricalDrawing(drawingId || null, drawing); dirty = false;
     if (drawing.projectId) {
-      const bytes = buildElectricalSchemaPdf(drawing, projectMetadata());
-      await window.saveElectricalSchemaProjectDocument(drawing.projectId, drawingId, bytes, `${drawing.title || 'Eendraadschema'}.pdf`);
+      const electricalBytes = buildElectricalSchemaPdf(drawing, projectMetadata());
+      const situationBytes = buildSituationSchemaPdf(drawing.situation, projectMetadata());
+      await Promise.all([
+        window.saveElectricalSchemaProjectDocument(drawing.projectId, drawingId, electricalBytes, `${drawing.title || 'Eendraadschema'}.pdf`, 'electrical'),
+        window.saveElectricalSchemaProjectDocument(drawing.projectId, drawingId, situationBytes, 'Situatieschema.pdf', 'situation'),
+      ]);
     }
     const next = new URL(window.location.href); next.searchParams.set('drawing', drawingId); if (drawing.projectId) next.searchParams.set('project', drawing.projectId); window.history.replaceState({}, '', next);
     if (requestedProjectId) renderProjectDrawings(await listElectricalDrawingsForProject(requestedProjectId)); setStatus('Bewaard', 'saved'); render();
   } catch (error) { setStatus(`Bewaren mislukt: ${error.message}`); } finally { button.disabled = false; }
 }
 
+function situationCoordinates(event) {
+  const canvas = document.getElementById('situationCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const viewport = drawing.situation.viewport;
+  return { x: (event.clientX - rect.left) * viewport.width / rect.width, y: (event.clientY - rect.top) * viewport.height / rect.height };
+}
+
+function setSituationTool(tool) {
+  situationTool = tool;
+  document.querySelectorAll('[data-situation-tool]').forEach(button => button.classList.toggle('is-active', button.dataset.situationTool === tool));
+}
+
+function nextSituationLabel(type) {
+  const base = { 'distribution-board': 'Verdeelkast', inverter: 'Omvormer', battery: 'Batterij', earth: 'Aardingspunt' }[type] || '';
+  if (!base) return '';
+  const count = drawing.situation.elements.filter(item => item.type === type).length;
+  return count ? `${base} ${count + 1}` : base;
+}
+
+function wireSituationEditor() {
+  const canvas = document.getElementById('situationCanvas');
+  canvas.addEventListener('pointerdown', event => {
+    const point = situationCoordinates(event);
+    const existing = event.target.closest('[data-situation-id]');
+    if (existing) {
+      selectedSituationId = existing.dataset.situationId;
+      situationPointer = { mode: 'move', id: selectedSituationId, previous: point };
+    } else if (situationTool === 'wall' || situationTool === 'window') {
+      drawing = { ...drawing, situation: addSituationElement(drawing.situation, situationTool, { x1: point.x, y1: point.y, x2: point.x, y2: point.y }) };
+      selectedSituationId = drawing.situation.elements.at(-1).id;
+      situationPointer = { mode: 'draw', id: selectedSituationId };
+      markDirty();
+    } else if (situationTool !== 'select') {
+      drawing = { ...drawing, situation: addSituationElement(drawing.situation, situationTool, { x: point.x, y: point.y, label: nextSituationLabel(situationTool) }) };
+      selectedSituationId = drawing.situation.elements.at(-1).id;
+      situationPointer = { mode: 'move', id: selectedSituationId, previous: point };
+      markDirty();
+    } else {
+      selectSituationElement('');
+      return;
+    }
+    canvas.setPointerCapture(event.pointerId);
+    renderSituation();
+  });
+  canvas.addEventListener('pointermove', event => {
+    if (!situationPointer) return;
+    const point = situationCoordinates(event);
+    if (situationPointer.mode === 'draw') {
+      drawing = { ...drawing, situation: updateSituationElement(drawing.situation, situationPointer.id, { x2: point.x, y2: point.y }) };
+    } else {
+      drawing = { ...drawing, situation: transformSituationElement(drawing.situation, situationPointer.id, { dx: point.x - situationPointer.previous.x, dy: point.y - situationPointer.previous.y }) };
+      situationPointer.previous = point;
+    }
+    markDirty(); renderSituation();
+  });
+  canvas.addEventListener('pointerup', event => {
+    if (!situationPointer) return;
+    situationPointer = null;
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    renderSituation();
+  });
+  canvas.addEventListener('pointercancel', () => { situationPointer = null; });
+
+  document.querySelectorAll('[data-schema-tab]').forEach(button => button.addEventListener('click', () => switchSchemaTab(button.dataset.schemaTab)));
+  document.querySelectorAll('[data-situation-tool]').forEach(button => button.addEventListener('click', () => setSituationTool(button.dataset.situationTool)));
+  document.getElementById('situationLabel').addEventListener('input', event => {
+    if (!selectedSituationId) return;
+    drawing = { ...drawing, situation: updateSituationElement(drawing.situation, selectedSituationId, { label: event.target.value }) };
+    markDirty(); renderSituation();
+  });
+  document.getElementById('btnSituationRotate').addEventListener('click', () => {
+    if (!selectedSituationId) return;
+    drawing = { ...drawing, situation: transformSituationElement(drawing.situation, selectedSituationId, { rotate: 90 }) };
+    markDirty(); renderSituation();
+  });
+  document.getElementById('btnSituationMirror').addEventListener('click', () => {
+    if (!selectedSituationId) return;
+    drawing = { ...drawing, situation: transformSituationElement(drawing.situation, selectedSituationId, { mirror: true }) };
+    markDirty(); renderSituation();
+  });
+  document.getElementById('btnSituationDelete').addEventListener('click', () => {
+    if (!selectedSituationId) return;
+    drawing = { ...drawing, situation: deleteSituationElement(drawing.situation, selectedSituationId) };
+    selectedSituationId = ''; markDirty(); renderSituation();
+  });
+}
+
 function wireActions() {
+  wireSituationEditor();
   document.getElementById('schemaCanvas').addEventListener('click', handleCanvasClick);
   document.getElementById('mainBreaker').addEventListener('click', handleCanvasClick);
   function handleCanvasClick(event) {

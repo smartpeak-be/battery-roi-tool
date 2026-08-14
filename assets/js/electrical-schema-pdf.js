@@ -1,9 +1,11 @@
 import { normalizeDrawing } from './electrical-schema-model.js';
+import { normalizeSituation } from './situation-schema-model.js';
 
 const PAGE_W = 842;
 const PAGE_H = 595;
 const MAX_LEAVES_PER_PAGE = 6;
 const MAIN_Y = 145;
+const CONNECTION_LABELS = { '1x230': '1 x 230 V - 50 Hz', '1x230-delta': '1 x 230 V delta - 50 Hz', '3x230': '3 x 230 V - 50 Hz', '3x400+N': '3 x 400 V + N - 50 Hz' };
 
 function ascii(value) {
   return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[–—]/g, '-').replace(/[^\x20-\x7E]/g, '?');
@@ -167,13 +169,13 @@ function renderDifferentialTree(diff, allowed, positions, parentRailY) {
   return out;
 }
 
-function titleBlock(meta, page, pageCount) {
+function titleBlock(meta, page, pageCount, schemaTitle = 'EENDRAADSCHEMA') {
   const y = 30;
   let out = rect(28, y, 786, 62) + line(250, y, 250, y + 62) + line(545, y, 545, y + 62) + line(735, y, 735, y + 62);
   out += text(36, y + 47, 7, 'PLAATS VAN DE ELEKTRISCHE INSTALLATIE', true) + text(36, y + 33, 9, meta.projectName || meta.customerName || 'Project') + text(36, y + 19, 8, meta.address || '');
   out += text(258, y + 49, 7, 'INSTALLATEUR', true) + text(258, y + 35, 9, meta.installer || 'SmartPeak') + text(258, y + 21, 7, meta.installerDetails || 'Terwestvaart 11 - 9180 Moerbeke-Waas') + text(258, y + 9, 7, meta.installerVat || 'BTW BE0730.696.050', true);
-  out += text(553, y + 47, 7, 'TEKENING', true) + text(553, y + 31, 9, meta.title || 'Eendraadschema') + text(553, y + 17, 8, meta.connectionLabel || 'Aansluiting niet bepaald');
-  out += text(750, y + 42, 8, `P. ${page}/${pageCount}`, true) + text(741, y + 22, 5.8, 'EENDRAADSCHEMA', true);
+  out += text(553, y + 47, 7, 'TEKENING', true) + text(553, y + 31, 9, meta.title || schemaTitle) + text(553, y + 17, 8, meta.connectionLabel || 'Aansluiting niet bepaald');
+  out += text(750, y + 42, 8, `P. ${page}/${pageCount}`, true) + text(741, y + 22, 5.8, schemaTitle, true);
   return out;
 }
 function drawPage(drawing, meta, leafIds, page, pageCount) {
@@ -192,8 +194,7 @@ function drawPage(drawing, meta, leafIds, page, pageCount) {
     out += line(mainX, feedY, rootX, feedY, 2);
     out += renderDifferentialTree(root, allowed, positions, feedY);
   }
-  const connectionLabels = { '1x230': '1 x 230 V - 50 Hz', '1x230-delta': '1 x 230 V delta - 50 Hz', '3x230': '3 x 230 V - 50 Hz', '3x400+N': '3 x 400 V + N - 50 Hz' };
-  out += titleBlock({ ...meta, title: drawing.title, connectionLabel: connectionLabels[drawing.connectionType] }, page, pageCount);
+  out += titleBlock({ ...meta, title: drawing.title, connectionLabel: CONNECTION_LABELS[drawing.connectionType] }, page, pageCount);
   return out;
 }
 function makePdf(streams) {
@@ -223,6 +224,90 @@ export function buildElectricalSchemaPdf(rawDrawing, metadata = {}) {
   const chunks = ids.length ? Array.from({ length: Math.ceil(ids.length / MAX_LEAVES_PER_PAGE) }, (_, index) => ids.slice(index * MAX_LEAVES_PER_PAGE, (index + 1) * MAX_LEAVES_PER_PAGE)) : [[]];
   return makePdf(chunks.map((pageIds, index) => drawPage(drawing, metadata, pageIds, index + 1, chunks.length)));
 }
+
+function situationPoint(element, situation) {
+  const left = 45; const bottom = 110; const width = 750; const height = 425;
+  return {
+    x: left + (element.x / situation.viewport.width) * width,
+    y: bottom + height - (element.y / situation.viewport.height) * height,
+  };
+}
+
+function situationSegment(element, situation) {
+  return {
+    first: situationPoint({ x: element.x1, y: element.y1 }, situation),
+    second: situationPoint({ x: element.x2, y: element.y2 }, situation),
+  };
+}
+
+function rotatedPoint(cx, cy, x, y, rotationDegrees, mirrored = false) {
+  const angle = rotationDegrees * Math.PI / 180;
+  const localX = mirrored ? -x : x;
+  return { x: cx + localX * Math.cos(angle) - y * Math.sin(angle), y: cy + localX * Math.sin(angle) + y * Math.cos(angle) };
+}
+
+function situationDevice(element, situation) {
+  const point = situationPoint(element, situation);
+  // SVG-coördinaten lopen omlaag; spiegel de lokale y-as zodat rotatie en
+  // draairichting in de PDF exact overeenkomen met het tekenvlak.
+  const at = (x, y) => rotatedPoint(point.x, point.y, x, -y, -element.rotation, element.mirrored);
+  let out = '';
+  if (element.type === 'door') {
+    const hinge = at(-18, 0); const closed = at(18, 0); const open = at(-18, 36);
+    const control1 = at(18, 20); const control2 = at(2, 36);
+    out += line(hinge.x, hinge.y, closed.x, closed.y, 2) + line(hinge.x, hinge.y, open.x, open.y, 1.2);
+    out += `${closed.x} ${closed.y} m ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${open.x} ${open.y} c S\n`;
+  } else if (element.type === 'distribution-board') {
+    out += rect(point.x - 18, point.y - 10, 36, 20);
+  } else if (element.type === 'inverter') {
+    out += rect(point.x - 16, point.y - 13, 32, 26) + line(point.x - 13, point.y - 10, point.x + 13, point.y + 10) + text(point.x - 11, point.y, 7, '~', true) + text(point.x + 6, point.y - 8, 7, '=', true);
+  } else if (element.type === 'battery') {
+    out += line(point.x - 15, point.y + 5, point.x + 15, point.y + 5, 2.2) + line(point.x - 10, point.y - 5, point.x + 10, point.y - 5) + text(point.x - 2, point.y + 10, 7, '+', true);
+  } else {
+    out += line(point.x, point.y + 15, point.x, point.y - 2, 1.5) + line(point.x - 14, point.y - 2, point.x + 14, point.y - 2, 1.5) + line(point.x - 10, point.y - 7, point.x + 10, point.y - 7) + line(point.x - 5, point.y - 12, point.x + 5, point.y - 12);
+  }
+  const labelY = element.type === 'door' ? point.y - 20 : point.y - 3;
+  out += text(point.x + 20, labelY, 7, element.label, true);
+  return out;
+}
+
+function drawSituationPage(situation, meta) {
+  let out = '0 G 0 g 1 J 1 j\n' + rect(20, 20, PAGE_W - 40, PAGE_H - 40);
+  out += text(32, 562, 12, 'SITUATIESCHEMA', true) + text(690, 562, 8, 'Pagina 1/1');
+  situation.elements.forEach(element => {
+    if (element.type === 'wall' || element.type === 'window') {
+      const { first, second } = situationSegment(element, situation);
+      if (element.type === 'wall') out += line(first.x, first.y, second.x, second.y, 4);
+      else {
+        const length = Math.hypot(second.x - first.x, second.y - first.y) || 1;
+        const ox = -(second.y - first.y) / length * 3; const oy = (second.x - first.x) / length * 3;
+        // Maak eerst een witte opening in een eventueel onderliggende muur,
+        // daarna twee dunne lijnen voor het raam zelf.
+        out += '1 G\n' + line(first.x, first.y, second.x, second.y, 9) + '0 G\n';
+        out += line(first.x + ox, first.y + oy, second.x + ox, second.y + oy, 1.2);
+        out += line(first.x - ox, first.y - oy, second.x - ox, second.y - oy, 1.2);
+      }
+      out += text((first.x + second.x) / 2 + 5, (first.y + second.y) / 2 + 7, 6.5, element.label, true);
+    } else out += situationDevice(element, situation);
+  });
+  out += titleBlock({ ...meta, title: 'SITUATIESCHEMA', connectionLabel: meta.connectionLabel || CONNECTION_LABELS[meta.connectionType] }, 1, 1, 'SITUATIESCHEMA');
+  return out;
+}
+
+export function buildSituationSchemaPdf(rawSituation, metadata = {}) {
+  return makePdf([drawSituationPage(normalizeSituation(rawSituation), metadata)]);
+}
+
+export function downloadSituationSchemaPdf(situation, metadata = {}) {
+  const bytes = buildSituationSchemaPdf(situation, metadata);
+  const blob = new globalThis.Blob([bytes], { type: 'application/pdf' });
+  const url = globalThis.URL.createObjectURL(blob);
+  const anchor = globalThis.document.createElement('a');
+  anchor.href = url; anchor.download = 'situatieschema.pdf'; anchor.click();
+  globalThis.setTimeout(() => globalThis.URL.revokeObjectURL(url), 1000);
+  return bytes;
+}
+
 export function downloadElectricalSchemaPdf(drawing, metadata = {}) {
   const bytes = buildElectricalSchemaPdf(drawing, metadata);
   const blob = new globalThis.Blob([bytes], { type: 'application/pdf' });

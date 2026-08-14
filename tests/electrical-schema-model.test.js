@@ -21,6 +21,12 @@ describe('eendraadschema model v7', () => {
       differentials: [{ type: 'differential', label: 'Hoofddifferentieel', sensitivityMa: 300 }],
     });
     expect(drawing.differentials).toHaveLength(1);
+    expect(drawing.situation).toEqual({ version: 1, viewport: { width: 1120, height: 720 }, elements: [] });
+  });
+
+  it('normalizes situationschema data inside the same drawing document', () => {
+    const drawing = normalizeDrawing({ situation: { version: 9, elements: [{ id: 'deur', type: 'door', x: 80, y: 90 }] } });
+    expect(drawing.situation).toMatchObject({ version: 1, elements: [{ id: 'deur', type: 'door', x: 80, y: 90 }] });
   });
 
   it('never adds a parallel root differential', () => {
