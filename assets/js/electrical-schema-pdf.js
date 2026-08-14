@@ -225,18 +225,44 @@ export function buildElectricalSchemaPdf(rawDrawing, metadata = {}) {
   return makePdf(chunks.map((pageIds, index) => drawPage(drawing, metadata, pageIds, index + 1, chunks.length)));
 }
 
-function situationPoint(element, situation) {
+export function situationFitTransform(rawSituation) {
+  const situation = normalizeSituation(rawSituation);
   const left = 45; const bottom = 110; const width = 750; const height = 425;
-  return {
-    x: left + (element.x / situation.viewport.width) * width,
-    y: bottom + height - (element.y / situation.viewport.height) * height,
-  };
+  const points = [];
+  situation.elements.forEach(element => {
+    if (element.type === 'wall' || element.type === 'window') {
+      points.push({ x: element.x1, y: element.y1 }, { x: element.x2, y: element.y2 });
+    } else {
+      points.push({ x: element.x - 45, y: element.y - 45 }, { x: element.x + 70, y: element.y + 45 });
+    }
+  });
+  if (!points.length) points.push({ x: 0, y: 0 }, { x: situation.viewport.width, y: situation.viewport.height });
+  const rawMinX = Math.min(...points.map(point => point.x));
+  const rawMaxX = Math.max(...points.map(point => point.x));
+  const rawMinY = Math.min(...points.map(point => point.y));
+  const rawMaxY = Math.max(...points.map(point => point.y));
+  const padding = Math.max(10, Math.max(rawMaxX - rawMinX, rawMaxY - rawMinY) * 0.03);
+  const minX = rawMinX - padding; const maxX = rawMaxX + padding;
+  const minY = rawMinY - padding; const maxY = rawMaxY + padding;
+  const boundsWidth = Math.max(1, maxX - minX); const boundsHeight = Math.max(1, maxY - minY);
+  const scale = Math.min(width / boundsWidth, height / boundsHeight);
+  const offsetX = (width - boundsWidth * scale) / 2;
+  const offsetY = (height - boundsHeight * scale) / 2;
+  const map = element => ({
+    x: left + offsetX + (element.x - minX) * scale,
+    y: bottom + height - offsetY - (element.y - minY) * scale,
+  });
+  return { left, bottom, width, height, scale, minX, maxX, minY, maxY, map };
 }
 
-function situationSegment(element, situation) {
+function situationPoint(element, fit) {
+  return fit.map(element);
+}
+
+function situationSegment(element, fit) {
   return {
-    first: situationPoint({ x: element.x1, y: element.y1 }, situation),
-    second: situationPoint({ x: element.x2, y: element.y2 }, situation),
+    first: situationPoint({ x: element.x1, y: element.y1 }, fit),
+    second: situationPoint({ x: element.x2, y: element.y2 }, fit),
   };
 }
 
@@ -246,8 +272,8 @@ function rotatedPoint(cx, cy, x, y, rotationDegrees, mirrored = false) {
   return { x: cx + localX * Math.cos(angle) - y * Math.sin(angle), y: cy + localX * Math.sin(angle) + y * Math.cos(angle) };
 }
 
-function situationDevice(element, situation) {
-  const point = situationPoint(element, situation);
+function situationDevice(element, fit) {
+  const point = situationPoint(element, fit);
   // SVG-coördinaten lopen omlaag; spiegel de lokale y-as zodat rotatie en
   // draairichting in de PDF exact overeenkomen met het tekenvlak.
   const at = (x, y) => rotatedPoint(point.x, point.y, x, -y, -element.rotation, element.mirrored);
@@ -274,9 +300,10 @@ function situationDevice(element, situation) {
 function drawSituationPage(situation, meta) {
   let out = '0 G 0 g 1 J 1 j\n' + rect(20, 20, PAGE_W - 40, PAGE_H - 40);
   out += text(32, 562, 12, 'SITUATIESCHEMA', true) + text(690, 562, 8, 'Pagina 1/1');
+  const fit = situationFitTransform(situation);
   situation.elements.forEach(element => {
     if (element.type === 'wall' || element.type === 'window') {
-      const { first, second } = situationSegment(element, situation);
+      const { first, second } = situationSegment(element, fit);
       if (element.type === 'wall') out += line(first.x, first.y, second.x, second.y, 4);
       else {
         const length = Math.hypot(second.x - first.x, second.y - first.y) || 1;
@@ -288,7 +315,7 @@ function drawSituationPage(situation, meta) {
         out += line(first.x - ox, first.y - oy, second.x - ox, second.y - oy, 1.2);
       }
       out += text((first.x + second.x) / 2 + 5, (first.y + second.y) / 2 + 7, 6.5, element.label, true);
-    } else out += situationDevice(element, situation);
+    } else out += situationDevice(element, fit);
   });
   out += titleBlock({ ...meta, title: 'SITUATIESCHEMA', connectionLabel: meta.connectionLabel || CONNECTION_LABELS[meta.connectionType] }, 1, 1, 'SITUATIESCHEMA');
   return out;

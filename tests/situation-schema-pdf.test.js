@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSituationSchemaPdf } from '../assets/js/electrical-schema-pdf.js';
+import { buildSituationSchemaPdf, situationFitTransform } from '../assets/js/electrical-schema-pdf.js';
 import { addSituationElement, createEmptySituation } from '../assets/js/situation-schema-model.js';
 
 function sampleSituation() {
@@ -33,5 +33,20 @@ describe('situation schema PDF', () => {
     expect(text).toContain('(Batterij garage)');
     expect(text).toContain('(Aardingspunt)');
     expect(text.endsWith('%%EOF\n')).toBe(true);
+  });
+
+  it.each([
+    ['small', { x1: 500, y1: 300, x2: 600, y2: 300 }],
+    ['large', { x1: -1000, y1: -800, x2: 4000, y2: 2400 }],
+  ])('fits and centers a %s drawing in the full situation area', (_name, wall) => {
+    const situation = addSituationElement(createEmptySituation(), 'wall', wall);
+    const fit = situationFitTransform(situation);
+    const first = fit.map({ x: wall.x1, y: wall.y1 });
+    const second = fit.map({ x: wall.x2, y: wall.y2 });
+    expect(first.x).toBeGreaterThanOrEqual(fit.left);
+    expect(first.x).toBeLessThanOrEqual(fit.left + fit.width);
+    expect(second.x).toBeGreaterThanOrEqual(fit.left);
+    expect(second.x).toBeLessThanOrEqual(fit.left + fit.width);
+    expect(Math.max(Math.abs(second.x - first.x), Math.abs(second.y - first.y))).toBeGreaterThan(fit.width * 0.7);
   });
 });

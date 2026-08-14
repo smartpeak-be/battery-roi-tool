@@ -2,6 +2,7 @@ const SITUATION_VERSION = 1;
 const SEGMENT_TYPES = new Set(['wall', 'window']);
 const POINT_TYPES = new Set(['door', 'distribution-board', 'inverter', 'battery', 'earth']);
 export const SITUATION_ELEMENT_TYPES = [...SEGMENT_TYPES, ...POINT_TYPES];
+export const SITUATION_GRID = 20;
 
 const DEFAULT_LABELS = {
   wall: '', window: '', door: '',
@@ -29,7 +30,7 @@ function id(prefix) {
 }
 
 function rotation(value) {
-  const normalized = Math.round(number(value) / 90) * 90;
+  const normalized = Math.round(number(value) / 45) * 45;
   return ((normalized % 360) + 360) % 360;
 }
 
@@ -68,10 +69,68 @@ export function createEmptySituation(viewport = {}) {
   return normalizeSituation({ viewport, elements: [] });
 }
 
+export function snapSituationPoint(point = {}, grid = SITUATION_GRID) {
+  const step = positiveNumber(grid, SITUATION_GRID);
+  return {
+    x: Math.round(number(point.x) / step) * step,
+    y: Math.round(number(point.y) / step) * step,
+  };
+}
+
+export function constrainSituationSegment(start = {}, end = {}, grid = SITUATION_GRID) {
+  const first = snapSituationPoint(start, grid);
+  const target = snapSituationPoint(end, grid);
+  const dx = target.x - first.x;
+  const dy = target.y - first.y;
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+  let x2 = target.x;
+  let y2 = target.y;
+  if (absY <= absX * Math.tan(Math.PI / 8)) y2 = first.y;
+  else if (absX <= absY * Math.tan(Math.PI / 8)) x2 = first.x;
+  else {
+    const distance = Math.max(absX, absY);
+    x2 = first.x + Math.sign(dx || 1) * distance;
+    y2 = first.y + Math.sign(dy || 1) * distance;
+  }
+  return { x1: first.x, y1: first.y, x2, y2 };
+}
+
 export function addSituationElement(situation, type, values = {}) {
   const next = normalizeSituation(situation);
   const element = normalizeElement(values, type);
   return element ? { ...next, elements: [...next.elements, element] } : next;
+}
+
+export function addSituationRectangle(situation, values = {}, grid = SITUATION_GRID) {
+  const first = snapSituationPoint({ x: values.x1, y: values.y1 }, grid);
+  const second = snapSituationPoint({ x: values.x2, y: values.y2 }, grid);
+  const corners = [
+    [first.x, first.y, second.x, first.y],
+    [second.x, first.y, second.x, second.y],
+    [second.x, second.y, first.x, second.y],
+    [first.x, second.y, first.x, first.y],
+  ];
+  return corners.reduce((next, [x1, y1, x2, y2]) => addSituationElement(next, 'wall', { x1, y1, x2, y2 }), situation);
+}
+
+export function projectSituationPointToWall(situation, point = {}, maxDistance = 48) {
+  const target = { x: number(point.x), y: number(point.y) };
+  let nearest = null;
+  normalizeSituation(situation).elements.filter(item => item.type === 'wall').forEach(wall => {
+    const dx = wall.x2 - wall.x1;
+    const dy = wall.y2 - wall.y1;
+    const lengthSquared = dx * dx + dy * dy;
+    if (!lengthSquared) return;
+    const t = Math.max(0, Math.min(1, ((target.x - wall.x1) * dx + (target.y - wall.y1) * dy) / lengthSquared));
+    const projected = { x: wall.x1 + t * dx, y: wall.y1 + t * dy };
+    const distance = Math.hypot(target.x - projected.x, target.y - projected.y);
+    if (distance > maxDistance || (nearest && distance >= nearest.distance)) return;
+    const snapped = snapSituationPoint(projected);
+    const angle = ((Math.round(Math.atan2(dy, dx) * 180 / Math.PI / 45) * 45) % 360 + 360) % 360;
+    nearest = { ...snapped, rotation: angle, wallId: wall.id, distance };
+  });
+  return nearest;
 }
 
 export function findSituationElement(situation, elementId) {

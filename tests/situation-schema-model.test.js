@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   addSituationElement,
+  addSituationRectangle,
+  constrainSituationSegment,
   createEmptySituation,
   deleteSituationElement,
   normalizeSituation,
+  projectSituationPointToWall,
   transformSituationElement,
   updateSituationElement,
 } from '../assets/js/situation-schema-model.js';
@@ -53,5 +56,29 @@ describe('situatieschema model v1', () => {
     let situation = addSituationElement(createEmptySituation(), 'door', { id: 'door' });
     situation = addSituationElement(situation, 'battery', { id: 'battery' });
     expect(deleteSituationElement(situation, 'door').elements.map(item => item.id)).toEqual(['battery']);
+  });
+
+  it('snaps wall endpoints to the grid and only allows horizontal, vertical or 45 degree lines', () => {
+    expect(constrainSituationSegment({ x: 13, y: 17 }, { x: 146, y: 42 })).toEqual({ x1: 20, y1: 20, x2: 140, y2: 20 });
+    expect(constrainSituationSegment({ x: 13, y: 17 }, { x: 118, y: 100 })).toEqual({ x1: 20, y1: 20, x2: 120, y2: 120 });
+    expect(constrainSituationSegment({ x: 17, y: 17 }, { x: 35, y: 155 })).toEqual({ x1: 20, y1: 20, x2: 20, y2: 160 });
+  });
+
+  it('adds a room rectangle as four connected wall segments in one operation', () => {
+    const situation = addSituationRectangle(createEmptySituation(), { x1: 23, y1: 37, x2: 303, y2: 217 });
+    expect(situation.elements).toHaveLength(4);
+    expect(situation.elements.map(({ x1, y1, x2, y2 }) => [x1, y1, x2, y2])).toEqual([
+      [20, 40, 300, 40], [300, 40, 300, 220], [300, 220, 20, 220], [20, 220, 20, 40],
+    ]);
+  });
+
+  it('projects doors and windows onto the nearest wall and adopts its angle', () => {
+    let situation = addSituationElement(createEmptySituation(), 'wall', { id: 'wall', x1: 20, y1: 40, x2: 300, y2: 40 });
+    situation = addSituationElement(situation, 'wall', { id: 'diagonal', x1: 300, y1: 40, x2: 440, y2: 180 });
+    expect(projectSituationPointToWall(situation, { x: 145, y: 52 })).toMatchObject({ x: 140, y: 40, rotation: 0, wallId: 'wall' });
+    expect(projectSituationPointToWall(situation, { x: 370, y: 118 })).toMatchObject({ x: 380, y: 120, rotation: 45, wallId: 'diagonal' });
+    const withDoor = addSituationElement(situation, 'door', { x: 380, y: 120, rotation: 45 });
+    expect(withDoor.elements.at(-1).rotation).toBe(45);
+    expect(projectSituationPointToWall(situation, { x: 700, y: 600 }, 30)).toBeNull();
   });
 });

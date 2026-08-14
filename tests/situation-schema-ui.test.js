@@ -18,7 +18,7 @@ describe('situatieschema static UI integration', () => {
   });
 
   it.each([
-    ['wall', 'Muur'], ['window', 'Raam'], ['door', 'Deur'],
+    ['wall', 'Muur'], ['rectangle', 'Rechthoek'], ['window', 'Raam'], ['door', 'Deur'],
     ['distribution-board', 'Verdeelkast'], ['inverter', 'Omvormer'],
     ['battery', 'Batterij'], ['earth', 'Aardingspunt'],
   ])('offers the touch tool %s', (tool, label) => {
@@ -32,6 +32,13 @@ describe('situatieschema static UI integration', () => {
     expect(app).toContain("addEventListener('pointerup'");
     expect(app).toContain('setPointerCapture');
     expect(css).toContain('touch-action:none');
+  });
+
+  it('constrains walls to the grid and snaps openings onto existing walls', () => {
+    expect(app).toContain('constrainSituationSegment');
+    expect(app).toContain('addSituationRectangle');
+    expect(app).toContain('projectSituationPointToWall');
+    expect(app).toContain("existing && situationTool === 'select'");
   });
 
   it('exposes selection label, rotate, mirror and delete actions', () => {
