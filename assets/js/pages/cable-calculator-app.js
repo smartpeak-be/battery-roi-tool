@@ -145,15 +145,6 @@ function referenceCards(cards, primary = null, valueKey = 'section') {
   return `<div class="cable-reference-grid">${cards.map(card => `<div class="cable-reference ${card.limit === primary ? 'is-primary' : ''}"><span class="limit">Bij ${card.limit}%</span><strong class="value">${card[valueKey]}</strong>${card.detail ? `<span>${card.detail}</span>` : ''}</div>`).join('')}</div>`;
 }
 
-function thermalBlock(limitA, thermalA) {
-  const finalA = thermalA == null ? null : Math.min(limitA, thermalA);
-  return `<div class="cable-thermal">
-    <div><span>Spanningsval-limiet</span><strong>${fmt(limitA, 1)} A</strong></div>
-    <div><span>Thermische limiet Iz</span><strong>${thermalA == null ? 'Niet gekend' : `${fmt(thermalA, 1)} A`}</strong></div>
-    <div><span>Uiteindelijke limiet</span><strong>${finalA == null ? 'Niet bepaald' : `${fmt(finalA, 1)} A`}</strong></div>
-  </div>${thermalA == null ? '<p class="cable-note"><strong>Let op:</strong> dit maximum houdt alleen rekening met spanningsval. Het is geen maximale veilige kabelstroom.</p>' : ''}`;
-}
-
 function thermalCheckBlock(currentA, thermalA) {
   const check = thermalA == null ? 'Niet bepaald' : (currentA <= thermalA ? 'Binnen Iz' : 'Iz overschreden');
   return `<div class="cable-thermal">
@@ -195,13 +186,14 @@ function renderRequired(input, pv) {
 function renderCapacity(input) {
   const limits = VOLTAGE_DROP_REFERENCES.map(limit => maxCurrentForDrop({ ...input, voltageDropTargetPercent: limit }));
   const cards = limits.map(item => ({ limit: item.voltageDropTargetPercent, section: `${fmt(item.voltageDropLimitA, 1)} A`, detail: `${fmt(item.maxActivePowerKW, 2)} kW • ${fmt(item.cableLossW, 0)} W verlies` }));
+  const thermalRows = limits.map(item => `<tr><td>${item.voltageDropTargetPercent}%</td><td>${fmt(item.voltageDropLimitA, 1)} A</td><td>${fmt(item.maxActivePowerKW, 2)} kW</td><td>${input.thermalAmpacityA == null ? 'Niet gekend' : `${fmt(input.thermalAmpacityA, 1)} A`}</td><td>${item.finalAllowedCurrentA == null ? 'Niet bepaald' : `${fmt(item.finalAllowedCurrentA, 1)} A`}</td></tr>`).join('');
   const maxKW = Math.max(1, limits[2].maxActivePowerKW * 1.2);
   if (capacitySliderKW == null || capacitySliderKW > maxKW) capacitySliderKW = Math.min(10, maxKW);
   const sliderCalc = calculateCable({ ...input, inputType: 'kw', value: Math.max(.01, capacitySliderKW) });
   const status = dropStatus(sliderCalc, input);
   return `${hero(sliderCalc, `${fmtSection(input.sectionMm2)} bij ${fmt(capacitySliderKW, 2)} kW`)}
     <div class="cable-panel"><div class="cable-panel-header"><h3>Schuif de belasting</h3><strong>${fmt(capacitySliderKW, 2)} kW</strong></div><div class="cable-panel-body"><input id="capacitySlider" class="form-range cable-slider" type="range" min="0.1" max="${maxKW}" step="0.1" value="${capacitySliderKW}">${status}</div></div>
-    <div class="cable-panel"><div class="cable-panel-header"><h3>Maximum op basis van spanningsval</h3></div><div class="cable-panel-body">${referenceCards(cards)}<div class="mt-3">${thermalBlock(limits[2].voltageDropLimitA, input.thermalAmpacityA)}</div></div></div>`;
+    <div class="cable-panel"><div class="cable-panel-header"><h3>Maximum op basis van spanningsval</h3></div><div class="cable-panel-body">${referenceCards(cards)}<div class="table-responsive mt-3"><table class="table cable-table"><thead><tr><th>Grens</th><th>ΔU-limiet</th><th>Max. kW</th><th>Thermische Iz</th><th>Uiteindelijke limiet</th></tr></thead><tbody>${thermalRows}</tbody></table></div>${input.thermalAmpacityA == null ? '<p class="cable-note"><strong>Let op:</strong> dit maximum houdt alleen rekening met spanningsval. Het is geen maximale veilige kabelstroom.</p>' : ''}</div></div>`;
 }
 
 function renderDistance(input, pv) {
