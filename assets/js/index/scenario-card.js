@@ -38,6 +38,7 @@ export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, e
   const avgChargedLine = showAvg
     ? `<div class="muted-inline" style="display:block;margin-left:0;margin-top:2px;">gem. ${N} j: ${fkw(avgTotalCharged)}</div>`
     : '';
+  const priceDisclaimer = '<div style="font-size:0.7rem;line-height:1.35;color:var(--muted);margin-top:4px;">Prijzen zijn indicatief en kunnen wijzigen door prijsaanpassingen van leveranciers. De definitieve prijs wordt vastgelegd in de offerte.</div>';
   return `<div class="scenario-card ${cssClass}">
     <span class="badge ${badgeClass}">${badge}</span>
     <h3>${title}</h3>
@@ -50,7 +51,7 @@ export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, e
     ? cfg.compositionLines
     : (Array.isArray(cfg.meerkostLines) ? cfg.meerkostLines : []);
   if (lines.length === 0) {
-    return `<div class="stat-row"><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></div>`;
+    return `<div class="stat-row"><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></div>${priceDisclaimer}`;
   }
   const lineRows = lines.map((ln, i) => {
     const label = (ln.description && ln.description.trim() !== '') ? escapeHtml(ln.description) : `Lijn #${i+1}`;
@@ -64,6 +65,7 @@ export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, e
       ${lineRows}
       <div class="breakdown-row totaal"><span>Totaal installatie</span><span>${fmtEur(installPrice)}</span></div>
     </details>
+    ${priceDisclaimer}
   `;
 })()}
     <div class="stat-row"><span class="stat-label">Terugverdientijd</span><span class="stat-value big" style="color:var(--warning);display:flex;flex-direction:column;align-items:flex-end;">${paybackText}${avgPaybackLine}</span></div>

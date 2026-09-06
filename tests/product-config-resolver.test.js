@@ -141,6 +141,27 @@ describe('productConfigToCalcConfig', () => {
     expect(all.map(c => c.type)).toEqual(['PC_cfg-1']);
   });
 
+  it('can opt in to battery-only compositions that use the existing inverter power later', () => {
+    const batteryOnly = {
+      ...config,
+      id: 'battery-only',
+      name: 'Batterij-uitbreiding bestaande omvormer',
+      items: [{ productId: 'ab3000l', qty: 2 }],
+    };
+
+    expect(productConfigToCalcConfig(batteryOnly, products, categories)).toBeNull();
+
+    const resolved = productConfigToCalcConfig(batteryOnly, products, categories, {
+      allowBatteryOnly: true,
+    });
+    expect(resolved).toMatchObject({
+      type: 'PC_battery-only',
+      batCap: 5.76,
+      batInv: 0,
+      requiresExistingInverterPower: true,
+    });
+  });
+
   it('treats product configurations as B2C by default and excludes B2B from calculator choices', () => {
     const all = productConfigsToCalcConfigs([
       { ...config, id: 'default-b2c', name: 'Zendure standaard' },

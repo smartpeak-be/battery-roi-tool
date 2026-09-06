@@ -20,6 +20,6 @@ describe('grid compatibility UI integration', () => {
 
   it('passes the project connection type to the composition resolver', () => {
     expect(calculatorSource).toContain('const connectionType = _projectDoc?.electrical?.connectionType || null');
-    expect(calculatorSource).toMatch(/productConfigsToCalcConfigs\([\s\S]*?\{\s*connectionType,\s*\}\)/);
+    expect(calculatorSource).toMatch(/productConfigsToCalcConfigs\([\s\S]*?\{[\s\S]*?connectionType,[\s\S]*?\}\)/);
   });
 });
