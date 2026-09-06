@@ -40,11 +40,11 @@
     </header>
 
     <main class="cable-main">
-      <nav class="cable-modes" aria-label="Berekeningsrichting">
-        <button type="button" class="cable-mode is-active" data-mode="required"><i class="fa-solid fa-ruler"></i><span>Welke kabel heb ik nodig?</span></button>
-        <button type="button" class="cable-mode" data-mode="capacity"><i class="fa-solid fa-gauge-high"></i><span>Wat kan deze kabel aan?</span></button>
-        <button type="button" class="cable-mode" data-mode="distance"><i class="fa-solid fa-route"></i><span>Hoe ver geraak ik?</span></button>
-        <button type="button" class="cable-mode" data-mode="check"><i class="fa-solid fa-circle-check"></i><span>Controleer bestaande kabel</span></button>
+      <nav class="cable-modes" aria-label="Berekeningsrichting" role="tablist">
+        <button type="button" class="cable-mode is-active" data-mode="required" role="tab" aria-selected="true"><i class="fa-solid fa-ruler"></i><span>Welke kabel heb ik nodig?</span></button>
+        <button type="button" class="cable-mode" data-mode="capacity" role="tab" aria-selected="false"><i class="fa-solid fa-gauge-high"></i><span>Wat kan deze kabel aan?</span></button>
+        <button type="button" class="cable-mode" data-mode="distance" role="tab" aria-selected="false"><i class="fa-solid fa-route"></i><span>Hoe ver geraak ik?</span></button>
+        <button type="button" class="cable-mode" data-mode="check" role="tab" aria-selected="false"><i class="fa-solid fa-circle-check"></i><span>Controleer bestaande kabel</span></button>
       </nav>
 
       <section class="cable-layout">
@@ -179,7 +179,7 @@
       </section>
 
       <div class="alert alert-secondary cable-disclaimer">
-        <strong>Ontwerp- en controlehulp.</strong> Zonder ingevulde of gevalideerde thermische ampaciteit rekent deze tool uitsluitend op spanningsval. Het resultaat is dan geen maximale veilige kabelstroom en geen vervanging voor kabeltype, plaatsingswijze, temperatuur-, bundelings-, beveiligings- en AREI-controle. De 3%-waarde is een instelbare ontwerpgrens, niet een algemene Belgische wettelijke bovengrens. Voor productieverbindingen wordt de C10/11-doelwaarde strikt als <strong>&lt; 1%</strong> beoordeeld.
+        <strong>Ontwerp- en controlehulp.</strong> Zonder ingevulde of gevalideerde thermische ampaciteit rekent deze tool uitsluitend op spanningsverschil met een vereenvoudigd resistief model. Overgangs- en contactweerstanden zijn niet inbegrepen. Het resultaat is dan geen maximale veilige kabelstroom en geen vervanging voor kabeltype, plaatsingswijze, temperatuur-, bundelings-, kortsluit-, beveiligings-, aardings- en AREI-controle. De 3%-waarde is een instelbare ontwerpgrens, niet een algemene Belgische wettelijke bovengrens. Voor productieverbindingen wordt de C10/11-doelwaarde strikt als <strong>&lt; 1%</strong> beoordeeld over het volledige relevante AC-traject tussen hoofdmeter en productie-eenheid.
       </div>
     </main>
   </div>

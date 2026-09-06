@@ -131,6 +131,7 @@ function hero(calculation, title, pv = null) {
     <div class="eyebrow">${calculation.resultLabel}</div>
     <h2>${title}</h2>
     <div>${systemDefinition(calculation.systemType, calculation.nominalVoltageV).label} • ${fmt(calculation.lengthM, 1)} m • ${fmtSection(calculation.sectionMm2)}</div>
+    <div class="small opacity-75 mt-1">ρ = ${fmt(calculation.rhoOhmMm2PerM, 4)} Ω·mm²/m${calculation.reactanceOhmPerM ? ` • X′ = ${fmt(calculation.reactanceOhmPerM * 1000, 3)} Ω/km` : ' • reactantie genegeerd'}</div>
     ${pvSummary(pv)}
     <div class="cable-hero-grid">
       <div class="cable-hero-stat"><span>Stroom</span><strong>${fmt(calculation.currentA, 1)} A</strong></div>
@@ -177,16 +178,16 @@ function renderRequired(input, pv) {
     section: fmtSection(selection.recommendedStandardSectionMm2),
     detail: selection.calculation ? `werkelijk ${fmt(selection.calculation.voltageDropPercent, 2)}%` : 'buiten bereik',
   }));
-  const c1011 = circuitIsProduction(input) ? `<div class="cable-status ${requested.calculation.compliance.c1011VoltageRise ? 'ok' : 'danger'}">C10/11-productiedoel &lt;1%: ${requested.calculation.compliance.c1011VoltageRise ? 'voldoet voor dit aspect' : 'voldoet niet met deze gekozen ontwerpgrens'}</div>` : '';
-  return `${hero(requested.calculation, `Aanbevolen kabel: ${fmtSection(requested.recommendedStandardSectionMm2)}`, pv)}
+  const c1011 = circuitIsProduction(input) ? `<div class="cable-status ${requested.calculation.compliance.c1011VoltageRise ? 'ok' : 'danger'}">C10/11-productiedoel &lt;1%: ${requested.calculation.compliance.c1011VoltageRise ? 'rekenkundig binnen de grens voor dit ingevoerde traject' : 'grens overschreden met deze sectie'}. Neem voor de voorcontrole alle AC-kabelsegmenten tussen hoofdmeter en productie-eenheid mee.</div>` : '';
+  return `${hero(requested.calculation, `Sectie op basis van spanningsval: ${fmtSection(requested.recommendedStandardSectionMm2)}`, pv)}
     <div class="cable-panel"><div class="cable-panel-header"><h3>Benodigde sectie</h3></div><div class="cable-panel-body"><p>Theoretisch nodig bij ${fmt(target, 1)}%: <strong>${fmt(requested.theoreticalSectionMm2, 2)} mm²</strong></p>${referenceCards(cards, [1,2,3].includes(target) ? target : null)}${c1011}<p class="cable-note">De standaardsectie is gekozen op spanningsval. Zonder gevalideerde Iz is de thermische geschiktheid niet bevestigd.</p></div></div>
     ${sectionComparison(input, nearbySections(requested.recommendedStandardSectionMm2), requested.recommendedStandardSectionMm2)}`;
 }
 
 function renderCapacity(input) {
   const limits = VOLTAGE_DROP_REFERENCES.map(limit => maxCurrentForDrop({ ...input, voltageDropTargetPercent: limit }));
-  const cards = limits.map(item => ({ limit: item.voltageDropTargetPercent, section: `${fmt(item.voltageDropLimitA, 1)} A`, detail: `${fmt(item.maxActivePowerKW, 2)} kW • ${fmt(item.cableLossW, 0)} W verlies` }));
-  const thermalRows = limits.map(item => `<tr><td>${item.voltageDropTargetPercent}%</td><td>${fmt(item.voltageDropLimitA, 1)} A</td><td>${fmt(item.maxActivePowerKW, 2)} kW</td><td>${input.thermalAmpacityA == null ? 'Niet gekend' : `${fmt(input.thermalAmpacityA, 1)} A`}</td><td>${item.finalAllowedCurrentA == null ? 'Niet bepaald' : `${fmt(item.finalAllowedCurrentA, 1)} A`}</td></tr>`).join('');
+  const cards = limits.map(item => ({ limit: item.voltageDropTargetPercent, section: `${item.strictLimit ? '< ' : '≤ '}${fmt(item.voltageDropLimitA, 1)} A`, detail: `${item.strictLimit ? '< ' : '≤ '}${fmt(item.maxActivePowerKW, 2)} kW • ${fmt(item.cableLossW, 0)} W verlies aan de grens` }));
+  const thermalRows = limits.map(item => `<tr><td>${item.strictLimit ? '&lt;' : '≤'} ${item.voltageDropTargetPercent}%</td><td>${item.strictLimit ? '&lt; ' : '≤ '}${fmt(item.voltageDropLimitA, 1)} A</td><td>${item.strictLimit ? '&lt; ' : '≤ '}${fmt(item.maxActivePowerKW, 2)} kW</td><td>${input.thermalAmpacityA == null ? 'Niet gekend' : `${fmt(input.thermalAmpacityA, 1)} A`}</td><td>${item.finalAllowedCurrentA == null ? 'Niet bepaald' : `${item.strictLimit && item.voltageDropLimitA <= input.thermalAmpacityA ? '< ' : '≤ '}${fmt(item.finalAllowedCurrentA, 1)} A`}</td></tr>`).join('');
   const maxKW = Math.max(1, limits[2].maxActivePowerKW * 1.2);
   if (capacitySliderKW == null || capacitySliderKW > maxKW) capacitySliderKW = Math.min(10, maxKW);
   const sliderCalc = calculateCable({ ...input, inputType: 'kw', value: Math.max(.01, capacitySliderKW) });
@@ -199,19 +200,19 @@ function renderCapacity(input) {
 function renderDistance(input, pv) {
   const selected = VOLTAGE_DROP_REFERENCES.map(limit => maxDistanceForDrop({ ...input, voltageDropTargetPercent: limit }));
   const atOneMeter = calculateCable({ ...input, lengthM: 1 });
-  const cards = selected.map(item => ({ limit: item.voltageDropTargetPercent, section: `${fmt(item.maxDistanceM, 1)} m`, detail: `${fmt(item.currentA, 1)} A` }));
+  const cards = selected.map(item => ({ limit: item.voltageDropTargetPercent, section: `${item.strictLimit ? '< ' : '≤ '}${fmt(item.maxDistanceM, 1)} m`, detail: `${fmt(item.currentA, 1)} A` }));
   const rows = STANDARD_SECTIONS_MM2.map(section => {
-    const values = VOLTAGE_DROP_REFERENCES.map(limit => maxDistanceForDrop({ ...input, sectionMm2: section, voltageDropTargetPercent: limit }).maxDistanceM);
-    return `<tr class="${section === input.sectionMm2 ? 'recommended-row' : ''}"><td>${fmtSection(section)}</td>${values.map(value => `<td>${fmt(value, 1)} m</td>`).join('')}</tr>`;
+    const values = VOLTAGE_DROP_REFERENCES.map(limit => maxDistanceForDrop({ ...input, sectionMm2: section, voltageDropTargetPercent: limit }));
+    return `<tr class="${section === input.sectionMm2 ? 'recommended-row' : ''}"><td>${fmtSection(section)}</td>${values.map(item => `<td>${item.strictLimit ? '&lt; ' : '≤ '}${fmt(item.maxDistanceM, 1)} m</td>`).join('')}</tr>`;
   }).join('');
-  return `${hero({ ...atOneMeter, lengthM: selected[0].maxDistanceM, voltageDropV: atOneMeter.nominalVoltageV * .01, voltageDropPercent: 1, cableLossW: atOneMeter.cableLossW * selected[0].maxDistanceM }, `Maximaal ${fmt(selected[0].maxDistanceM, 1)} m bij 1%`, pv)}
+  return `${hero({ ...atOneMeter, lengthM: selected[0].maxDistanceM, voltageDropV: atOneMeter.nominalVoltageV * .01, voltageDropPercent: 1, cableLossW: atOneMeter.cableLossW * selected[0].maxDistanceM }, `${selected[0].strictLimit ? 'Minder dan' : 'Maximaal'} ${fmt(selected[0].maxDistanceM, 1)} m bij 1%`, pv)}
     <div class="cable-panel"><div class="cable-panel-header"><h3>Maximale enkele trajectlengte</h3></div><div class="cable-panel-body">${referenceCards(cards)}</div></div>
     <div class="cable-panel"><div class="cable-panel-header"><h3>Afstand per standaardsectie</h3></div><div class="cable-panel-body"><table class="table cable-table"><thead><tr><th>Sectie</th><th>1%</th><th>2%</th><th>3%</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function dropStatus(calc, input) {
   if (circuitIsProduction(input)) {
-    return `<div class="cable-status ${calc.compliance.c1011VoltageRise ? 'ok' : 'danger'}">${calc.compliance.c1011VoltageRise ? 'Onder 1%: voldoet aan de C10/11-doelwaarde voor dit aspect.' : 'Niet conform de C10/11-doelwaarde voor productie: de spanningsstijging moet strikt kleiner dan 1% zijn.'}</div>`;
+    return `<div class="cable-status ${calc.compliance.c1011VoltageRise ? 'ok' : 'danger'}">${calc.compliance.c1011VoltageRise ? 'Rekenkundig onder 1% voor het ingevoerde traject.' : 'C10/11-doelwaarde overschreden: de spanningsstijging moet strikt kleiner dan 1% zijn.'} Neem alle AC-kabelsegmenten tussen hoofdmeter en productie-eenheid mee; dit is een voorcontrole, geen conformiteitsverklaring.</div>`;
   }
   const pct = calc.voltageDropPercent;
   const status = pct <= 1 ? ['ok', '≤1%'] : pct <= 2 ? ['near', '>1% en ≤2%'] : pct <= 3 ? ['warn', '>2% en ≤3%'] : ['danger', '>3%'];
@@ -269,7 +270,11 @@ function initForm() {
   $('sectionMm2').innerHTML = STANDARD_SECTIONS_MM2.map(section => `<option value="${section}" ${section === 6 ? 'selected' : ''}>${fmtSection(section)}</option>`).join('');
   document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => {
     mode = button.dataset.mode;
-    document.querySelectorAll('[data-mode]').forEach(item => item.classList.toggle('is-active', item === button));
+    document.querySelectorAll('[data-mode]').forEach(item => {
+      const active = item === button;
+      item.classList.toggle('is-active', active);
+      item.setAttribute('aria-selected', String(active));
+    });
     capacitySliderKW = null;
     render();
   }));

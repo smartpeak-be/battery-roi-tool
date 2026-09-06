@@ -105,6 +105,9 @@ describe('inverse calculations and section selection', () => {
     expect(voltageOnly.finalAllowedCurrentA).toBeNull();
     expect(voltageOnly.voltageDropLimitA).toBeGreaterThan(0);
 
+    const strictProduction = maxCurrentForDrop({ systemType: 'three400', circuitType: 'production', voltageDropTargetPercent: 1, lengthM: 45, sectionMm2: 6, material: 'copper' });
+    expect(strictProduction.strictLimit).toBe(true);
+
     const withIz = maxCurrentForDrop({ systemType: 'three400', voltageDropTargetPercent: 3, lengthM: 45, sectionMm2: 6, material: 'copper', thermalAmpacityA: 20 });
     expect(withIz.finalAllowedCurrentA).toBe(20);
   });

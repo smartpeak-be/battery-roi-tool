@@ -9,8 +9,9 @@ const css = fs.readFileSync(path.join(root, 'assets/css/cable-calculator.css'), 
 const dashboard = fs.readFileSync(path.join(root, 'dashboard.html'), 'utf8');
 
 describe('cable calculator page', () => {
-  it('offers all four bidirectional calculation modes', () => {
-    expect(html).toContain('data-mode="required"');
+  it('offers all four bidirectional calculation modes as accessible tabs', () => {
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('data-mode="required" role="tab" aria-selected="true"');
     expect(html).toContain('data-mode="capacity"');
     expect(html).toContain('data-mode="distance"');
     expect(html).toContain('data-mode="check"');
@@ -31,13 +32,16 @@ describe('cable calculator page', () => {
 
   it('explains the one-way length convention and thermal limitation', () => {
     expect(html).toContain('fysieke afstand in één richting');
-    expect(html).toContain('uitsluitend op spanningsval');
+    expect(html).toContain('uitsluitend op spanningsverschil');
     expect(html).toContain('geen maximale veilige kabelstroom');
   });
 
-  it('does not present 3 percent as a Belgian legal limit', () => {
+  it('does not present 3 percent as a Belgian legal limit or a voltage-only result as a full cable approval', () => {
     expect(html).toContain('niet een algemene Belgische wettelijke bovengrens');
     expect(html).toContain('&lt; 1%');
+    expect(html).toContain('volledige relevante AC-traject tussen hoofdmeter en productie-eenheid');
+    expect(app).toContain('Sectie op basis van spanningsval');
+    expect(app).toContain('geen conformiteitsverklaring');
     expect(app).toContain('c1011VoltageRise');
   });
 

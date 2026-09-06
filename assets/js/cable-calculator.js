@@ -150,6 +150,7 @@ export function calculateCable(input) {
     sectionMm2: properties.section,
     lengthM,
     resistanceOhmPerM: properties.resistanceOhmPerM,
+    rhoOhmMm2PerM: properties.materialData.rhoOhmMm2PerM,
     reactanceOhmPerM: properties.reactanceOhmPerM,
     circuitType,
     resultLabel: circuitResultLabel(circuitType),
@@ -221,8 +222,10 @@ export function maxCurrentForDrop(input) {
   const voltageDropLimitA = system.voltage * target / 100 / (dropFactor(system) * lengthM * z);
   const powers = powerFromCurrent({ systemType: input.systemType, voltage: system.voltage, currentA: voltageDropLimitA, powerFactor: pf });
   const thermalAmpacityA = finiteOptionalPositive(input.thermalAmpacityA, 'Thermische limiet');
+  const strictLimit = c1011Applies(system, input.circuitType) && target === 1;
   return {
     voltageDropTargetPercent: target,
+    strictLimit,
     voltageDropLimitA,
     maxActivePowerKW: powers.activePowerKW,
     maxApparentPowerKVA: powers.apparentPowerKVA,
@@ -245,6 +248,7 @@ export function maxDistanceForDrop(input) {
     : properties.resistanceOhmPerM * pf + properties.reactanceOhmPerM * sinPhi;
   return {
     voltageDropTargetPercent: target,
+    strictLimit: c1011Applies(system, input.circuitType) && target === 1,
     maxDistanceM: system.voltage * target / 100 / (dropFactor(system) * currentA * z),
     currentA,
   };
