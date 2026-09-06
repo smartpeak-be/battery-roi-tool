@@ -374,8 +374,12 @@ function initFirebase() {
   if (typeof firebase === 'undefined') {
     throw new Error('Firebase SDK niet geladen. Controleer of de <script src="https://www.gstatic.com/firebasejs/...firebase-app-compat.js"> tags aanwezig zijn.');
   }
-  _firebaseApp  = firebase.initializeApp(FIREBASE_CONFIG);
-  _firebaseDb   = _firebaseApp.firestore();
+  _firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+  // Firestore is optional on auth-only/public pages. Pages that need data load
+  // firebase-firestore-compat.js; getDb() gives a focused error otherwise.
+  if (typeof _firebaseApp.firestore === 'function') {
+    _firebaseDb = _firebaseApp.firestore();
+  }
   // Auth SDK is optional — not loaded on public pages (lead.html, lead-result.html)
   if (typeof firebase.auth === 'function') {
     _firebaseAuth = firebase.auth();
@@ -383,7 +387,11 @@ function initFirebase() {
   return _firebaseApp;
 }
 
-function getDb()   { initFirebase(); return _firebaseDb; }
+function getDb() {
+  initFirebase();
+  if (!_firebaseDb) throw new Error('Firestore SDK niet geladen. Laad firebase-firestore-compat.js vóór firebase-init.js.');
+  return _firebaseDb;
+}
 function getAuth() { initFirebase(); return _firebaseAuth; }
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
