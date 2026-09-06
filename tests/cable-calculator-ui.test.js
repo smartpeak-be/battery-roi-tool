@@ -64,6 +64,13 @@ describe('cable calculator page', () => {
     expect(css).toContain('@media (max-width: 575.98px)');
   });
 
+  it('loads the Firebase compat SDKs required by shared firebase-init', () => {
+    expect(html).toContain('firebase-app-compat.js');
+    expect(html).toContain('firebase-auth-compat.js');
+    expect(html).toContain('firebase-firestore-compat.js');
+    expect(html.indexOf('firebase-firestore-compat.js')).toBeLessThan(html.indexOf('firebase-init.js'));
+  });
+
   it('is linked from the authenticated dashboard', () => {
     expect(dashboard).toContain('href="cable/"');
     expect(dashboard).toContain('Kabelcalculator');
