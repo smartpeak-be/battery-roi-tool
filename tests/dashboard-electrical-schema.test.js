@@ -6,6 +6,6 @@ const app = readFileSync(new URL('../assets/js/pages/dashboard-app.js', import.m
 describe('dashboard electrical schema action', () => {
   it('opens the schema tool with the selected project id from the project drawer', () => {
     expect(app).toContain('href="schema/?project=${encodeURIComponent(project.id)}"');
-    expect(app).toContain('Eendraadschema');
+    expect(app).toContain("Elektrische schema's");
   });
 });

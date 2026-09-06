@@ -1,3 +1,5 @@
+import { normalizeSituation } from './situation-schema-model.js';
+
 const DRAWING_VERSION = 7;
 const GRID_CONNECTION_TYPES = new Set(['1x230', '1x230-delta', '3x230', '3x400+N']);
 export const ENDPOINT_TYPES = ['circuit', 'battery', 'inverter', 'hybrid-inverter', 'rem-breaker'];
@@ -151,6 +153,7 @@ export function normalizeDrawing(raw = {}) {
     title: cleanString(raw?.title, 'Eendraadschema'),
     projectId: typeof raw?.projectId === 'string' && raw.projectId.trim() ? raw.projectId.trim() : null,
     connectionType,
+    situation: normalizeSituation(raw?.situation),
     mainBreaker: normalizeMainBreaker(raw?.mainBreaker || {}),
     differentials: [normalizeRootDifferential(raw?.differentials)],
   };

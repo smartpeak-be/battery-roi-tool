@@ -441,6 +441,7 @@ async function saveElectricalDrawing(id, drawing) {
     title: String(drawing?.title || 'Eendraadschema').trim() || 'Eendraadschema',
     projectId: typeof drawing?.projectId === 'string' && drawing.projectId ? drawing.projectId : null,
     connectionType: typeof drawing?.connectionType === 'string' ? drawing.connectionType : '',
+    situation: drawing?.situation && typeof drawing.situation === 'object' ? drawing.situation : { version: 1, viewport: { width: 1120, height: 720 }, elements: [] },
     mainBreaker: drawing?.mainBreaker && typeof drawing.mainBreaker === 'object' ? drawing.mainBreaker : null,
     differentials: Array.isArray(drawing?.differentials) ? drawing.differentials : [],
     updatedAt: now,
@@ -1429,23 +1430,29 @@ async function uploadProjectDocument(projectId, file, meta = {}) {
   return { id: ref.id, storagePath };
 }
 
-async function saveElectricalSchemaProjectDocument(projectId, drawingId, pdfBytes, filename = 'Eendraadschema.pdf') {
+async function saveElectricalSchemaProjectDocument(projectId, drawingId, pdfBytes, filename = 'Eendraadschema.pdf', schemaType = 'electrical') {
   const email = currentUserEmail();
   if (!email) throw new Error('Niet ingelogd');
   if (!projectId || !drawingId) throw new Error('Project en tekening zijn vereist');
   const safeName = sanitizeStorageName(filename.endsWith('.pdf') ? filename : `${filename}.pdf`);
-  const storagePath = `projects/${projectId}/documents/electrical-schemas/${drawingId}.pdf`;
+  const isSituation = schemaType === 'situation';
+  const storagePath = isSituation
+    ? `projects/${projectId}/documents/situation-schemas/${drawingId}.pdf`
+    : `projects/${projectId}/documents/electrical-schemas/${drawingId}.pdf`;
   const contentType = 'application/pdf';
   await getStorage().ref(storagePath).put(pdfBytes, { contentType });
   const now = firebase.firestore.FieldValue.serverTimestamp();
-  const ref = projectDocumentsCol(projectId).doc(`electrical-schema-${drawingId}`);
+  const schemaMetadata = isSituation
+    ? { documentKind: 'situation_schema' }
+    : { documentKind: 'electrical_schema' };
+  const ref = projectDocumentsCol(projectId).doc(isSituation ? `situation-schema-${drawingId}` : `electrical-schema-${drawingId}`);
   await ref.set({
     type: 'file', parentId: null,
-    title: cleanDocumentTitle(filename.replace(/\.pdf$/i, ''), 'Eendraadschema'),
-    description: 'Automatisch bijgewerkt vanuit de eendraadschema-tool.',
+    title: cleanDocumentTitle(filename.replace(/\.pdf$/i, ''), isSituation ? 'Situatieschema' : 'Eendraadschema'),
+    description: isSituation ? 'Automatisch bijgewerkt vanuit de situatieschema-tool.' : 'Automatisch bijgewerkt vanuit de eendraadschema-tool.',
     storagePath, name: safeName, contentType,
     sizeBytes: Number(pdfBytes?.byteLength || pdfBytes?.size || 0),
-    documentKind: 'electrical_schema',
+    ...schemaMetadata,
     includeInCloseoutPdf: true, includeInInspectionPack: true,
     sourceDrawingId: drawingId,
     uploadedAt: now, updatedAt: now, uploadedBy: email, updatedBy: email,

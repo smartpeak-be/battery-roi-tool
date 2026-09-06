@@ -55,11 +55,17 @@ describe('project photo/document taxonomy', () => {
 
   it('normaliseert documenttypes en dossierdefaults', () => {
     expect(normalizeDocumentKind('electrical_schema')).toBe('electrical_schema');
+    expect(normalizeDocumentKind('situation_schema')).toBe('situation_schema');
+    expect(documentKindMeta('situation_schema').label).toBe('Situatieschema');
     expect(normalizeDocumentKind('onbekend')).toBe('other');
     expect(documentKindMeta('pre_inspection_report').label).toBe('Bestaand keuringsverslag (vóór SmartPeak)');
     expect(documentKindMeta('inspection_certificate').label).toBe('Keuringsverslag na onze keuring');
     expect(normalizeDocumentKind('inspection_report')).toBe('inspection_certificate');
     expect(defaultDocumentFlags('electrical_schema')).toEqual({
+      includeInCloseoutPdf: true,
+      includeInInspectionPack: true,
+    });
+    expect(defaultDocumentFlags('situation_schema')).toEqual({
       includeInCloseoutPdf: true,
       includeInInspectionPack: true,
     });
