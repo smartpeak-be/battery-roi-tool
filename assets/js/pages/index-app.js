@@ -10,6 +10,7 @@ import { makeScenCard } from '../index/scenario-card.js';
 import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js';
 import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
 import { gridConnectionLabel } from '../grid-compatibility.js';
+import { calculatorConfigSpecsUrl } from '../product-spec-links.js';
 import {
   resolveCompositionToCalculatorConfig,
   selectableComposerProducts,
@@ -1291,9 +1292,10 @@ function renderScenarioGrid(d) {
     const cfgLabel = cfg.isManual
       ? `${escapeHtml(cfg.omschrijving)} <span style="background:var(--primary);color:#fff;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">Manueel</span>`
       : `${escapeHtml(cfg.type)} — ${escapeHtml(cfg.omschrijving)}`;
-    const specsBtn = cfg.isManual
-      ? ''
-      : `<button type="button" class="btn-spec js-product-specs" data-product-type="${escapeHtml(cfg.type)}">📖 Productspecs ↗</button>`;
+    const specsUrl = calculatorConfigSpecsUrl(cfg);
+    const specsBtn = specsUrl
+      ? `<a class="btn-spec" href="${escapeHtml(specsUrl)}" target="_blank" rel="noopener">📖 Productspecs ↗</a>`
+      : '';
     const quoteUrl = quotePreviewUrlForCalculatedConfig(d, cfg.type);
     const quoteBtn = quoteUrl
       ? `<a class="btn-spec" href="${escapeHtml(quoteUrl)}" target="_blank" rel="noopener"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i> Offerte maken ↗</a>`
@@ -1724,11 +1726,6 @@ function wireIndexActions() {
     if (deleteBtn) {
       deleteManualConfig(deleteBtn.dataset.manualDelete);
     }
-  });
-  document.getElementById('scenariosGrid')?.addEventListener('click', e => {
-    const btn = e.target.closest('.js-product-specs');
-    if (!btn) return;
-    window.open('producten.html?type=' + encodeURIComponent(btn.dataset.productType), '_blank', 'noopener');
   });
 }
 

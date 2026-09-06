@@ -339,12 +339,13 @@ function waitForAuthReady() {
 }
 
 function renderLoginRequired(type) {
+  const retryUrl = `producten.html${window.location.search || `?type=${encodeURIComponent(type)}`}`;
   return `
     <div class="alert alert-warning" role="alert">
       <h2 class="h5">Inloggen nodig</h2>
       <p>Deze Productspecs komen uit de SmartPeak productcatalogus. Log in met je SmartPeak-account om ze te zien.</p>
       <button type="button" class="btn btn-primary" id="productSpecsLogin">Inloggen met Google</button>
-      <a href="producten.html?type=${encodeURIComponent(type)}" class="btn btn-outline-secondary ms-2">Opnieuw laden</a>
+      <a href="${escapeHtml(retryUrl)}" class="btn btn-outline-secondary ms-2">Opnieuw laden</a>
     </div>
   `;
 }
@@ -360,26 +361,37 @@ async function loadOptionalProductMedia(productId) {
   };
 }
 
-async function renderProductConfigSpecs(type) {
-  const id = productConfigIdFromType(type);
-  if (!id || !window.getProductConfig) return renderFallback();
-  const user = await waitForAuthReady();
-  if (!user) return renderLoginRequired(type);
+function catalogItemsFromParams(params) {
+  const raw = params.get('items');
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.slice(0, 50).map(item => ({
+      productId: String(item?.productId || '').trim(),
+      qty: Number(item?.qty),
+    })).filter(item => item.productId && Number.isFinite(item.qty) && item.qty > 0);
+  } catch {
+    return [];
+  }
+}
 
-  const [config, categories] = await Promise.all([
-    window.getProductConfig(id),
-    window.listProductCategories ? window.listProductCategories() : [],
-  ]);
-  if (!config) return renderFallback();
+async function renderCatalogItemsSpecs({ type, name, description = '', items, authReady = false }) {
+  if (!window.getProduct) return renderFallback();
+  if (!authReady) {
+    const user = await waitForAuthReady();
+    if (!user) return renderLoginRequired(type);
+  }
 
+  const categories = window.listProductCategories ? await window.listProductCategories() : [];
   const categoriesById = Object.fromEntries((categories || []).map(c => [c.id, c]));
-  const items = Array.isArray(config.items) ? config.items.filter(item => item?.productId && Number(item?.qty) > 0) : [];
-  const productEntries = await Promise.all(items.map(async item => {
+  const productEntries = await Promise.all((items || []).map(async item => {
     const product = await window.getProduct(item.productId);
     const media = product?.id ? await loadOptionalProductMedia(product.id) : { photos: [], datasheets: [] };
     return { item, product, category: categoriesById[product?.categoryId] || {}, ...media };
   }));
   const visibleEntries = productEntries.filter(entry => entry.product);
+  const missingCount = productEntries.length - visibleEntries.length;
   const totalCapacity = visibleEntries.reduce((sum, entry) => sum + (Number(entry.product?.specs?.capacityKwh) || 0) * (Number(entry.item?.qty) || 0), 0);
   const totalPower = visibleEntries.reduce((sum, entry) => sum + (Number(entry.product?.specs?.inverterPowerKw) || 0) * (Number(entry.item?.qty) || 0), 0);
   const totalWeight = visibleEntries.reduce((sum, entry) => sum + (Number(entry.product?.specs?.weightKg) || 0) * (Number(entry.item?.qty) || 0), 0);
@@ -388,7 +400,7 @@ async function renderProductConfigSpecs(type) {
     <div class="alert alert-info" role="alert">
       <div class="d-flex flex-wrap justify-content-between gap-2">
         <div>
-          <strong>${escapeHtml(config.name || config.description || type)}</strong><br>
+          <strong>${escapeHtml(name || type || 'Samenstelling')}</strong><br>
           <span>${visibleEntries.length} productlijn${visibleEntries.length === 1 ? '' : 'en'} uit de SmartPeak catalogus</span>
         </div>
         <div class="small text-end">
@@ -398,10 +410,29 @@ async function renderProductConfigSpecs(type) {
         </div>
       </div>
     </div>
-    ${config.description ? `<p class="lead">${escapeHtml(config.description)}</p>` : ''}
-    ${visibleEntries.length ? visibleEntries.map(renderDynamicProductCard).join('') : '<p class="text-muted">Geen producten gekoppeld aan deze configuratie.</p>'}
+    ${description ? `<p class="lead">${escapeHtml(description)}</p>` : ''}
+    ${missingCount ? `<div class="alert alert-warning py-2">${missingCount} gekoppelde productlijn${missingCount === 1 ? '' : 'en'} kon niet meer gevonden worden.</div>` : ''}
+    ${visibleEntries.length ? visibleEntries.map(renderDynamicProductCard).join('') : '<p class="text-muted">Geen catalogusproducten gevonden voor deze configuratie.</p>'}
     ${renderFootnote()}
   `;
+}
+
+async function renderProductConfigSpecs(type) {
+  const id = productConfigIdFromType(type);
+  if (!id || !window.getProductConfig) return renderFallback();
+  const user = await waitForAuthReady();
+  if (!user) return renderLoginRequired(type);
+
+  const config = await window.getProductConfig(id);
+  if (!config) return renderFallback();
+  const items = Array.isArray(config.items) ? config.items.filter(item => item?.productId && Number(item?.qty) > 0) : [];
+  return renderCatalogItemsSpecs({
+    type,
+    name: config.name || config.description || type,
+    description: config.description || '',
+    items,
+    authReady: true,
+  });
 }
 
 // ─── RENDERERS ──────────────────────────────────────────────────────────────
@@ -606,13 +637,22 @@ function renderFallback() {
 window.addEventListener('DOMContentLoaded', async () => {
   const params = new URLSearchParams(window.location.search);
   const type = params.get('type') || '';
+  const catalogItems = catalogItemsFromParams(params);
+  const catalogName = params.get('name') || type;
   const content = document.getElementById('content');
   let html;
   let images = null;
   let m;
 
   try {
-    if ((m = type.match(/^MARVE03_X(\d+)$/))) {
+    if (catalogItems.length) {
+      content.innerHTML = '<p class="text-muted">Productspecificaties laden…</p>';
+      html = await renderCatalogItemsSpecs({
+        type,
+        name: catalogName,
+        items: catalogItems,
+      });
+    } else if ((m = type.match(/^MARVE03_X(\d+)$/))) {
       html = renderMarstek(parseInt(m[1], 10));
       images = MARSTEK_PHOTOS;
     } else if ((m = type.match(/^ZSF2400AC\+_(\d+)X(\d+)$/))) {

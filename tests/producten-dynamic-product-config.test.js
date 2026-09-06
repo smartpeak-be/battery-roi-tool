@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const html = readFileSync(new URL('../producten.html', import.meta.url), 'utf8');
+const calculatorSource = readFileSync(new URL('../assets/js/pages/index-app.js', import.meta.url), 'utf8');
 
 describe('producten.html dynamic product config specs', () => {
   test('loads Firebase helpers so PC_ catalog configs can render specs', () => {
@@ -17,6 +18,16 @@ describe('producten.html dynamic product config specs', () => {
     expect(html).toContain('await renderProductConfigSpecs(type)');
     expect(html).toContain('window.getProductConfig(id)');
     expect(html).toContain('window.getProduct(item.productId)');
+  });
+
+  test('renders direct catalog items for custom and future calculator compositions', () => {
+    expect(calculatorSource).toContain("import { calculatorConfigSpecsUrl } from '../product-spec-links.js'");
+    expect(calculatorSource).toContain('const specsUrl = calculatorConfigSpecsUrl(cfg)');
+    expect(calculatorSource).not.toContain("window.open('producten.html?type='");
+    expect(html).toContain('function catalogItemsFromParams(params)');
+    expect(html).toContain("params.get('items')");
+    expect(html).toContain('await renderCatalogItemsSpecs({');
+    expect(html).toContain('catalogItems.length');
   });
 
   test('still keeps legacy hard-coded specs pages', () => {
