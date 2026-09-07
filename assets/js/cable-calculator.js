@@ -7,6 +7,20 @@ export const MATERIALS = Object.freeze({
   aluminium: { label: 'Aluminium', rhoOhmMm2PerM: 0.036 },
 });
 
+// Indicatieve bovengrenzen voor gangbare koperen huishoudelijke AC-kringen.
+// Een expliciet ingevoerde Iz heeft altijd voorrang. Voor andere kabeltypes,
+// aanlegwijzen, aluminium en DC/PV blijft een gevalideerde Iz vereist.
+export const CONSERVATIVE_COPPER_CURRENT_LIMITS_A = Object.freeze({
+  1.5: 16,
+  2.5: 20,
+  4: 25,
+  6: 40,
+  10: 63,
+  16: 80,
+  25: 100,
+  35: 125,
+});
+
 export const SYSTEMS = Object.freeze({
   single230: { label: '1-fase 230 V', topology: 'single', voltage: 230, phaseCount: 1 },
   three230: { label: '3×230 V zonder nul', topology: 'three', voltage: 230, phaseCount: 3 },
@@ -31,6 +45,25 @@ function finiteNonnegative(value, label) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) throw new TypeError(`${label} mag niet negatief zijn.`);
   return number;
+}
+
+export function conservativeCurrentLimitA({ sectionMm2, material = 'copper', systemType }) {
+  if (material !== 'copper' || ['dc', 'pv'].includes(systemType)) return null;
+  const limit = CONSERVATIVE_COPPER_CURRENT_LIMITS_A[Number(sectionMm2)];
+  return Number.isFinite(limit) ? limit : null;
+}
+
+function thermalLimitFor(input, sectionMm2) {
+  const explicit = finiteOptionalPositive(input.thermalAmpacityA, 'Thermische limiet');
+  if (explicit != null) return { value: explicit, source: 'explicit-iz' };
+  const conservative = conservativeCurrentLimitA({
+    sectionMm2,
+    material: input.material,
+    systemType: input.systemType,
+  });
+  return conservative == null
+    ? { value: null, source: null }
+    : { value: conservative, source: 'conservative-common-copper' };
 }
 
 function normalizePowerFactor(system, value) {
@@ -135,7 +168,8 @@ export function calculateCable(input) {
   const endVoltageV = system.voltage + (isRise ? voltageDropV : -voltageDropV);
   const productionRuleApplies = c1011Applies(system, circuitType);
   const strictlyUnderOnePercent = voltageDropPercent < 1 - 1e-9;
-  const thermalAmpacityA = finiteOptionalPositive(input.thermalAmpacityA, 'Thermische limiet');
+  const thermalLimit = thermalLimitFor(input, properties.section);
+  const thermalAmpacityA = thermalLimit.value;
   return {
     systemType: input.systemType,
     topology: system.topology,
@@ -155,6 +189,7 @@ export function calculateCable(input) {
     circuitType,
     resultLabel: circuitResultLabel(circuitType),
     thermalAmpacityA,
+    thermalLimitSource: thermalLimit.source,
     thermalWithinLimit: thermalAmpacityA == null ? null : currentA <= thermalAmpacityA,
     compliance: {
       under1Percent: strictlyUnderOnePercent,
@@ -188,13 +223,12 @@ function satisfiesDrop(result, target, strict) {
 
 export function selectCableSection(input) {
   const target = finitePositive(input.voltageDropTargetPercent, 'Spanningsvalgrens');
-  const thermalAmpacityA = finiteOptionalPositive(input.thermalAmpacityA, 'Thermische limiet');
   const system = systemDefinition(input.systemType, input.voltage);
   const strict = c1011Applies(system, input.circuitType) && target === 1;
   const evaluations = STANDARD_SECTIONS_MM2.map(sectionMm2 => {
     const calculation = calculateCable({ ...input, sectionMm2 });
     const voltageOk = satisfiesDrop(calculation, target, strict);
-    const thermalOk = thermalAmpacityA == null || calculation.currentA <= thermalAmpacityA;
+    const thermalOk = calculation.thermalAmpacityA == null || calculation.thermalWithinLimit;
     return { sectionMm2, voltageOk, thermalOk, accepted: voltageOk && thermalOk, calculation };
   });
   const selected = evaluations.find(entry => entry.accepted) || null;
@@ -205,7 +239,8 @@ export function selectCableSection(input) {
     evaluations,
     voltageDropTargetPercent: target,
     strictLimit: strict,
-    thermalAmpacityA,
+    thermalAmpacityA: selected?.calculation.thermalAmpacityA ?? null,
+    thermalLimitSource: selected?.calculation.thermalLimitSource ?? null,
   };
 }
 
@@ -221,7 +256,8 @@ export function maxCurrentForDrop(input) {
     : properties.resistanceOhmPerM * pf + properties.reactanceOhmPerM * sinPhi;
   const voltageDropLimitA = system.voltage * target / 100 / (dropFactor(system) * lengthM * z);
   const powers = powerFromCurrent({ systemType: input.systemType, voltage: system.voltage, currentA: voltageDropLimitA, powerFactor: pf });
-  const thermalAmpacityA = finiteOptionalPositive(input.thermalAmpacityA, 'Thermische limiet');
+  const thermalLimit = thermalLimitFor(input, properties.section);
+  const thermalAmpacityA = thermalLimit.value;
   const strictLimit = c1011Applies(system, input.circuitType) && target === 1;
   return {
     voltageDropTargetPercent: target,
@@ -232,6 +268,7 @@ export function maxCurrentForDrop(input) {
     voltageDropV: system.voltage * target / 100,
     cableLossW: lossFactor(system) * voltageDropLimitA ** 2 * properties.resistanceOhmPerM * lengthM,
     thermalAmpacityA,
+    thermalLimitSource: thermalLimit.source,
     finalAllowedCurrentA: thermalAmpacityA == null ? null : Math.min(voltageDropLimitA, thermalAmpacityA),
   };
 }

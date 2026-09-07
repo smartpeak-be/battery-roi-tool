@@ -4,6 +4,7 @@ import {
   VOLTAGE_DROP_REFERENCES,
   calculateCable,
   calculatePvArray,
+  conservativeCurrentLimitA,
   currentFromLoad,
   maxDistanceForDrop,
   maxCurrentForDrop,
@@ -33,6 +34,26 @@ describe('cable calculator current conversion', () => {
 describe('cable calculator', () => {
   it('supports compact comparisons from 1 through 5 percent', () => {
     expect(VOLTAGE_DROP_REFERENCES).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('uses a conservative common-copper current ceiling when no Iz is supplied', () => {
+    expect(conservativeCurrentLimitA({ sectionMm2: 2.5, material: 'copper', systemType: 'three400' })).toBe(20);
+    expect(conservativeCurrentLimitA({ sectionMm2: 6, material: 'copper', systemType: 'three400' })).toBe(40);
+    expect(conservativeCurrentLimitA({ sectionMm2: 2.5, material: 'aluminium', systemType: 'three400' })).toBeNull();
+    expect(conservativeCurrentLimitA({ sectionMm2: 2.5, material: 'copper', systemType: 'pv' })).toBeNull();
+  });
+
+  it('marks 40 A through 2.5 mm² red even when the route is short', () => {
+    const result = calculateCable({ systemType: 'three400', inputType: 'a', value: 40, lengthM: 1, sectionMm2: 2.5, material: 'copper' });
+    expect(result.voltageDropPercent).toBeLessThan(1);
+    expect(result.thermalAmpacityA).toBe(20);
+    expect(result.thermalWithinLimit).toBe(false);
+    expect(result.thermalLimitSource).toBe('conservative-common-copper');
+  });
+
+  it('steps up the required section on the conservative current ceiling', () => {
+    const result = selectCableSection({ systemType: 'three400', inputType: 'a', value: 40, lengthM: 1, material: 'copper', circuitType: 'consumer', voltageDropTargetPercent: 5 });
+    expect(result.recommendedStandardSectionMm2).toBe(6);
   });
   it('calculates three-phase voltage drop and resistive loss', () => {
     const result = calculateCable({ systemType: 'three230', inputType: 'kw', value: 10, powerFactor: 1, lengthM: 45, sectionMm2: 6, material: 'copper' });
@@ -103,10 +124,11 @@ describe('inverse calculations and section selection', () => {
     expect(selection.strictLimit).toBe(true);
   });
 
-  it('does not claim a thermal limit unless Iz is supplied', () => {
+  it('combines the conservative current ceiling with an explicit Iz override', () => {
     const voltageOnly = maxCurrentForDrop({ systemType: 'three400', voltageDropTargetPercent: 1, lengthM: 45, sectionMm2: 6, material: 'copper' });
-    expect(voltageOnly.thermalAmpacityA).toBeNull();
-    expect(voltageOnly.finalAllowedCurrentA).toBeNull();
+    expect(voltageOnly.thermalAmpacityA).toBe(40);
+    expect(voltageOnly.finalAllowedCurrentA).toBeLessThanOrEqual(40);
+    expect(voltageOnly.thermalLimitSource).toBe('conservative-common-copper');
     expect(voltageOnly.voltageDropLimitA).toBeGreaterThan(0);
 
     const strictProduction = maxCurrentForDrop({ systemType: 'three400', circuitType: 'production', voltageDropTargetPercent: 1, lengthM: 45, sectionMm2: 6, material: 'copper' });

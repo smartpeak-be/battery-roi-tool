@@ -41,9 +41,13 @@ describe('cable calculator page', () => {
   it('keeps technical and safety nuance available without filling the main screen with prose', () => {
     expect(html).toContain('id="thermalAmpacity"');
     expect(html).toContain('id="rho"');
-    expect(html).toContain('Rekent op spanningsval');
+    expect(html).toContain('Stroomgrens is indicatief');
+    expect(html).toContain('Aanlegwijze, bundeling en temperatuur');
     expect(html).not.toContain('Overgangs- en contactweerstanden');
     expect(app).toContain('c1011VoltageRise');
+    expect(html).toContain('id="sectionSafety"');
+    expect(app).toContain('Indicatieve stroomgrens');
+    expect(app).toContain('thermalWithinLimit');
   });
 
   it('keeps PV detail inputs inside the advanced section', () => {

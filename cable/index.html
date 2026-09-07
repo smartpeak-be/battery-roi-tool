@@ -42,7 +42,7 @@
             <label class="form-label" for="calculationMode">Wat wil je berekenen?</label>
             <select class="form-select form-select-lg" id="calculationMode">
               <option value="required">Welke kabel heb ik nodig?</option>
-              <option value="check">Is deze kabel goed?</option>
+              <option value="check">Hoeveel spanningsval heb ik?</option>
               <option value="capacity">Hoeveel vermogen kan deze kabel aan?</option>
               <option value="distance">Hoe lang mag deze kabel zijn?</option>
             </select>
@@ -82,6 +82,7 @@
           <div id="sectionField">
             <label class="form-label" for="sectionMm2">Kabelsectie</label>
             <select class="form-select" id="sectionMm2"></select>
+            <div id="sectionSafety" class="cable-input-safety"></div>
           </div>
         </div>
 
@@ -152,7 +153,7 @@
         <div id="resultContent"></div>
       </section>
 
-      <p class="cable-safety"><i class="fa-solid fa-circle-info"></i> Rekent op spanningsval. Controleer ook thermische belastbaarheid, beveiliging en AREI.</p>
+      <p class="cable-safety"><i class="fa-solid fa-circle-info"></i> Stroomgrens is indicatief voor gangbare koperen AC-kabel. Aanlegwijze, bundeling en temperatuur kunnen een lagere grens geven.</p>
     </main>
   </div>
 

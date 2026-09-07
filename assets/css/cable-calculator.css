@@ -161,6 +161,24 @@
   font-size: .82rem;
 }
 
+.cable-result-note.danger {
+  color: #b42318;
+  font-weight: 750;
+}
+
+.cable-input-safety {
+  margin-top: .4rem;
+  padding: .4rem .55rem;
+  border-radius: 8px;
+  font-size: .76rem;
+  font-weight: 700;
+}
+
+.cable-input-safety:empty { display: none; }
+.cable-input-safety.ok { color: #166534; background: #dcfce7; }
+.cable-input-safety.danger { color: #991b1b; background: #fee2e2; }
+.cable-input-safety.unknown { color: #92400e; background: #fef3c7; }
+
 .cable-safety {
   padding: 0 .2rem;
 }
