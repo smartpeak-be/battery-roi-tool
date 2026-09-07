@@ -21,11 +21,11 @@ describe('cable calculator page', () => {
   it('keeps the normal flow to only the practical inputs', () => {
     expect(html).toContain('Wat wil je berekenen?');
     expect(html).toContain('Aansluiting');
-    expect(html).toContain('Gebruik');
     expect(html).toContain('Vermogen of stroom');
     expect(html).toContain('Afstand');
     expect(html).toContain('Kabelsectie');
     expect(html).toContain('<summary>Meer opties</summary>');
+    expect(html.indexOf('<summary>Meer opties</summary>')).toBeLessThan(html.indexOf('id="circuitType"'));
   });
 
   it('offers Belgian net types, DC and PV without a second redundant preset selector', () => {
@@ -53,8 +53,11 @@ describe('cable calculator page', () => {
     expect(app).toContain('calculatePvArray');
   });
 
-  it('renders a direct answer and compact 1, 2 and 3 percent comparison', () => {
+  it('renders a direct answer and compact 1 through 5 percent comparison', () => {
     expect(app).toContain('VOLTAGE_DROP_REFERENCES');
+    for (const limit of [1, 2, 3, 4, 5]) {
+      expect(html).toContain(`<option value="${limit}"`);
+    }
     expect(app).toContain('cable-answer');
     expect(app).toContain('cable-limits');
     expect(app).not.toContain('Vergelijk kabelsecties');

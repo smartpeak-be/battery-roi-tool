@@ -1,6 +1,6 @@
 export const SQRT3 = Math.sqrt(3);
 export const STANDARD_SECTIONS_MM2 = Object.freeze([1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240]);
-export const VOLTAGE_DROP_REFERENCES = Object.freeze([1, 2, 3]);
+export const VOLTAGE_DROP_REFERENCES = Object.freeze([1, 2, 3, 4, 5]);
 
 export const MATERIALS = Object.freeze({
   copper: { label: 'Koper', rhoOhmMm2PerM: 0.0225 },

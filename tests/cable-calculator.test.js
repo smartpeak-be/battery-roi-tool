@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   STANDARD_SECTIONS_MM2,
+  VOLTAGE_DROP_REFERENCES,
   calculateCable,
   calculatePvArray,
   currentFromLoad,
@@ -29,7 +30,10 @@ describe('cable calculator current conversion', () => {
   });
 });
 
-describe('forward cable calculations', () => {
+describe('cable calculator', () => {
+  it('supports compact comparisons from 1 through 5 percent', () => {
+    expect(VOLTAGE_DROP_REFERENCES).toEqual([1, 2, 3, 4, 5]);
+  });
   it('calculates three-phase voltage drop and resistive loss', () => {
     const result = calculateCable({ systemType: 'three230', inputType: 'kw', value: 10, powerFactor: 1, lengthM: 45, sectionMm2: 6, material: 'copper' });
     close(result.currentA, 25.1021856169);
