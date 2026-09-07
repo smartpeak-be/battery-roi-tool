@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>SmartPeak — Kabelcalculator AC/DC</title>
+  <title>SmartPeak — Kabelcalculator</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" integrity="sha512-jnSuA4Ss2PkkikSOLtYs8BlYIeeIK1h99ty4YfvRPAlzr377vr3CXDb7sb7eEEBYjDtcYj+AjBH3FLv5uSJuXg==" crossorigin="anonymous" referrerpolicy="no-referrer">
   <link rel="stylesheet" href="../assets/css/smartpeak.css?v=4">
-  <link rel="stylesheet" href="../assets/css/cable-calculator.css?v=1">
+  <link rel="stylesheet" href="../assets/css/cable-calculator.css?v=2">
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js" integrity="sha384-+65NgAKqXr1Nb7sBmV6O09pL8ASqZsi29OE718meKinGAWaa70VE5V6LNjXVBjIA" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js" integrity="sha384-I1LYojsZ5RM1cOda44Z2h42Qa6YfsQ1XkXxREnhp4ueYBR/4d1pG1K+NZM537Vsj" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js" integrity="sha384-YHSscHG455M7b+d6r5ibTMznxrZxV272bMjXT9ndTgmx05fLR7HsdmcVklhpBSyt" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -16,9 +16,8 @@
 <body class="cable-page">
   <section id="stateLoggedOut" class="cable-access hide">
     <div class="card shadow-sm"><div class="card-body text-center p-4">
-      <h1 class="h4"><i class="fa-solid fa-ruler-combined text-primary"></i> Kabelcalculator</h1>
-      <p class="text-muted">Log in om de technische rekentool te gebruiken.</p>
-      <button id="btnSignIn" class="btn btn-primary btn-lg">Log in met Google</button>
+      <h1 class="h4">Kabelcalculator</h1>
+      <button id="btnSignIn" class="btn btn-primary btn-lg mt-2">Log in met Google</button>
       <p id="signInError" class="alert alert-danger mt-3 hide"></p>
     </div></div>
   </section>
@@ -26,165 +25,138 @@
   <section id="stateNotWhitelisted" class="cable-access hide">
     <div class="card shadow-sm"><div class="card-body text-center p-4">
       <h1 class="h4">Geen toegang</h1>
-      <p class="text-muted">Dit account heeft geen toegang.</p>
-      <button id="btnSignOutNW" class="btn btn-outline-secondary">Uitloggen</button>
+      <button id="btnSignOutNW" class="btn btn-outline-secondary mt-2">Uitloggen</button>
     </div></div>
   </section>
 
   <div id="stateAuthorized" class="hide">
     <header class="cable-toolbar">
-      <a class="cable-back" href="../dashboard.html" aria-label="Terug naar projecten"><i class="fa-solid fa-arrow-left"></i></a>
-      <div>
-        <h1>Kabelcalculator AC/DC</h1>
-        <p>Reken van sectie, vermogen, afstand of bestaande kabel.</p>
-      </div>
+      <a class="cable-back" href="../dashboard.html" aria-label="Terug"><i class="fa-solid fa-arrow-left"></i></a>
+      <h1>Kabelcalculator</h1>
     </header>
 
     <main class="cable-main">
-      <nav class="cable-modes" aria-label="Berekeningsrichting" role="tablist">
-        <button type="button" class="cable-mode is-active" data-mode="required" role="tab" aria-selected="true"><i class="fa-solid fa-ruler"></i><span>Welke kabel heb ik nodig?</span></button>
-        <button type="button" class="cable-mode" data-mode="capacity" role="tab" aria-selected="false"><i class="fa-solid fa-gauge-high"></i><span>Wat kan deze kabel aan?</span></button>
-        <button type="button" class="cable-mode" data-mode="distance" role="tab" aria-selected="false"><i class="fa-solid fa-route"></i><span>Hoe ver geraak ik?</span></button>
-        <button type="button" class="cable-mode" data-mode="check" role="tab" aria-selected="false"><i class="fa-solid fa-circle-check"></i><span>Controleer bestaande kabel</span></button>
-      </nav>
+      <form id="cableForm" class="cable-card" novalidate>
+        <div class="cable-form-grid">
+          <div class="field-wide">
+            <label class="form-label" for="calculationMode">Wat wil je berekenen?</label>
+            <select class="form-select form-select-lg" id="calculationMode">
+              <option value="required">Welke kabel heb ik nodig?</option>
+              <option value="check">Is deze kabel goed?</option>
+              <option value="capacity">Hoeveel vermogen kan deze kabel aan?</option>
+              <option value="distance">Hoe lang mag deze kabel zijn?</option>
+            </select>
+          </div>
 
-      <section class="cable-layout">
-        <form id="cableForm" class="card cable-input-card" novalidate>
-          <div class="card-body">
-            <h2 class="h5 mb-3" id="modeTitle">Welke kabel heb ik nodig?</h2>
-            <div class="row g-3">
-              <div class="col-12">
-                <label class="form-label" for="systemType">Nettype</label>
-                <select class="form-select form-select-lg" id="systemType">
-                  <option value="single230">1-fase 230 V</option>
-                  <option value="three230">3×230 V zonder nul</option>
-                  <option value="three400" selected>3×400 V + N</option>
-                  <option value="three400-single">1-fasige belasting op 3×400 V + N</option>
-                  <option value="dc">DC</option>
-                  <option value="pv">PV / solar DC</option>
-                </select>
-                <div id="systemHint" class="form-text"></div>
-              </div>
+          <div>
+            <label class="form-label" for="systemType">Aansluiting</label>
+            <select class="form-select" id="systemType">
+              <option value="single230">1×230 V</option>
+              <option value="three230">3×230 V</option>
+              <option value="three400" selected>3×400 V + N</option>
+              <option value="three400-single">1×230 V op 3×400 V + N</option>
+              <option value="dc">DC</option>
+              <option value="pv">PV-string</option>
+            </select>
+          </div>
 
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="applicationPreset">Toepassing</label>
-                <select class="form-select" id="applicationPreset">
-                  <option value="consumer">Verbruiker</option>
-                  <option value="ev">Laadpaal</option>
-                  <option value="pv-inverter">PV-omvormer</option>
-                  <option value="battery-inverter">Batterijomvormer</option>
-                  <option value="dc-battery">DC-batterij</option>
-                  <option value="pv-string">PV-string</option>
-                  <option value="other">Anders</option>
-                </select>
-              </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="circuitType">Type circuit</label>
-                <select class="form-select" id="circuitType">
-                  <option value="consumer">Verbruiker</option>
-                  <option value="production">Productie / PV-omvormer</option>
-                  <option value="bidirectional">Batterijomvormer / bidirectioneel</option>
-                  <option value="pv-string">DC / PV-string</option>
-                </select>
-              </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="material">Geleidermateriaal</label>
-                <select class="form-select" id="material">
-                  <option value="copper">Koper</option>
-                  <option value="aluminium">Aluminium</option>
-                </select>
-              </div>
+          <div>
+            <label class="form-label" for="circuitType">Gebruik</label>
+            <select class="form-select" id="circuitType">
+              <option value="consumer">Verbruiker / laadpaal</option>
+              <option value="production">Zonnepanelen</option>
+              <option value="bidirectional">Batterij</option>
+              <option value="pv-string">PV-string DC</option>
+            </select>
+          </div>
 
-              <div class="col-12 col-md-6" id="voltageField">
-                <label class="form-label" for="voltage">Nominale spanning</label>
-                <div class="input-group"><input class="form-control" id="voltage" type="number" min="1" step="1" value="400"><span class="input-group-text">V</span></div>
-              </div>
+          <div id="loadTypeField">
+            <label class="form-label" for="inputType">Vermogen of stroom</label>
+            <select class="form-select" id="inputType">
+              <option value="kw">Vermogen (kW)</option>
+              <option value="a">Stroom (A)</option>
+              <option value="kva">Vermogen (kVA)</option>
+            </select>
+          </div>
 
-              <div class="col-12" id="pvFields">
-                <label class="form-label" for="pvMode">PV-invoer</label>
-                <select class="form-select mb-3" id="pvMode">
-                  <option value="simple">Simpel: stringspanning en -stroom</option>
-                  <option value="advanced">Uitgebreid: paneelgegevens</option>
-                </select>
-                <div id="pvSimpleFields" class="row g-2">
-                  <div class="col-6 col-lg-4"><label for="pvStringVoltage" class="form-label">Vmp string</label><div class="input-group"><input id="pvStringVoltage" class="form-control" type="number" min="1" value="600"><span class="input-group-text">V</span></div></div>
-                  <div class="col-6 col-lg-4"><label for="pvStringCurrent" class="form-label">Imp string</label><div class="input-group"><input id="pvStringCurrent" class="form-control" type="number" min="0.1" step="0.1" value="10"><span class="input-group-text">A</span></div></div>
-                  <div class="col-6 col-lg-4"><label for="pvParallel" class="form-label">Parallelle strings</label><input id="pvParallel" class="form-control" type="number" min="1" step="1" value="1"></div>
-                </div>
-                <div id="pvAdvancedFields" class="row g-2 hide">
-                  <div class="col-6 col-lg-4"><label for="pvVmpPanel" class="form-label">Vmp/paneel</label><input id="pvVmpPanel" class="form-control" type="number" min="0.1" step="0.1" value="40"></div>
-                  <div class="col-6 col-lg-4"><label for="pvVocPanel" class="form-label">Voc/paneel</label><input id="pvVocPanel" class="form-control" type="number" min="0.1" step="0.1" value="48"></div>
-                  <div class="col-6 col-lg-4"><label for="pvImpPanel" class="form-label">Imp/paneel</label><input id="pvImpPanel" class="form-control" type="number" min="0.1" step="0.1" value="10"></div>
-                  <div class="col-6 col-lg-4"><label for="pvIscPanel" class="form-label">Isc/paneel</label><input id="pvIscPanel" class="form-control" type="number" min="0.1" step="0.1" value="10.8"></div>
-                  <div class="col-6 col-lg-4"><label for="pvSeries" class="form-label">Panelen in serie</label><input id="pvSeries" class="form-control" type="number" min="1" step="1" value="12"></div>
-                  <div class="col-6 col-lg-4"><label for="pvAdvancedParallel" class="form-label">Parallelle strings</label><input id="pvAdvancedParallel" class="form-control" type="number" min="1" step="1" value="1"></div>
-                </div>
-              </div>
+          <div id="loadValueField">
+            <label class="form-label" for="loadValue">Waarde</label>
+            <div class="input-group"><input class="form-control" id="loadValue" type="number" min="0.01" step="0.1" value="10"><span class="input-group-text" id="loadUnit">kW</span></div>
+          </div>
 
-              <div class="col-12 col-md-5" id="loadTypeField">
-                <label class="form-label" for="inputType">Ik ken</label>
-                <select class="form-select" id="inputType">
-                  <option value="kw">Actief vermogen (kW)</option>
-                  <option value="a">Stroom (A)</option>
-                  <option value="kva">Schijnbaar vermogen (kVA)</option>
-                </select>
-              </div>
-              <div class="col-12 col-md-7" id="loadValueField">
-                <label class="form-label" for="loadValue">Belasting</label>
-                <div class="input-group"><input class="form-control" id="loadValue" type="number" min="0.01" step="0.1" value="10"><span class="input-group-text" id="loadUnit">kW</span></div>
-              </div>
+          <div id="lengthField">
+            <label class="form-label" for="lengthM">Afstand</label>
+            <div class="input-group"><input class="form-control" id="lengthM" type="number" min="0.1" step="0.1" value="45"><span class="input-group-text">m</span></div>
+          </div>
 
-              <div class="col-12 col-md-6" id="lengthField">
-                <label class="form-label" for="lengthM">Enkele trajectlengte</label>
-                <div class="input-group"><input class="form-control" id="lengthM" type="number" min="0.1" step="0.1" value="45"><span class="input-group-text">m</span></div>
-                <div class="form-text">Geef de fysieke afstand in één richting op. Heen en retour worden automatisch verwerkt.</div>
-              </div>
-              <div class="col-12 col-md-6" id="sectionField">
-                <label class="form-label" for="sectionMm2">Kabelsectie</label>
-                <select class="form-select" id="sectionMm2"></select>
-              </div>
+          <div id="sectionField">
+            <label class="form-label" for="sectionMm2">Kabelsectie</label>
+            <select class="form-select" id="sectionMm2"></select>
+          </div>
+        </div>
 
-              <div class="col-12 col-md-6" id="powerFactorField">
-                <label class="form-label" for="powerFactor">cosφ</label>
-                <input class="form-range" id="powerFactor" type="range" min="0.5" max="1" step="0.01" value="1">
-                <output id="powerFactorOutput" for="powerFactor">1,00</output>
-              </div>
-              <div class="col-12 col-md-6" id="targetField">
-                <label class="form-label" for="dropTarget">Ontwerpgrens spanningsval</label>
-                <div class="input-group"><select class="form-select" id="dropTarget"><option value="1">1%</option><option value="2">2%</option><option value="3">3%</option><option value="custom">Custom</option></select><input class="form-control hide" id="customDropTarget" type="number" min="0.1" max="10" step="0.1" value="1.5"><span id="customDropUnit" class="input-group-text hide">%</span></div>
-              </div>
+        <details class="cable-more">
+          <summary>Meer opties</summary>
+          <div class="cable-form-grid mt-3">
+            <div id="voltageField">
+              <label class="form-label" for="voltage">Spanning</label>
+              <div class="input-group"><input class="form-control" id="voltage" type="number" min="1" step="1" value="400"><span class="input-group-text">V</span></div>
+            </div>
+            <div>
+              <label class="form-label" for="dropTarget">Max. spanningsval</label>
+              <div class="input-group"><select class="form-select" id="dropTarget"><option value="1">1%</option><option value="2">2%</option><option value="3" selected>3%</option><option value="custom">Anders</option></select><input class="form-control hide" id="customDropTarget" type="number" min="0.1" max="10" step="0.1" value="1.5"><span id="customDropUnit" class="input-group-text hide">%</span></div>
+            </div>
+            <div>
+              <label class="form-label" for="material">Materiaal</label>
+              <select class="form-select" id="material"><option value="copper">Koper</option><option value="aluminium">Aluminium</option></select>
+            </div>
+            <div id="powerFactorField">
+              <label class="form-label" for="powerFactor">cosφ: <output id="powerFactorOutput" for="powerFactor">1,00</output></label>
+              <input class="form-range" id="powerFactor" type="range" min="0.5" max="1" step="0.01" value="1">
+            </div>
+            <div>
+              <label class="form-label" for="thermalAmpacity">Thermische limiet Iz</label>
+              <div class="input-group"><input class="form-control" id="thermalAmpacity" type="number" min="0.1" step="0.1" placeholder="optioneel"><span class="input-group-text">A</span></div>
+            </div>
+            <div>
+              <label class="form-label" for="rho">Weerstand ρ</label>
+              <input class="form-control" id="rho" type="number" min="0.0001" step="0.0001" value="0.0225">
+            </div>
+            <div>
+              <label class="form-label" for="reactance">Reactantie Ω/km</label>
+              <input class="form-control" id="reactance" type="number" min="0" step="0.001" value="0">
+            </div>
 
-              <div class="col-12 col-md-6" id="thermalField">
-                <label class="form-label" for="thermalAmpacity">Gekende thermische limiet Iz <span class="text-muted">(optioneel)</span></label>
-                <div class="input-group"><input class="form-control" id="thermalAmpacity" type="number" min="0.1" step="0.1" placeholder="Niet gekend"><span class="input-group-text">A</span></div>
+            <div id="pvFields" class="field-wide hide">
+              <label class="form-label" for="pvMode">PV-gegevens</label>
+              <select class="form-select mb-2" id="pvMode"><option value="simple">Stringwaarden</option><option value="advanced">Paneelwaarden</option></select>
+              <div id="pvSimpleFields" class="cable-mini-grid">
+                <div><label for="pvStringVoltage" class="form-label">Vmp string</label><input id="pvStringVoltage" class="form-control" type="number" min="1" value="600"></div>
+                <div><label for="pvStringCurrent" class="form-label">Imp string</label><input id="pvStringCurrent" class="form-control" type="number" min="0.1" step="0.1" value="10"></div>
+                <div><label for="pvParallel" class="form-label">Strings parallel</label><input id="pvParallel" class="form-control" type="number" min="1" step="1" value="1"></div>
               </div>
-
-              <div class="col-12">
-                <details class="cable-advanced">
-                  <summary>Geavanceerde kabelwaarden</summary>
-                  <div class="row g-2 mt-1">
-                    <div class="col-12 col-md-6"><label for="rho" class="form-label">Soortelijke weerstand ρ</label><div class="input-group"><input class="form-control" id="rho" type="number" min="0.0001" step="0.0001" value="0.0225"><span class="input-group-text">Ω·mm²/m</span></div></div>
-                    <div class="col-12 col-md-6"><label for="reactance" class="form-label">Reactantie X′</label><div class="input-group"><input class="form-control" id="reactance" type="number" min="0" step="0.001" value="0"><span class="input-group-text">Ω/km</span></div></div>
-                  </div>
-                  <p class="form-text mb-0 mt-2">Basiswaarde koper: 0,0225 Ω·mm²/m. Vul voor een specifieke kabel later datasheetwaarden in.</p>
-                </details>
+              <div id="pvAdvancedFields" class="cable-mini-grid hide">
+                <div><label for="pvVmpPanel" class="form-label">Vmp/paneel</label><input id="pvVmpPanel" class="form-control" type="number" min="0.1" step="0.1" value="40"></div>
+                <div><label for="pvVocPanel" class="form-label">Voc/paneel</label><input id="pvVocPanel" class="form-control" type="number" min="0.1" step="0.1" value="48"></div>
+                <div><label for="pvImpPanel" class="form-label">Imp/paneel</label><input id="pvImpPanel" class="form-control" type="number" min="0.1" step="0.1" value="10"></div>
+                <div><label for="pvIscPanel" class="form-label">Isc/paneel</label><input id="pvIscPanel" class="form-control" type="number" min="0.1" step="0.1" value="10.8"></div>
+                <div><label for="pvSeries" class="form-label">Panelen in serie</label><input id="pvSeries" class="form-control" type="number" min="1" step="1" value="12"></div>
+                <div><label for="pvAdvancedParallel" class="form-label">Strings parallel</label><input id="pvAdvancedParallel" class="form-control" type="number" min="1" step="1" value="1"></div>
               </div>
             </div>
           </div>
-        </form>
+        </details>
+      </form>
 
-        <section class="cable-results" aria-live="polite">
-          <div id="validationError" class="alert alert-danger hide"></div>
-          <div id="resultContent"></div>
-        </section>
+      <section class="cable-results" aria-live="polite">
+        <div id="validationError" class="alert alert-danger hide"></div>
+        <div id="resultContent"></div>
       </section>
 
-      <div class="alert alert-secondary cable-disclaimer">
-        <strong>Ontwerp- en controlehulp.</strong> Zonder ingevulde of gevalideerde thermische ampaciteit rekent deze tool uitsluitend op spanningsverschil met een vereenvoudigd resistief model. Overgangs- en contactweerstanden zijn niet inbegrepen. Het resultaat is dan geen maximale veilige kabelstroom en geen vervanging voor kabeltype, plaatsingswijze, temperatuur-, bundelings-, kortsluit-, beveiligings-, aardings- en AREI-controle. De 3%-waarde is een instelbare ontwerpgrens, niet een algemene Belgische wettelijke bovengrens. Voor productieverbindingen wordt de C10/11-doelwaarde strikt als <strong>&lt; 1%</strong> beoordeeld over het volledige relevante AC-traject tussen hoofdmeter en productie-eenheid.
-      </div>
+      <p class="cable-safety"><i class="fa-solid fa-circle-info"></i> Rekent op spanningsval. Controleer ook thermische belastbaarheid, beveiliging en AREI.</p>
     </main>
   </div>
 
-  <script type="module" src="../assets/js/pages/cable-calculator-app.js?v=1"></script>
+  <script type="module" src="../assets/js/pages/cable-calculator-app.js?v=2"></script>
 </body>
 </html>

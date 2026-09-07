@@ -9,59 +9,61 @@ const css = fs.readFileSync(path.join(root, 'assets/css/cable-calculator.css'), 
 const dashboard = fs.readFileSync(path.join(root, 'dashboard.html'), 'utf8');
 
 describe('cable calculator page', () => {
-  it('offers all four bidirectional calculation modes as accessible tabs', () => {
-    expect(html).toContain('role="tablist"');
-    expect(html).toContain('data-mode="required" role="tab" aria-selected="true"');
-    expect(html).toContain('data-mode="capacity"');
-    expect(html).toContain('data-mode="distance"');
-    expect(html).toContain('data-mode="check"');
+  it('keeps all four calculations in one compact selector instead of large mode cards', () => {
+    expect(html).toContain('id="calculationMode"');
+    for (const mode of ['required', 'check', 'capacity', 'distance']) {
+      expect(html).toContain(`value="${mode}"`);
+    }
+    expect(html).not.toContain('role="tablist"');
+    expect(css).not.toContain('.cable-mode');
   });
 
-  it('offers Belgian net types, DC, PV and practical application presets', () => {
+  it('keeps the normal flow to only the practical inputs', () => {
+    expect(html).toContain('Wat wil je berekenen?');
+    expect(html).toContain('Aansluiting');
+    expect(html).toContain('Gebruik');
+    expect(html).toContain('Vermogen of stroom');
+    expect(html).toContain('Afstand');
+    expect(html).toContain('Kabelsectie');
+    expect(html).toContain('<summary>Meer opties</summary>');
+  });
+
+  it('offers Belgian net types, DC and PV without a second redundant preset selector', () => {
     expect(html).toContain('value="three230"');
-    expect(html).toContain('3×230 V zonder nul');
+    expect(html).toContain('3×230 V');
     expect(html).toContain('value="three400"');
     expect(html).toContain('value="three400-single"');
     expect(html).toContain('value="dc"');
     expect(html).toContain('value="pv"');
-    for (const preset of ['ev', 'pv-inverter', 'battery-inverter', 'dc-battery', 'pv-string']) {
-      expect(html).toContain(`value="${preset}"`);
-    }
-    expect(app).toContain('applyApplicationPreset');
+    expect(html).not.toContain('id="applicationPreset"');
   });
 
-  it('explains the one-way length convention and thermal limitation', () => {
-    expect(html).toContain('fysieke afstand in één richting');
-    expect(html).toContain('uitsluitend op spanningsverschil');
-    expect(html).toContain('geen maximale veilige kabelstroom');
-  });
-
-  it('does not present 3 percent as a Belgian legal limit or a voltage-only result as a full cable approval', () => {
-    expect(html).toContain('niet een algemene Belgische wettelijke bovengrens');
-    expect(html).toContain('&lt; 1%');
-    expect(html).toContain('volledige relevante AC-traject tussen hoofdmeter en productie-eenheid');
-    expect(app).toContain('Sectie op basis van spanningsval');
-    expect(app).toContain('geen conformiteitsverklaring');
+  it('keeps technical and safety nuance available without filling the main screen with prose', () => {
+    expect(html).toContain('id="thermalAmpacity"');
+    expect(html).toContain('id="rho"');
+    expect(html).toContain('Rekent op spanningsval');
+    expect(html).not.toContain('Overgangs- en contactweerstanden');
     expect(app).toContain('c1011VoltageRise');
   });
 
-  it('contains simple and advanced PV inputs including Voc and Isc', () => {
+  it('keeps PV detail inputs inside the advanced section', () => {
     for (const id of ['pvStringVoltage', 'pvStringCurrent', 'pvVmpPanel', 'pvVocPanel', 'pvImpPanel', 'pvIscPanel', 'pvSeries']) {
       expect(html).toContain(`id="${id}"`);
     }
     expect(app).toContain('calculatePvArray');
   });
 
-  it('always renders 1, 2 and 3 percent references and cable comparison', () => {
+  it('renders a direct answer and compact 1, 2 and 3 percent comparison', () => {
     expect(app).toContain('VOLTAGE_DROP_REFERENCES');
-    expect(app).toContain('Vergelijk kabelsecties');
-    expect(app).toContain('sectionComparison');
+    expect(app).toContain('cable-answer');
+    expect(app).toContain('cable-limits');
+    expect(app).not.toContain('Vergelijk kabelsecties');
+    expect(app).not.toContain('Schuif de belasting');
   });
 
-  it('has a live capacity slider and responsive touch layout', () => {
-    expect(app).toContain('id="capacitySlider"');
-    expect(css).toContain('.cable-mode');
-    expect(css).toContain('@media (max-width: 575.98px)');
+  it('has a compact responsive layout', () => {
+    expect(css).toContain('.cable-form-grid');
+    expect(css).toContain('@media (max-width: 700px)');
   });
 
   it('loads the Firebase compat SDKs required by shared firebase-init', () => {
