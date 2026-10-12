@@ -62,7 +62,7 @@ export function buildLeadResultMailHtml({ customerName, resultUrl, defaultsUsed 
       <a href="https://smartpeak.be" style="color:#6b7a8d;text-decoration:none">smartpeak.be</a>
     </p>
     <hr style="border:none;border-top:1px solid #dde1e6;margin:12px 0">
-    <p style="margin:0;font-size:11px;color:#adb5bd;line-height:1.4">SmartPeak opereert onder Blox-it BV (BE0730.696.050) en LED’s Repair (BE0644.867.975).</p>
+    <p style="margin:0;font-size:11px;color:#adb5bd;line-height:1.4">SmartPeak opereert onder Blox-it BV (BE0730.696.050) en LED’s Repair (BE1035.486.678).</p>
   </td></tr>
 </table>
 </td></tr>
