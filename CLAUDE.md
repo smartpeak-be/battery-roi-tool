@@ -319,6 +319,16 @@ spec na deze iteratie.
    (`allow get: if true`), lijst/update/delete alleen voor whitelisted users.
    Firestore rules in `firestore.rules`, gedeployed via
    `scripts/deploy-rules-smartpeak-projects.cjs`.
+   **Website-embed (2026-10)**: `assets/js/widgets/lead-wizard.js` is dezelfde wizard als
+   `lead.html`, maar als ES-module-widget voor smartpeak.be (mount `#smartpeak-analyse`,
+   geen Bootstrap/Firebase SDK, geen keys). Rekenen en schrijven zit in
+   `assets/js/lead-submit.js` (Firestore REST `:commit`: eerst de lead met
+   `createdAt` = REQUEST_TIME, daarna in een aparte commit `mail/lead_result_<id>`,
+   want de mail-rule checkt dat de lead al bestaat). De resultaatmail komt uit
+   `assets/js/lead-mail.js`, gedeeld met `lead.html` zodat beide identiek blijven.
+   **Wijzig je de lead- of mail-rules, of de lead-velden**, test dan ook de embed:
+   in smartpeak-site draait de manuele workflow "Test website forms against lead
+   rules" (`roi_ref` = je branch) beide website-formulieren tegen de emulator.
 
 **Save / share state** — same v:5 mechanism powers BOTH the legacy `?data=<b64>` share-links AND the Firestore project-mode storage. In project-mode, `csvUpload.dailyCompact` lives at the top level of the project doc (not inside `results`) to avoid duplicating per-day arrays. The restore-path in `index.html` (`buildSavedFromProject`) reassembles a v:5-shaped object from the project document so the existing `_applyLoadedState` flow can hydrate the UI unchanged. `_serializeState` produces a versioned (`v: 5`) JSON of inputs + computed results (NOT the raw CSV). v:5 adds a `dailyCompact` field (6 parallel arrays — `afname`, `injectie`, `afnamedag`, `afnamenacht`, `injectiedag`, `injectienacht` — plus a `startDate`) so per-day data is preserved across share-links — needed by the energy chart's Dag-view. `copyShareLink` base64-encodes it into `?data=...`; `downloadSave` writes it as a JSON file. `_applyLoadedState` accepts `v: 1, 2, 3, 4, 5` and degrades older versions gracefully (e.g. v:1-4 saves have no per-day data → the energy chart's Dag-view is disabled with a tooltip and Jaar/Maand are derived from `monthMap`). **When you change the shape of `_saved`/`renderResults` input**, bump the version and handle the old version in `_applyLoadedState`, or shared links and downloaded JSONs from before will silently break.
 
