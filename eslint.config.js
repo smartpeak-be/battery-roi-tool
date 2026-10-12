@@ -153,6 +153,8 @@ export default [
       'assets/js/csv.js',
       'assets/js/shared-helpers.js',
       'assets/js/lead-calc.js',
+      'assets/js/lead-mail.js',
+      'assets/js/lead-submit.js',
       'assets/js/product-configs.js',
       'assets/js/project-documents.js',
       'assets/js/serial-extract.js',
@@ -219,6 +221,20 @@ export default [
       'no-console': 'off',
       'no-constant-condition': 'off',
       'no-redeclare': 'off',          // intentional re-declarations across script files
+    },
+  },
+
+  // ── Website embed of the lead wizard: an ES module, unlike the other widgets ──
+  {
+    files: ['assets/js/widgets/lead-wizard.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.browser },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      'no-console': 'off',
     },
   },
 
