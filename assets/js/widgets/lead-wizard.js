@@ -22,7 +22,7 @@ const RESULT_PAGE_URL = new URL('../../../lead-result.html', import.meta.url).hr
 const STYLE_ID = 'spa-lead-wizard-css';
 
 const CSS = `
-.spa{--spa-accent:#17c15c;--spa-accent-deep:#0b7a42;--spa-ink:#1f272e;--spa-soft:#4b5661;--spa-line:#d9e3df;--spa-paper:#f3f7f5;--spa-focus:#1aa5b6;--spa-error:#c2412d;--spa-radius:14px;--spa-radius-l:22px;
+.spa{--spa-accent:#17c15c;--spa-accent-deep:#0b7a42;--spa-ink:#1f272e;--spa-soft:#4b5661;--spa-line:#d9e3df;--spa-paper:#f3f7f5;--spa-focus:#0a6a78;--spa-error:#c2412d;--spa-radius:14px;--spa-radius-l:22px;
   color:var(--spa-ink);font:inherit;border:1px solid var(--spa-line);border-radius:var(--spa-radius-l);background:#fff;padding:clamp(1.25rem,3vw,2rem);margin:1.5rem 0}
 .spa *,.spa *::before,.spa *::after{box-sizing:border-box}
 .spa .spa-steps{list-style:none;display:flex;flex-wrap:wrap;gap:.5rem 1.25rem;margin:0 0 1.5rem;padding:0;font-size:.92rem;color:var(--spa-soft)}

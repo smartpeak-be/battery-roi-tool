@@ -15,14 +15,14 @@
     .sp-review-widget__track{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(270px,1fr);gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 2px 14px;scroll-behavior:smooth;scrollbar-width:thin}
     .sp-review-widget__card{scroll-snap-align:start;background:#fff;border:1px solid #dce3f0;border-radius:20px;padding:20px;box-shadow:0 16px 42px rgba(30,42,58,.10);min-height:210px;display:flex;flex-direction:column}
     .sp-review-widget__photo{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:14px;margin:0 0 14px;border:1px solid #edf1f7;background:#f7f9fd}
-    .sp-review-widget__stars{color:#f6a623;letter-spacing:1px;margin-bottom:10px;font-size:1.05rem}
+    .sp-review-widget__stars{color:#b26f00;letter-spacing:1px;margin-bottom:10px;font-size:1.05rem}
     .sp-review-widget__text{font-size:1rem;line-height:1.55;margin:0 0 16px;white-space:pre-wrap;flex:1}
     .sp-review-widget__scores{display:grid;gap:7px;margin:0 0 16px;padding:12px;border-radius:14px;background:#f7f9fd;border:1px solid #edf1f7}
     .sp-review-widget__solution{font-size:.86rem;color:#40506a;background:#edf7f2;border:1px solid #ccebdd;border-radius:999px;padding:7px 10px;margin:0 0 12px;display:inline-flex;align-items:center;gap:6px;width:max-content;max-width:100%}
     .sp-review-widget__score{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.86rem;color:#40506a}
-    .sp-review-widget__score-label{font-weight:650}.sp-review-widget__score-stars{color:#f6a623;letter-spacing:.5px;white-space:nowrap;font-size:.82rem}
-    .sp-review-widget__name{font-weight:800;margin:0}.sp-review-widget__meta{font-size:.85rem;color:#6b7a99;margin:2px 0 0}
-    .sp-review-widget__empty{color:#6b7a99;background:#fff;border:1px dashed #dce3f0;border-radius:16px;padding:18px}
+    .sp-review-widget__score-label{font-weight:650}.sp-review-widget__score-stars{color:#b26f00;letter-spacing:.5px;white-space:nowrap;font-size:.82rem}
+    .sp-review-widget__name{font-weight:800;margin:0}.sp-review-widget__meta{font-size:.85rem;color:#56627a;margin:2px 0 0}
+    .sp-review-widget__empty{color:#56627a;background:#fff;border:1px dashed #dce3f0;border-radius:16px;padding:18px}
     @media(min-width:900px){.sp-review-widget__track{grid-auto-columns:calc((100% - 32px)/3)}}`;
 
   function injectCss() {
@@ -70,7 +70,7 @@
       .map(([label, value]) => `
         <div class="sp-review-widget__score">
           <span class="sp-review-widget__score-label">${esc(label)}</span>
-          <span class="sp-review-widget__score-stars" aria-label="${esc(value)} op 5">${esc(stars(value))}</span>
+          <span class="sp-review-widget__score-stars" role="img" aria-label="${esc(value)} op 5">${esc(stars(value))}</span>
         </div>`)
       .join('');
   }
@@ -118,19 +118,19 @@
       return;
     }
     root.innerHTML = `
-      <div class="sp-review-widget" aria-label="SmartPeak reviews">
-        <div class="sp-review-widget__header" aria-label="Carousel navigatie">
+      <div class="sp-review-widget" role="region" aria-label="Reviews van klanten">
+        <div class="sp-review-widget__header">
           <button type="button" class="sp-review-widget__nav" data-sp-review-prev aria-label="Vorige reviews">‹</button>
           <button type="button" class="sp-review-widget__nav" data-sp-review-next aria-label="Volgende reviews">›</button>
         </div>
-        <div class="sp-review-widget__track" tabindex="0">
+        <div class="sp-review-widget__track" tabindex="0" role="group" aria-label="Reviews, scroll horizontaal">
           ${reviews.map(r => `
             <article class="sp-review-widget__card">
               ${reviewPhotoUrl(r) ? `<img class="sp-review-widget__photo" src="${esc(reviewPhotoUrl(r))}" alt="Foto van SmartPeak installatie" loading="lazy">` : ''}
-              <div class="sp-review-widget__stars" aria-label="${esc(r.rating)} op 5">${esc(stars(r.rating))}</div>
+              <div class="sp-review-widget__stars" role="img" aria-label="${esc(r.rating)} op 5 sterren">${esc(stars(r.rating))}</div>
               <p class="sp-review-widget__text">“${esc(r.shortReview)}”</p>
-              ${solutionLabel(r.solutionSummary) ? `<p class="sp-review-widget__solution">⚡ ${esc(solutionLabel(r.solutionSummary))}</p>` : ''}
-              ${scoreRows(r) ? `<div class="sp-review-widget__scores" aria-label="Deelscores review">${scoreRows(r)}</div>` : ''}
+              ${solutionLabel(r.solutionSummary) ? `<p class="sp-review-widget__solution"><span aria-hidden="true">⚡</span> ${esc(solutionLabel(r.solutionSummary))}</p>` : ''}
+              ${scoreRows(r) ? `<div class="sp-review-widget__scores" role="group" aria-label="Deelscores">${scoreRows(r)}</div>` : ''}
               <p class="sp-review-widget__name">${esc(r.displayName)}</p>
               ${r.publishedLabel ? `<p class="sp-review-widget__meta">${esc(r.publishedLabel)}</p>` : ''}
             </article>`).join('')}
