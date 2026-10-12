@@ -1,62 +1,49 @@
 import { escapeHtml } from '../shared-helpers.js';
 
-export function renderProfitable(lead) {
+// Customer-facing result of the lead wizard. SmartPeak deliberately shows no payback time:
+// it depends on too many things that change (prices, contract, rules, plans). The page shows
+// what the customer's own data says and what a battery would roughly do with it.
+
+/** Yearly totals from the stored daily data, scaled to 365 days when the period is shorter. */
+export function yearlyFigures(lead) {
+  const dc = lead.csvDailyCompact;
+  if (!dc || !Array.isArray(dc.afname) || dc.afname.length === 0) return null;
+  const days = dc.afname.length;
+  const scale = 365 / days;
+  const sum = (arr) => (Array.isArray(arr) ? arr : []).reduce((s, v) => s + (v || 0), 0);
+  const afname = sum(dc.afname) * scale;
+  const injectie = sum(dc.injectie) * scale;
+  let stored = null;
   const r = lead.result;
-  const recFull = rVal(r.recoveryPctFull);
-  const recPartial = rVal(r.recoveryPctPartial);
-  const selfPct = Math.max(0, Math.min(100, (recFull.max || 0) + (recPartial.max || 0)));
-
-  let energyBar = null;
-  if (lead.csvDailyCompact && Array.isArray(lead.csvDailyCompact.afname)) {
-    const days = lead.csvDailyCompact.afname.length;
-    const scale = days > 0 ? 365 / days : 0;
-    const annualAfname = lead.csvDailyCompact.afname.reduce((s, v) => s + (v || 0), 0) * scale;
-    const annualInj = lead.csvDailyCompact.injectie.reduce((s, v) => s + (v || 0), 0) * scale;
-    const batteryKwh = Math.round(annualAfname * (selfPct / 100));
-    const gridKwh = Math.round(annualAfname - batteryKwh);
-    const injKwh = Math.round(annualInj);
-    const total = injKwh + annualAfname;
-    if (total > 0) {
-      energyBar = {
-        injPct: (injKwh / total) * 100,
-        batPct: (batteryKwh / total) * 100,
-        gridPct: (gridKwh / total) * 100,
-        injKwh,
-        batteryKwh,
-        gridKwh,
-      };
-    }
+  const price = lead.pricePerKwh;
+  if (r && price > 0) {
+    const saving = rVal(r.annualSavingEur);
+    stored = {
+      min: Math.min(saving.min / price, afname),
+      max: Math.min(saving.max / price, afname)
+    };
   }
-
-  return `
-    ${heroCard(r)}
-    ${solutionCard(r)}
-    ${energyFlowCard(energyBar)}
-    ${usageChartCard(lead)}
-    ${ctaCard('btnContact', 'Plan een vrijblijvend gesprek', 'Wij rekenen het exact uit voor jouw woning')}
-    ${faqCard()}
-    ${packageCard()}
-    ${ctaCard('btnContactBottom', 'Plan een vrijblijvend gesprek', 'Klaar voor de volgende stap?')}
-    ${renderDisclaimer(lead)}
-  `;
+  return { days, afname, injectie, stored };
 }
 
-export function renderNotProfitable(lead) {
-  return `
-    <div class="sp-result-card text-center">
-      <h5 class="mb-3">Jouw batterij-analyse</h5>
-      <p class="mb-3">Op basis van je huidige verbruiksprofiel verdient een thuisbatterij zich vandaag nog niet binnen een redelijke termijn terug.</p>
-      <p class="mb-0 text-start">Dat kan veranderen wanneer:</p>
-      <ul class="text-start">
-        <li>de energieprijzen stijgen,</li>
-        <li>je elektriciteitsverbruik toeneemt (bv. warmtepomp of elektrische wagen),</li>
-        <li>de injectievergoeding verder daalt.</li>
-      </ul>
-      <p class="mb-0">We bekijken graag samen of er andere opties zijn voor jouw situatie.</p>
-    </div>
-    ${ctaCard('btnContact', 'Plan een vrijblijvend gesprek', 'We denken graag mee')}
-    ${renderDisclaimer(lead)}
-  `;
+export function renderResult(lead) {
+  const y = yearlyFigures(lead);
+  const r = lead.result;
+  const parts = [];
+  if (r && y && y.stored) {
+    parts.push(heroCard(y), dataCard(y, r), usageChartCard(lead));
+  } else {
+    parts.push(noSizeCard(y), y ? usageChartCard(lead) : '');
+  }
+  parts.push(
+    ctaCard('btnContact', 'Plan een vrijblijvend gesprek', 'We bekijken het graag samen met je'),
+    whyNoPaybackCard(),
+    faqCard(),
+    packageCard(),
+    ctaCard('btnContactBottom', 'Plan een vrijblijvend gesprek', 'Klaar voor de volgende stap?'),
+    renderDisclaimer(lead)
+  );
+  return parts.join('');
 }
 
 export function rVal(field) {
@@ -64,64 +51,58 @@ export function rVal(field) {
   return { min: field, max: field };
 }
 
-function heroCard(r) {
+function heroCard(y) {
   return `
     <div class="sp-result-card sp-hero-card text-center">
       <div class="sp-hero-eyebrow">Op basis van jouw eigen verbruik</div>
-      <div class="sp-hero-amount">${fmtEurRange(r.annualSavingEur)}<span class="sp-hero-amount-unit"> per jaar</span></div>
-      <div class="sp-hero-subtitle">bespaar je op je elektriciteitsfactuur</div>
+      <div class="sp-hero-amount">${fmtKwhRange(y.stored)}<span class="sp-hero-amount-unit"> per jaar</span></div>
+      <div class="sp-hero-subtitle">van je eigen zonne-energie kan je met een batterij zelf gebruiken, in plaats van ze op het net te zetten en later terug te kopen.</div>
     </div>
   `;
 }
 
-function solutionCard(r) {
+function dataCard(y, r) {
+  const after = { min: Math.max(0, y.afname - y.stored.max), max: Math.max(0, y.afname - y.stored.min) };
   return `
     <div class="sp-result-card">
-      <h5 class="text-center mb-1">Jouw aanbevolen oplossing</h5>
+      <h5 class="text-center mb-1">Wat we in jouw gegevens zien</h5>
       <div class="sp-result-metrics">
         <div class="sp-metric-tile">
+          <div class="sp-result-metric-value">${fmtKwh(y.injectie)}</div>
+          <div class="sp-result-metric-label">Naar het net per jaar</div>
+          <div class="sp-metric-detail">Zonne-energie die je nu niet zelf gebruikt.</div>
+        </div>
+        <div class="sp-metric-tile">
+          <div class="sp-result-metric-value">${fmtKwh(y.afname)}</div>
+          <div class="sp-result-metric-label">Van het net per jaar</div>
+          <div class="sp-metric-detail">Met een batterij wordt dat ongeveer ${fmtKwhRange(after)}.</div>
+        </div>
+        <div class="sp-metric-tile">
           <div class="sp-result-metric-value">${fmtRange(r.batteryCapKwh, 1, ' kWh')}</div>
-          <div class="sp-result-metric-label">Opslagcapaciteit</div>
-          <div class="sp-metric-detail">Genoeg voor een avond koken, wassen en TV kijken op opgeslagen zonne-energie.</div>
-        </div>
-        <div class="sp-metric-tile">
-          <div class="sp-result-metric-value">${fmtRange(r.batteryInverterKw, 1, ' kW')}</div>
-          <div class="sp-result-metric-label">Omvormvermogen</div>
-          <div class="sp-metric-detail">Snel genoeg om je piekverbruik op te vangen, ook als de waterkoker en oven samen draaien.</div>
-        </div>
-        <div class="sp-metric-tile">
-          <div class="sp-result-metric-value">${fmtRange(r.roiYears, 1, ' jaar')}</div>
-          <div class="sp-result-metric-label">Terugverdientijd</div>
-          <div class="sp-metric-detail">Vanaf dan verdient de batterij elk jaar geld op je energiefactuur.</div>
+          <div class="sp-result-metric-label">Indicatieve batterijgrootte</div>
+          <div class="sp-metric-detail">Een vertrekpunt. De juiste grootte hangt ook af van je wensen en plannen.</div>
         </div>
       </div>
     </div>
   `;
 }
 
-function energyFlowCard(bar) {
-  if (!bar) return '';
-  const labelIf = (pct, txt) => pct >= 12 ? `<span class="sp-self-bar-label">${txt}</span>` : '';
+function noSizeCard(y) {
+  const figures = y ? `
+      <p class="mb-3">In jouw gegevens zien we per jaar ongeveer <strong>${fmtKwh(y.injectie)}</strong> zonne-energie die naar het net gaat en <strong>${fmtKwh(y.afname)}</strong> die je van het net haalt.</p>` : '';
   return `
     <div class="sp-result-card">
-      <h5 class="text-center mb-2">Jouw energiestromen op jaarbasis</h5>
-      <p class="text-center text-muted small mb-4">Vandaag gaat jouw overtollige zonne-energie naar het net. Met een batterij sla je een deel daarvan op voor 's avonds en 's nachts.</p>
-      <div class="sp-self-bar" role="img" aria-label="Injectie ${bar.injKwh} kWh, Batterij ${bar.batteryKwh} kWh, Net ${bar.gridKwh} kWh">
-        <div class="sp-self-bar-fill injection" style="width:${bar.injPct}%">
-          ${labelIf(bar.injPct, fmtNl(bar.injPct, 0) + '%')}
-        </div>
-        <div class="sp-self-bar-fill battery" style="width:${bar.batPct}%">
-          ${labelIf(bar.batPct, fmtNl(bar.batPct, 0) + '%')}
-        </div>
-        <div class="sp-self-bar-fill grid" style="width:${bar.gridPct}%">
-          ${labelIf(bar.gridPct, fmtNl(bar.gridPct, 0) + '%')}
-        </div>
-      </div>
-      <div class="sp-self-legend">
-        <span><span class="sp-self-dot injection"></span> Injectie (${bar.injKwh.toLocaleString('nl-BE')} kWh)</span>
-        <span><span class="sp-self-dot battery"></span> Batterij (${bar.batteryKwh.toLocaleString('nl-BE')} kWh)</span>
-        <span><span class="sp-self-dot grid"></span> Van het net (${bar.gridKwh.toLocaleString('nl-BE')} kWh)</span>
-      </div>
+      <h5 class="text-center mb-3">Jouw batterij-analyse</h5>
+      ${figures}
+      <p class="mb-2">Uit je verbruiksgegevens alleen komt geen duidelijke batterijgrootte naar voren. Dat gebeurt bijvoorbeeld als er weinig zonne-energie naar het net gaat, of als de periode in je bestand kort is.</p>
+      <p class="mb-2">Dat wil niet zeggen dat een batterij niets voor jou is. Ze kan ook zinvol zijn om:</p>
+      <ul>
+        <li>je piekverbruik af te vlakken en zo te besparen op het capaciteitstarief,</li>
+        <li>je elektrische wagen of warmtepomp slimmer te laten werken,</li>
+        <li>goedkoop te laden met een dynamisch energiecontract,</li>
+        <li>een deel van je woning te blijven voeden bij een stroomonderbreking.</li>
+      </ul>
+      <p class="mb-0">We bekijken graag samen wat in jouw situatie zinvol is.</p>
     </div>
   `;
 }
@@ -129,17 +110,36 @@ function energyFlowCard(bar) {
 function usageChartCard(lead) {
   if (!lead.csvDailyCompact || !Array.isArray(lead.csvDailyCompact.afname)) return '';
   const days = lead.csvDailyCompact.afname.length;
-  const periodTxt = lead.result && lead.result.isFullYear
-    ? 'een volledig jaar'
-    : `${days} dagen`;
+  const periodTxt = days >= 365 ? 'een volledig jaar' : `${days} dagen`;
+  const withBattery = Boolean(lead.result);
+  const caption = withBattery
+    ? 'Het <span class="sp-chart-caption-injection">groen</span> is jouw zonne-energie naar het net. Het <span class="sp-chart-caption-battery">blauw</span> is wat een batterij daarvan ongeveer zou opvangen. Het <span class="sp-chart-caption-grid">rood</span> is wat je nu van het net haalt.'
+    : 'Het <span class="sp-chart-caption-injection">groen</span> is jouw zonne-energie naar het net. Het <span class="sp-chart-caption-grid">rood</span> is wat je van het net haalt.';
   return `
     <div class="sp-result-card" id="usageChartCard">
       <h5 class="text-center mb-2">Berekend op jouw eigen Fluvius-data</h5>
-      <p class="text-center text-muted small mb-4">Deze analyse is gebaseerd op <strong>${periodTxt}</strong> van jouw werkelijke verbruik.</p>
+      <p class="text-center text-muted small mb-4">Deze analyse is gebaseerd op <strong>${periodTxt}</strong> van jouw werkelijke verbruik, per maand.</p>
       <div class="sp-chart-wrap">
-        <canvas id="usageChart" aria-label="Maandelijks verbruik, injectie en batterijbesparing"></canvas>
+        <canvas id="usageChart" aria-label="Maandelijkse afname en injectie"></canvas>
       </div>
-      <p class="sp-chart-caption">Het <span class="sp-chart-caption-injection">groen</span> is jouw zonne-energie naar het net. Het <span class="sp-chart-caption-battery">blauw</span> is wat de batterij daarvan opvangt. Het <span class="sp-chart-caption-grid">rood</span> is jouw resterende netverbruik.</p>
+      <p class="sp-chart-caption">${caption}</p>
+    </div>
+  `;
+}
+
+function whyNoPaybackCard() {
+  return `
+    <div class="sp-result-card">
+      <h5 class="text-center mb-3">Waarom geen terugverdientijd?</h5>
+      <p class="mb-2">Wat een batterij je uiteindelijk oplevert, hangt af van veel zaken die bovendien veranderen:</p>
+      <ul>
+        <li>je energieprijs en het soort contract (vast, variabel of dynamisch),</li>
+        <li>het capaciteitstarief en hoe hoog je pieken zijn,</li>
+        <li>wat je later nog plant, zoals een elektrische wagen of een warmtepomp,</li>
+        <li>de regels voor injectie en de vergoeding die je ervoor krijgt,</li>
+        <li>hoe de batterij gestuurd wordt.</li>
+      </ul>
+      <p class="mb-0">Een terugverdientijd in jaren lijkt precies, maar is dat niet. Daarom kijken we liever samen naar je verbruik, je wensen en je plannen, en stellen we de oplossing voor die daar het best bij past.</p>
     </div>
   `;
 }
@@ -160,19 +160,19 @@ function faqCard() {
   const items = [
     {
       q: 'Wat als er stroomuitval is?',
-      a: 'Bij een stroomonderbreking mag een thuisbatterij wettelijk geen stroom terugleveren aan de woning. Wel beschikken de meeste batterijen over een noodstopcontact dat automatisch actief wordt. Via een verlengkabel kan je dan alsnog kritische toestellen (koelkast, oplader, internet) van stroom voorzien, maar niet de volledige woning overnemen. Er bestaan batterijsystemen die dat wel kunnen, maar dan spreken we over een hogere investering en ingrijpende aanpassingen aan de verdeelkast. Voor de kleinere en stekkerklare batterijen is dat niet mogelijk.'
+      a: 'Een batterij mag tijdens een stroomonderbreking nooit stroom naar het net sturen. Zonder extra voorziening valt je installatie dan ook uit. Veel systemen hebben een noodstopcontact waarop je enkele toestellen kan aansluiten, zoals de koelkast of het internet. Met een back-upschakeling in je verdeelkast kan een geschikt systeem ook (een deel van) je woning blijven voeden. Dat vraagt een grotere aanpassing en investering, die we vooraf met je bespreken.'
     },
     {
       q: 'Hoe lang gaat een thuisbatterij mee?',
-      a: 'Een moderne lithium-batterij gaat doorgaans 12 tot 15 jaar mee, en vaak langer. Gedurende die levensduur vermindert de opslagcapaciteit geleidelijk. Na 10 jaar kan je bijvoorbeeld nog zo\'n 80% van de oorspronkelijke capaciteit verwachten. De batterij blijft daarmee perfect bruikbaar. Wij werken enkel met merken die minimaal 10 jaar fabrieksgarantie of een gegarandeerd aantal laadcycli aanbieden.'
+      a: 'Een moderne lithiumbatterij gaat doorgaans 10 tot 15 jaar mee, vaak langer. De opslagcapaciteit neemt in die tijd geleidelijk af, maar de batterij blijft bruikbaar. De fabrieksgarantie verschilt per merk, meestal 10 jaar of een gegarandeerd aantal laadcycli. We vermelden ze in je offerte.'
     },
     {
       q: 'Hoeveel ruimte heb ik nodig?',
-      a: 'Dat hangt af van de installatie: één toestel of meerdere. Voor de meeste installaties kan je rekenen op 60 cm tot 1 m breed, 30 tot 50 cm diep en 40 tot 60 cm hoog. De batterij wordt aan de muur of op de grond geplaatst, binnen of in de garage. Tijdens het plaatsbezoek bepalen we samen de beste plek.'
+      a: 'Dat hangt af van het systeem en de grootte. Reken voor de meeste installaties op 60 cm tot 1 m breed en 30 tot 50 cm diep. De batterij komt aan de muur of op de grond, binnen of in de garage. Tijdens het plaatsbezoek bepalen we samen de beste plek.'
     },
     {
       q: 'Werkt dit met mijn bestaande zonnepanelen?',
-      a: 'Ja. We sluiten de batterij parallel aan op je elektriciteitskast. Je bestaande omvormer en panelen hoeven niet vervangen te worden. We controleren wel of je zekeringskast en aansluiting geschikt zijn.'
+      a: 'In de meeste gevallen wel. We werken met wat er al is: je panelen en omvormer blijven, tenzij een andere opstelling beter past bij je plannen. We controleren ook of je zekeringkast en aansluiting geschikt zijn.'
     }
   ];
   const itemsHtml = items.map((it, i) => `
@@ -199,13 +199,14 @@ function faqCard() {
 function packageCard() {
   return `
     <div class="sp-result-card">
-      <h5 class="text-center mb-3">Wat zit in de prijs?</h5>
+      <h5 class="text-center mb-3">Wat zit er in een installatie van SmartPeak?</h5>
       <ul class="sp-package-list">
         <li><i class="fa-solid fa-check icon-ok"></i> Levering van de batterij en bijhorende componenten</li>
-        <li><i class="fa-solid fa-check icon-ok"></i> Plaatsing en aansluiting in de zekeringskast</li>
-        <li><i class="fa-solid fa-check icon-ok"></i> Configuratie van laad- en ontlaadschema's voor maximale besparing</li>
+        <li><i class="fa-solid fa-check icon-ok"></i> Plaatsing en aansluiting in de zekeringkast</li>
+        <li><i class="fa-solid fa-check icon-ok"></i> Instellen van het laden en ontladen op jouw verbruik</li>
         <li><i class="fa-solid fa-check icon-ok"></i> Bebat-bijdragen</li>
         <li><i class="fa-solid fa-check icon-ok"></i> Verplichte AREI-keuring na installatie</li>
+        <li><i class="fa-solid fa-check icon-ok"></i> Opvolging van je installatie in de eerste periode na de plaatsing</li>
       </ul>
     </div>
   `;
@@ -222,7 +223,7 @@ function renderDisclaimer(lead) {
   return `
     <div class="sp-lead-disclaimer">
       ${defaultsHtml}
-      <p class="mb-0"><small>Dit resultaat is een indicatie op basis van de beschikbare gegevens en gebruikt het realistische scenario. Voor een nauwkeurige berekening op maat nemen we graag contact met je op.</small></p>
+      <p class="mb-0"><small>Dit resultaat is een eerste indicatie op basis van je dagelijkse meetgegevens. Het houdt geen rekening met je pieken, je energiecontract of je plannen. Die bekijken we graag samen met je.</small></p>
     </div>
   `;
 }
@@ -239,10 +240,18 @@ function fmtRange(field, decimals = 1, suffix = '') {
   return `${a} tot ${b}${suffix}`;
 }
 
-function fmtEurRange(field) {
-  const { min, max } = rVal(field);
-  const a = Math.round(min).toLocaleString('nl-BE');
-  const b = Math.round(max).toLocaleString('nl-BE');
-  if (a === b) return `€${a}`;
-  return `€${a} – €${b}`;
+// Rounded to 10 kWh: the data is a daily total, more precision would suggest too much.
+function roundKwh(n) {
+  return Math.round(n / 10) * 10;
+}
+
+function fmtKwh(n) {
+  return `${roundKwh(n).toLocaleString('nl-BE')} kWh`;
+}
+
+function fmtKwhRange(range) {
+  const a = roundKwh(range.min);
+  const b = roundKwh(range.max);
+  if (a === b) return `± ${a.toLocaleString('nl-BE')} kWh`;
+  return `${a.toLocaleString('nl-BE')} tot ${b.toLocaleString('nl-BE')} kWh`;
 }

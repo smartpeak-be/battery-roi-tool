@@ -1,5 +1,5 @@
 import { escapeHtml, showToast } from '../shared-helpers.js';
-import { renderNotProfitable, renderProfitable, rVal } from '../lead-result/renderers.js';
+import { renderResult, yearlyFigures } from '../lead-result/renderers.js';
 
 const container = document.getElementById('resultContainer');
 
@@ -19,21 +19,14 @@ const container = document.getElementById('resultContainer');
       return;
     }
 
-    if (!lead.result) {
-      container.innerHTML = renderNotProfitable(lead);
-      wireCTA(leadId, lead);
-      return;
-    }
-
-    container.innerHTML = renderProfitable(lead);
+    container.innerHTML = renderResult(lead);
     wireCTA(leadId, lead, 'btnContact');
     wireCTA(leadId, lead, 'btnContactBottom');
-    if (lead.csvDailyCompact) {
+    const yearly = yearlyFigures(lead);
+    if (yearly) {
       // Render the chart after the DOM is in place; failure is silent (the card hides itself).
-      const recF = rVal(lead.result ? lead.result.recoveryPctFull : 0);
-      const recP = rVal(lead.result ? lead.result.recoveryPctPartial : 0);
-      const selfPct = Math.max(0, Math.min(100, (recF.max || 0) + (recP.max || 0)));
-      renderUsageChart(lead, selfPct).catch(err => {
+      const storedKwh = yearly.stored ? yearly.stored.max * yearly.days / 365 : 0;
+      renderUsageChart(lead, storedKwh).catch(err => {
         console.warn('[lead-result] chart render failed:', err);
         const wrap = document.getElementById('usageChartCard');
         if (wrap) wrap.style.display = 'none';
@@ -46,7 +39,7 @@ const container = document.getElementById('resultContainer');
 
 // ── Chart ────────────────────────────────────────────────────────────────────
 
-async function renderUsageChart(lead, selfPct) {
+async function renderUsageChart(lead, storedKwh) {
   await SmartPeakChartLoader.loadChartJs();
   const dc = lead.csvDailyCompact;
   if (!dc || !dc.startDate || !Array.isArray(dc.afname) || dc.afname.length === 0) {
@@ -76,14 +69,14 @@ async function renderUsageChart(lead, selfPct) {
   const inj     = trimmed.map(([, v]) => Math.round(v.injectie));
   const afname  = trimmed.map(([, v]) => Math.round(v.afname));
 
-  // Estimate monthly battery savings proportional to monthly injection,
-  // capped at monthly consumption. Annual total = afname * selfPct / 100.
+  // Spread what the battery takes over (over the whole period) proportionally to the
+  // monthly injection, capped at the monthly consumption. Indicative only.
   const totalInj = inj.reduce((s, v) => s + v, 0);
-  const totalAf  = afname.reduce((s, v) => s + v, 0);
-  const annualBatteryKwh = totalAf * (selfPct || 0) / 100;
+  const shownShare = dc.afname.length > 0 ? Math.min(1, trimmed.length * 30.4 / dc.afname.length) : 1;
+  const batteryKwh = (storedKwh || 0) * shownShare;
   const battery = trimmed.map(([, v]) => {
     const share = totalInj > 0 ? v.injectie / totalInj : 1 / trimmed.length;
-    return Math.round(Math.min(share * annualBatteryKwh, v.afname));
+    return Math.round(Math.min(share * batteryKwh, v.afname));
   });
 
   const ctx = document.getElementById('usageChart');
@@ -106,7 +99,7 @@ async function renderUsageChart(lead, selfPct) {
           pointRadius: 3
         },
         {
-          label: 'Batterijbesparing',
+          label: 'Door een batterij opgevangen (indicatief)',
           data: battery,
           borderColor: '#0ea5e9',
           backgroundColor: 'rgba(14,165,233,0.18)',
@@ -114,7 +107,8 @@ async function renderUsageChart(lead, selfPct) {
           tension: 0.3,
           borderWidth: 2,
           pointRadius: 3,
-          borderDash: [6, 3]
+          borderDash: [6, 3],
+          hidden: !(storedKwh > 0)
         },
         {
           label: 'Afname (van het net)',
@@ -133,7 +127,7 @@ async function renderUsageChart(lead, selfPct) {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 14 } },
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 14, filter: (item, data) => !data.datasets[item.datasetIndex].hidden } },
         tooltip: {
           callbacks: {
             label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('nl-BE')} kWh`
