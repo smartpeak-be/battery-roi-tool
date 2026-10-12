@@ -9,6 +9,7 @@
 //   <script type="module" src="https://smartpeak-be.github.io/battery-roi-tool/assets/js/widgets/lead-wizard.js"></script>
 //
 // Optional data attributes on the mount element:
+//   data-inverter-help-url  page that explains where to find the inverter power
 //   data-source         where the lead came from (default: the page path), noted on the lead
 //   data-heading-level  heading level for the step titles (default 3)
 //   data-firestore      Firestore REST base URL (tests only, e.g. the emulator)
@@ -97,6 +98,7 @@ function template(cfg, uid) {
   const h = `h${cfg.headingLevel}`;
   const id = (name) => `${uid}-${name}`;
   const help = cfg.helpUrl ? ` <a href="${esc(cfg.helpUrl)}">Hoe download je dat bestand?</a>` : '';
+  const inverterHelp = cfg.inverterHelpUrl ? ` <a href="${esc(cfg.inverterHelpUrl)}">Waar vind ik dat?</a>` : '';
   const privacy = cfg.privacyUrl ? ` Meer daarover in onze <a href="${esc(cfg.privacyUrl)}">privacyverklaring</a>.` : '';
   return `
 <ol class="spa-steps" aria-label="Stappen">
@@ -152,7 +154,7 @@ function template(cfg, uid) {
     <div class="spa-field">
       <label for="${id('pv')}">Vermogen omvormer <span class="spa-optional">(kW)</span></label>
       <input type="text" inputmode="decimal" id="${id('pv')}" data-pv placeholder="bv. ${nl(LEAD_DEFAULTS.pvInverterKw)}" aria-describedby="${id('pv-help')} ${id('pv-err')}">
-      <p class="spa-help" id="${id('pv-help')}">Op het typeplaatje van je omvormer, als "Max. AC Power". Niet ingevuld: ${nl(LEAD_DEFAULTS.pvInverterKw)} kW.</p>
+      <p class="spa-help" id="${id('pv-help')}">Het AC-vermogen, op het typeplaatje van je omvormer.${inverterHelp} Niet ingevuld: ${nl(LEAD_DEFAULTS.pvInverterKw)} kW.</p>
       <p class="spa-error" id="${id('pv-err')}" hidden>Vul een vermogen tussen 0,1 en 100 kW in.</p>
     </div>
     <div class="spa-field">
@@ -189,6 +191,7 @@ function mount(root, index) {
   root.dataset.spaReady = '1';
   const cfg = {
     helpUrl: root.dataset.helpUrl || '',
+    inverterHelpUrl: root.dataset.inverterHelpUrl || '',
     privacyUrl: root.dataset.privacyUrl || '',
     email: root.dataset.email || 'info@smartpeak.be',
     source: root.dataset.source || (location.hostname + location.pathname),
