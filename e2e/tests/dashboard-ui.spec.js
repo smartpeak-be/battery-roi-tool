@@ -123,7 +123,27 @@ test.describe('Dashboard UI', () => {
       await expect(lightbox).toBeVisible();
       await lightbox.locator('.zoom').click();
       await expect(lightbox).toHaveClass(/is-zoomed/);
-      await expect(lightbox.locator('[data-pu-annotation-stage]')).toHaveAttribute('style', /scale\(2\)/);
+      const zoomGeometry = await lightbox.locator('[data-pu-annotation-stage]').evaluate(stage => {
+        const img = stage.querySelector('[data-pu-lightbox-img]');
+        const canvas = stage.querySelector('[data-pu-annotation-canvas]');
+        const stageRect = stage.getBoundingClientRect();
+        const imageRect = img.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        return {
+          transform: stage.style.transform,
+          stageWidth: stage.offsetWidth,
+          stageHeight: stage.offsetHeight,
+          imageRect: { x: imageRect.x, y: imageRect.y, width: imageRect.width, height: imageRect.height },
+          canvasRect: { x: canvasRect.x, y: canvasRect.y, width: canvasRect.width, height: canvasRect.height },
+          stageRect: { x: stageRect.x, y: stageRect.y },
+        };
+      });
+      expect(zoomGeometry.transform).not.toContain('scale(');
+      expect(zoomGeometry.imageRect.width).toBeCloseTo(zoomGeometry.stageWidth * 2, 0);
+      expect(zoomGeometry.imageRect.height).toBeCloseTo(zoomGeometry.stageHeight * 2, 0);
+      expect(zoomGeometry.canvasRect).toEqual(zoomGeometry.imageRect);
+      expect(zoomGeometry.imageRect.x).toBeCloseTo(zoomGeometry.stageRect.x, 0);
+      expect(zoomGeometry.imageRect.y).toBeCloseTo(zoomGeometry.stageRect.y, 0);
 
       // Drawing without pressing Opslaan should ask explicitly whether to save or discard.
       await lightbox.locator('.zoom').click();

@@ -5,6 +5,7 @@ import {
   nextPinchZoomTransform,
   nextZoomTransform,
   panZoomTransform,
+  zoomRenderStyles,
 } from '../assets/js/photo-lightbox-zoom.js';
 
 describe('photo lightbox zoom helpers', () => {
@@ -66,6 +67,14 @@ describe('photo lightbox zoom helpers', () => {
 
     expect(first.scale).toBeCloseTo(1.2);
     expect(second.scale).toBeCloseTo(1.4);
+  });
+
+  test('renders zoom by enlarging the photo instead of scaling a cached layer', () => {
+    expect(zoomRenderStyles({ scale: 2.5, x: -120, y: 30 })).toEqual({
+      stageTransform: 'translate3d(-120px, 30px, 0)',
+      contentWidth: '250%',
+      contentHeight: '250%',
+    });
   });
 
   test('pans while zoomed in but resets pan at fit scale', () => {
