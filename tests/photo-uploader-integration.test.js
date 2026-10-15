@@ -21,6 +21,12 @@ describe('project photo category editing integration', () => {
     expect(photoUploaderSource).toContain("await updateProjectPhotoTag(options.projectId, photo.id, tag, null);");
   });
 
+  it('laat de volledige foto en annotatielaag op ware zoomgrootte renderen', () => {
+    expect(cssSource).toMatch(/\.pu-annotation-stage img\s*\{[^}]*max-width:\s*none;[^}]*max-height:\s*none;/s);
+    expect(photoUploaderSource).toContain('content.style.width = renderStyles.contentWidth');
+    expect(photoUploaderSource).toContain('content.style.height = renderStyles.contentHeight');
+  });
+
   it('heeft styling voor zichtbaar categorielabel en modal boven de lightbox', () => {
     expect(cssSource).toContain('.pu-lightbox-meta');
     expect(cssSource).toContain('.pu-lightbox-tag');

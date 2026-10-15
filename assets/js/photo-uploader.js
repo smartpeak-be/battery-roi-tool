@@ -9,6 +9,7 @@ import {
   nextPinchZoomTransform,
   nextZoomTransform,
   panZoomTransform,
+  zoomRenderStyles,
 } from './photo-lightbox-zoom.js';
 import {
   PHOTO_TAGS,
@@ -509,7 +510,15 @@ import {
       const stage = document.querySelector('#pu-lightbox [data-pu-annotation-stage]');
       if (!stage) return;
       const scale = state.zoom.scale || 1;
-      stage.style.transform = `translate3d(${state.zoom.x || 0}px, ${state.zoom.y || 0}px, 0) scale(${scale})`;
+      const img = stage.querySelector('[data-pu-lightbox-img]');
+      const canvas = stage.querySelector('[data-pu-annotation-canvas]');
+      const renderStyles = zoomRenderStyles(state.zoom);
+      stage.style.transform = renderStyles.stageTransform;
+      for (const content of [img, canvas]) {
+        if (!content) continue;
+        content.style.width = renderStyles.contentWidth;
+        content.style.height = renderStyles.contentHeight;
+      }
       stage.style.cursor = state.annotationMode ? 'crosshair' : (scale > 1 ? 'grab' : 'zoom-in');
       if (lb) lb.classList.toggle('is-zoomed', scale > 1);
       const zoomBtn = lb && lb.querySelector('.zoom');

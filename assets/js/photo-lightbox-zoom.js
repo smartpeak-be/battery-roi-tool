@@ -69,6 +69,16 @@ export function nextPinchZoomTransform({ start, startDistance, distance, startOr
   };
 }
 
+export function zoomRenderStyles(zoom) {
+  const normalized = normalizeZoom(zoom);
+  const percentage = `${normalized.scale * 100}%`;
+  return {
+    stageTransform: `translate3d(${normalized.x}px, ${normalized.y}px, 0)`,
+    contentWidth: percentage,
+    contentHeight: percentage,
+  };
+}
+
 export function panZoomTransform(current, delta) {
   const scale = clampLightboxScale(current?.scale ?? 1);
   if (scale === MIN_SCALE) return { scale: MIN_SCALE, x: 0, y: 0 };
