@@ -2118,7 +2118,10 @@ async function deleteSmartPeakReview(reviewId) {
   if (!reviewId) throw new Error('Review ontbreekt');
   const snap = await reviewsCol().doc(reviewId).get();
   const review = snap.exists ? snap.data() : null;
-  await reviewsCol().doc(reviewId).delete();
+  const batch = getDb().batch();
+  batch.delete(reviewsCol().doc(reviewId));
+  batch.delete(getDb().collection('publicReviews').doc(reviewId));
+  await batch.commit();
   if (review && review.requestId) {
     try {
       await reviewRequestsCol().doc(review.requestId).delete();
@@ -2144,12 +2147,37 @@ async function listSmartPeakReviews(limit = 50) {
 async function updateSmartPeakReviewStatus(reviewId, status, extra = {}) {
   const allowed = ['submitted', 'approved', 'published', 'rejected'];
   if (!allowed.includes(status)) throw new Error('Ongeldige reviewstatus');
-  await reviewsCol().doc(reviewId).set({
+  const reviewRef = reviewsCol().doc(reviewId);
+  const publicReviewRef = getDb().collection('publicReviews').doc(reviewId);
+  const reviewSnap = status === 'published' ? await reviewRef.get() : null;
+  const review = reviewSnap && reviewSnap.exists ? reviewSnap.data() : null;
+  const patch = {
     ...extra,
     status,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     moderatedBy: currentUserEmail() || 'unknown',
-  }, { merge: true });
+  };
+  const batch = getDb().batch();
+  if (status === 'published' && review && review.consentWebsite === true) {
+    const { buildPublicReviewProjection, hydrateReviewPhotosForPublication } = await import('./review-photo-publication.js');
+    const reviewPhotos = review.reviewPhotosPublic === true
+      ? await hydrateReviewPhotosForPublication(
+        review.reviewPhotos || [],
+        review.requestId,
+        path => getStorage().ref(path).getDownloadURL(),
+      )
+      : [];
+    if (review.reviewPhotosPublic === true) patch.reviewPhotos = reviewPhotos;
+    batch.set(publicReviewRef, buildPublicReviewProjection(review, {
+      publishedLabel: extra.publishedLabel,
+      publishedAt: extra.publishedAt || firebase.firestore.FieldValue.serverTimestamp(),
+      reviewPhotos,
+    }));
+  } else {
+    batch.delete(publicReviewRef);
+  }
+  batch.set(reviewRef, patch, { merge: true });
+  await batch.commit();
 }
 
 // ─── SETTINGS ────────────────────────────────────────────────────────────────

@@ -219,9 +219,6 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
     }
 
-    function isPublishedWebsiteReview() {
-      return resource.data.status == 'published' && resource.data.consentWebsite == true;
-    }
 
     function isValidReviewCreate() {
       let data = request.resource.data;
@@ -319,16 +316,21 @@ service cloud.firestore {
     // ─── Reviews (public request + submitted reviews, moderated publishing) ─
     match /reviewRequests/{requestId} {
       allow get:    if isWhitelisted() || isPublicReviewRequestGet();
-      allow list:   if isSignedIn();
+      allow list:   if isWhitelisted();
       allow create: if isSignedIn() && isValidReviewRequestCreate();
       allow update: if isWhitelisted() || isPublicReviewRequestSubmissionUpdate();
       allow delete: if isWhitelisted();
     }
 
     match /reviews/{reviewId} {
-      allow get, list: if isWhitelisted() || isPublishedWebsiteReview();
+      allow get, list: if isWhitelisted();
       allow create:   if isValidReviewCreate();
       allow update, delete: if isWhitelisted();
+    }
+
+    match /publicReviews/{reviewId} {
+      allow read: if true;
+      allow write: if isWhitelisted();
     }
 
     // ─── Config ──────────────────────────────────────────────

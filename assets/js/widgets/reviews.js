@@ -146,11 +146,7 @@
     root.innerHTML = '<div class="sp-review-widget"><p class="sp-review-widget__empty">Reviews laden…</p></div>';
     const body = {
       structuredQuery: {
-        from: [{ collectionId: 'reviews' }],
-        where: { compositeFilter: { op: 'AND', filters: [
-          { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'published' } } },
-          { fieldFilter: { field: { fieldPath: 'consentWebsite' }, op: 'EQUAL', value: { booleanValue: true } } }
-        ] } },
+        from: [{ collectionId: 'publicReviews' }],
         limit,
       }
     };
