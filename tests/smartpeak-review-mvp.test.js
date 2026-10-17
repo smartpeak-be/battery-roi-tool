@@ -90,8 +90,8 @@ describe('SmartPeak review MVP', () => {
     expect(embedPage).toContain('reviews-widget.html');
     expect(widgetOnlyPage).toContain('<div id="smartpeak-reviews"></div>');
     expect(widgetOnlyPage).toContain('assets/js/widgets/reviews.js');
-    expect(widget).toContain("collectionId: 'reviews'");
-    expect(widget).toContain("stringValue: 'published'");
+    expect(widget).toContain("collectionId: 'publicReviews'");
+    expect(widget).not.toContain("collectionId: 'reviews'");
     expect(widget).toContain('sp-review-widget__track');
     expect(widget).toContain('data-sp-review-next');
     expect(widget).toContain('scoreRows(review)');
@@ -103,7 +103,8 @@ describe('SmartPeak review MVP', () => {
     expect(widget).toContain('sp-review-widget__photo');
     expect(widget).toContain('reviewPhotosPublic');
     expect(rules).toContain('match /reviewRequests/{requestId}');
-    expect(rules).toContain('allow list:   if isSignedIn();');
+    expect(rules).toContain('allow list:   if isWhitelisted();');
+    expect(rules).not.toContain('allow list:   if isSignedIn();');
     expect(rules).toContain('allow create: if isSignedIn() && isValidReviewRequestCreate();');
     expect(rules).toContain('data.createdBy == signedInEmail()');
     expect(rules).toContain('match /reviews/{reviewId}');
@@ -114,6 +115,7 @@ describe('SmartPeak review MVP', () => {
     expect(rules).toContain('data.ratingCommunication is number');
     expect(rules).toContain('get(reviewRequestPath(data.requestId)).data.submittedAt == null');
     expect(rules).toContain('resource.data.submittedAt == null');
-    expect(rules).toContain('isPublishedWebsiteReview');
+    expect(rules).toContain('allow get, list: if isWhitelisted();');
+    expect(rules).toContain('match /publicReviews/{reviewId}');
   });
 });
