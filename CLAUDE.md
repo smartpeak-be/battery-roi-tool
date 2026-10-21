@@ -226,7 +226,7 @@ ok transitie live update. Drawer doet hetzelfde maar scoped aan
 drawer-open lifecycle (subscribe bij `openDrawer`, unsubscribe bij
 `closeDrawer` én `hidden.bs.offcanvas`).
 
-**Cloud Function package** (`functions/`): Node 20 runtime, ESM
+**Cloud Function package** (`functions/`): Node 22 runtime, ESM
 (`"type": "module"` in `functions/package.json` voor vitest mock
 compatibility). Deploy: `cd functions && npm install && firebase deploy --only functions:ocrSerial`.
 Service-account heeft Vision API + Firestore + Storage rollen nodig. Geen
