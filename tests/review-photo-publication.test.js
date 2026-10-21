@@ -130,6 +130,7 @@ describe('review photo publication', () => {
         inverterPowerW: 3000,
         storageKwh: 10,
       },
+      consentSocials: false,
       reviewPhotosPublic: false,
       reviewPhotos: [],
       publishedLabel: 'Geverifieerde SmartPeak klant',
