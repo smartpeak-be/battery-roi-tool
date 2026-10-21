@@ -45,6 +45,7 @@ export function buildPublicReviewProjection(review, publication = {}) {
     ratingFinish: rating(review?.ratingFinish),
     shortReview: cleanString(review?.shortReview, 1200),
     solutionSummary: publicSolutionSummary(review?.solutionSummary),
+    consentSocials: review?.consentSocials === true,
     reviewPhotosPublic: photosPublic,
     reviewPhotos: photosPublic && Array.isArray(publication.reviewPhotos) ? publication.reviewPhotos : [],
     publishedLabel: cleanString(publication.publishedLabel, 160),
