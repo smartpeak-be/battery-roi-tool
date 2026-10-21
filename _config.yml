@@ -4,7 +4,6 @@ exclude:
   - _config.yml
   - CLAUDE.md
   - README.md
-  - dashboard-logged-in
   - docs/
   - e2e/
   - functions/
