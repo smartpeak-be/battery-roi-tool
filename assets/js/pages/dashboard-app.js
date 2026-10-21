@@ -125,17 +125,17 @@ function rowHTML(p, isDeleted) {
   const updated = fmtDate(p.updatedAt);
   const editBtn = isDeleted
     ? ''
-    : `<a class="btn btn-sm btn-outline-secondary editBtn" data-id="${p.id}" href="project-edit.html?project=${p.id}" title="Bewerk" aria-label="Bewerk project"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></a>`;
+    : `<a class="btn btn-sm btn-outline-secondary editBtn" data-id="${escapeHtml(p.id)}" href="project-edit.html?project=${escapeHtml(p.id)}" title="Bewerk" aria-label="Bewerk project"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></a>`;
   const calcBtn = (!isDeleted && p.lastCalcRun && p.lastCalcRun.calculatedAt)
-    ? `<a class="btn btn-sm btn-outline-secondary calcBtn" data-id="${p.id}" href="index.html?project=${p.id}#results" title="Open berekening" aria-label="Open berekening"><i class="fa-solid fa-calculator" aria-hidden="true"></i></a>`
+    ? `<a class="btn btn-sm btn-outline-secondary calcBtn" data-id="${escapeHtml(p.id)}" href="index.html?project=${escapeHtml(p.id)}#results" title="Open berekening" aria-label="Open berekening"><i class="fa-solid fa-calculator" aria-hidden="true"></i></a>`
     : '';
   const reviewBtn = isDeleted
     ? ''
-    : `<button type="button" class="btn btn-sm btn-outline-primary reviewLinkBtn" data-id="${p.id}" title="Reviewlink maken/kopiëren" aria-label="Reviewlink maken/kopiëren"><i class="fa-solid fa-star" aria-hidden="true"></i></button>`;
+    : `<button type="button" class="btn btn-sm btn-outline-primary reviewLinkBtn" data-id="${escapeHtml(p.id)}" title="Reviewlink maken/kopiëren" aria-label="Reviewlink maken/kopiëren"><i class="fa-solid fa-star" aria-hidden="true"></i></button>`;
   const action  = isDeleted
-    ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreBtn" data-id="${p.id}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
-       <button type="button" class="btn btn-sm btn-outline-danger permdelBtn"   data-id="${p.id}" data-name="${escapeHtml(getProjectLabel(p))}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
-    : `<button type="button" class="btn btn-sm btn-outline-danger deleteBtn"    data-id="${p.id}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
+    ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreBtn" data-id="${escapeHtml(p.id)}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
+       <button type="button" class="btn btn-sm btn-outline-danger permdelBtn"   data-id="${escapeHtml(p.id)}" data-name="${escapeHtml(getProjectLabel(p))}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
+    : `<button type="button" class="btn btn-sm btn-outline-danger deleteBtn"    data-id="${escapeHtml(p.id)}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
   const email  = currentUserEmail();
   const chat   = hasUnreadComments(p, email)
     ? `<span class="chat-indicator unread" role="img" aria-label="Nieuwe opmerking(en) van collega" title="Nieuwe opmerking(en) van collega"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i></span>`
@@ -154,8 +154,8 @@ function rowHTML(p, isDeleted) {
     ? `<span class="row-warning" role="img" aria-label="Bebat nog te registreren" title="${bebat.pending} batterijserienummer(s) nog Bebat registreren."><i class="fa-solid fa-recycle icon-warn" aria-hidden="true"></i></span>`
     : '';
   return `
-    <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${p.id}">
-      <td>${chat}${warn}${warnOfferte}${bebatWarn}<button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold projectNameBtn" data-id="${p.id}">${escapeHtml(getProjectLabel(p))}</button></td>
+    <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${escapeHtml(p.id)}">
+      <td>${chat}${warn}${warnOfferte}${bebatWarn}<button type="button" class="btn btn-link p-0 text-decoration-none fw-semibold projectNameBtn" data-id="${escapeHtml(p.id)}">${escapeHtml(getProjectLabel(p))}</button></td>
       <td class="d-none d-sm-table-cell">${escapeHtml(p.customerName || '')}</td>
       <td>${statusChipHTML(p.status, p.id)}</td>
       <td class="d-none d-sm-table-cell text-muted small">${updated}</td>
@@ -347,8 +347,8 @@ function kanbanCardHTML(p) {
   const bebat = bebatSummaryForProject(p);
   const bebatWarn = bebat.pending > 0 ? `<span class="row-warning" title="Bebat nog te registreren"><i class="fa-solid fa-recycle icon-warn" aria-hidden="true"></i></span>` : '';
   return `
-    <div class="kanban-card" draggable="true" data-id="${p.id}">
-      <div class="kanban-card-title" data-id="${p.id}">${chat}${warn}${warnOfferte}${bebatWarn}${escapeHtml(getProjectLabel(p))}</div>
+    <div class="kanban-card" draggable="true" data-id="${escapeHtml(p.id)}">
+      <div class="kanban-card-title" data-id="${escapeHtml(p.id)}">${chat}${warn}${warnOfferte}${bebatWarn}${escapeHtml(getProjectLabel(p))}</div>
       <div class="kanban-card-customer">${escapeHtml(p.customerName || '')}</div>
       <div class="kanban-card-footer">
         ${statusChipHTML(p.status, p.id)}
@@ -1602,8 +1602,8 @@ function renderDrawer(project) {
 
   // Actions
   const calcHref = project.lastCalcRun && project.lastCalcRun.calculatedAt
-    ? `index.html?project=${project.id}#results`
-    : `index.html?project=${project.id}`;
+    ? `index.html?project=${escapeHtml(project.id)}#results`
+    : `index.html?project=${escapeHtml(project.id)}`;
   sections.push(`
     <section class="border-bottom pb-3 mb-3">
       <div class="d-grid d-md-flex gap-2">
@@ -1611,7 +1611,7 @@ function renderDrawer(project) {
         <a class="btn btn-outline-primary flex-md-grow-1" href="schema/?project=${encodeURIComponent(project.id)}"><i class="fa-solid fa-diagram-project me-1" aria-hidden="true"></i> Elektrische schema's</a>
         <button type="button" class="btn btn-outline-primary flex-md-grow-1" id="drawerReviewLinkBtn"><i class="fa-solid fa-star me-1" aria-hidden="true"></i> Reviewlink</button>
         <button type="button" class="btn btn-outline-primary flex-md-grow-1" id="drawerClosingDossierBtn"><i class="fa-solid fa-file-pdf me-1" aria-hidden="true"></i> Afsluitdossier</button>
-        <a class="btn btn-outline-primary flex-md-grow-1" href="project-edit.html?project=${project.id}"><i class="fa-solid fa-pen-to-square me-1" aria-hidden="true"></i> Bewerk project</a>
+        <a class="btn btn-outline-primary flex-md-grow-1" href="project-edit.html?project=${escapeHtml(project.id)}"><i class="fa-solid fa-pen-to-square me-1" aria-hidden="true"></i> Bewerk project</a>
         <button type="button" class="btn btn-outline-danger flex-md-grow-1" id="drawerDeleteBtn"><i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Verwijderen</button>
       </div>
     </section>
@@ -1997,15 +1997,15 @@ function leadRowHTML(l, isDeleted) {
   const statusLabel = l.status === 'hot_lead' ? 'Hot lead' : 'Cold lead';
   const statusColor = l.status === 'hot_lead' ? '#dc2626' : '#6b7a8d';
   const resultLink = l.result
-    ? `<a href="lead-result.html?r=${l.id}" class="btn btn-sm btn-outline-secondary" title="Bekijk resultaat" aria-label="Bekijk resultaat" target="_blank"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></a>`
+    ? `<a href="lead-result.html?r=${escapeHtml(l.id)}" class="btn btn-sm btn-outline-secondary" title="Bekijk resultaat" aria-label="Bekijk resultaat" target="_blank"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></a>`
     : '';
   const action = isDeleted
-    ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreLeadBtn" data-id="${l.id}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
-       <button type="button" class="btn btn-sm btn-outline-danger permdelLeadBtn" data-id="${l.id}" data-name="${escapeHtml(l.customerName || '')}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
-    : `<button type="button" class="btn btn-sm btn-outline-primary convertLeadBtn" data-id="${l.id}" title="Maak project aan" aria-label="Maak project aan"><i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i></button>
-       <button type="button" class="btn btn-sm btn-outline-danger deleteLeadBtn" data-id="${l.id}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
+    ? `<button type="button" class="btn btn-sm btn-outline-secondary restoreLeadBtn" data-id="${escapeHtml(l.id)}" title="Herstellen" aria-label="Herstellen"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
+       <button type="button" class="btn btn-sm btn-outline-danger permdelLeadBtn" data-id="${escapeHtml(l.id)}" data-name="${escapeHtml(l.customerName || '')}" title="Definitief verwijderen" aria-label="Definitief verwijderen"><i class="fa-solid fa-circle-xmark" aria-hidden="true"></i></button>`
+    : `<button type="button" class="btn btn-sm btn-outline-primary convertLeadBtn" data-id="${escapeHtml(l.id)}" title="Maak project aan" aria-label="Maak project aan"><i class="fa-solid fa-arrow-right-to-bracket" aria-hidden="true"></i></button>
+       <button type="button" class="btn btn-sm btn-outline-danger deleteLeadBtn" data-id="${escapeHtml(l.id)}" title="Verwijderen" aria-label="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
   return `
-    <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${l.id}">
+    <tr class="${isDeleted ? 'text-muted opacity-50' : ''}" data-id="${escapeHtml(l.id)}">
       <td>${escapeHtml(l.customerName || '')}</td>
       <td class="d-none d-sm-table-cell text-break"><a href="mailto:${escapeHtml(l.email || '')}">${escapeHtml(l.email || '')}</a></td>
       <td><span class="badge" style="background:${statusColor};">${statusLabel}</span></td>
