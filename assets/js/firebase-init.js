@@ -636,6 +636,30 @@ async function setProjectCsv(id, csvData) {
 // in csvUpload). Caller is responsible for stripping dailyCompact.
 // PDF cascade: any config type that was previously selected but is absent from the new
 // selectedConfigTypes AND had an offertes entry is purged (Firestore field + Storage blob).
+// Decides what happens to the offerte entries when a calculation is saved with a new set of
+// configs. Reopening a project turns catalog configs (PC_…) into editable compositions with a
+// new type key; `typeAliases` ({ newType: oldType }) carries the offerte over to that key
+// instead of deleting it. An offerte that already has a Billit offer or invoices is never
+// deleted automatically: it is kept (invisible) so nothing sent to a customer is lost.
+function planCalcRunOfferteChanges({ prevSelected = [], newSelected = [], offertes = {}, typeAliases = {} }) {
+  const moves = [];
+  const movedFrom = new Set();
+  for (const [to, from] of Object.entries(typeAliases || {})) {
+    if (!newSelected.includes(to) || newSelected.includes(from)) continue;
+    if (!offertes[from] || offertes[to] || movedFrom.has(from)) continue;
+    moves.push([from, to]);
+    movedFrom.add(from);
+  }
+  const removed = prevSelected.filter(t =>
+    !newSelected.includes(t) && !movedFrom.has(t) && offertes[t] && offertes[t].storagePath);
+  const hasBillitData = (o) => Boolean(o.billitOrderId) || (Array.isArray(o.billitInvoices) && o.billitInvoices.length > 0);
+  return {
+    moves,
+    deletes: removed.filter(t => !hasBillitData(offertes[t])),
+    kept: removed.filter(t => hasBillitData(offertes[t])),
+  };
+}
+
 async function saveLastCalcRun(projectId, saved) {
   if (!projectId || !saved) throw new Error('saveLastCalcRun: projectId + saved vereist');
 
@@ -654,17 +678,14 @@ async function saveLastCalcRun(projectId, saved) {
     results,
   };
 
-  // Determine which previously-selected types that hold a PDF are NOT in the new set.
   const prevSelected = (data.lastCalcRun && data.lastCalcRun.inputs &&
                         Array.isArray(data.lastCalcRun.inputs.selectedConfigTypes))
     ? data.lastCalcRun.inputs.selectedConfigTypes : [];
   const newSelected  = Array.isArray(inputs.selectedConfigTypes)
     ? inputs.selectedConfigTypes : [];
   const offertes     = data.offertes || {};
-  const removedWithPdf = prevSelected.filter(t =>
-    !newSelected.includes(t) && offertes[t] && offertes[t].storagePath);
+  const plan = planCalcRunOfferteChanges({ prevSelected, newSelected, offertes, typeAliases: saved.typeAliases });
 
-  // Firestore update: lastCalcRun + updatedAt + PDF cascade field-deletes.
   const update = {
     lastCalcRun,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -678,8 +699,15 @@ async function saveLastCalcRun(projectId, saved) {
     update.manualConfigs = firebase.firestore.FieldValue.delete();
   }
 
-  for (const t of removedWithPdf) {
+  for (const [from, to] of plan.moves) {
+    update[`offertes.${to}`] = offertes[from];
+    update[`offertes.${from}`] = firebase.firestore.FieldValue.delete();
+  }
+  for (const t of plan.deletes) {
     update[`offertes.${t}`] = firebase.firestore.FieldValue.delete();
+  }
+  if (plan.kept.length) {
+    console.warn('Offerte met Billit-gegevens niet verwijderd bij herberekenen:', plan.kept);
   }
 
   // Also clean up manualConfigs entries for removed manual types.
@@ -692,7 +720,7 @@ async function saveLastCalcRun(projectId, saved) {
   await ref.update(update);
 
   // Best-effort Storage blob cleanup for cascaded PDFs.
-  for (const t of removedWithPdf) {
+  for (const t of plan.deletes) {
     try { await getStorage().ref(offertes[t].storagePath).delete(); }
     catch (e) { console.warn(`Offerte blob (${t}) verwijderen mislukt`, e); }
   }
