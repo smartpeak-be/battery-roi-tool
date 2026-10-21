@@ -259,7 +259,7 @@ function _applyLoadedState(state, showBanner) {
     const banner = document.getElementById('loadedBanner');
     banner.innerHTML = `<div class="alert alert-info">
       📥 <div><strong>Geladen vanuit opgeslagen berekening.</strong><br>
-      EAN: <strong>${r.eanCode || 'onbekend'}</strong> &nbsp;|&nbsp; Periode: <strong>${formatDate(r.windowStart)} – ${formatDate(r.lastDate)}</strong> &nbsp;|&nbsp; ${r.daysInWindow} dagen<br>
+      EAN: <strong>${escapeHtml(r.eanCode || 'onbekend')}</strong> &nbsp;|&nbsp; Periode: <strong>${formatDate(r.windowStart)} – ${formatDate(r.lastDate)}</strong> &nbsp;|&nbsp; ${r.daysInWindow} dagen<br>
       <span style="font-size:0.85rem;margin-top:4px;display:inline-block;">Upload een nieuwe CSV en klik op <em>Bereken ROI</em> om opnieuw te berekenen met actuele data.</span></div></div>`;
     banner.style.display = '';
   }
@@ -1255,11 +1255,11 @@ function renderSummaryCard(d) {
   document.getElementById('summaryContent').innerHTML = `
     <div class="summary-grid">
       <div class="summary-item"><span class="s-label">EAN-code</span>
-        <span class="s-value accent" style="font-size:0.92rem;word-break:break-all;">${d.eanCode || 'onbekend'}</span></div>
+        <span class="s-value accent" style="font-size:0.92rem;word-break:break-all;">${escapeHtml(d.eanCode || 'onbekend')}</span></div>
       <div class="summary-item"><span class="s-label">Meternummer</span>
-        <span class="s-value">${d.meterNr || 'onbekend'}</span></div>
+        <span class="s-value">${escapeHtml(d.meterNr || 'onbekend')}</span></div>
       <div class="summary-item"><span class="s-label">Metertype</span>
-        <span class="s-value">${d.meterType || 'onbekend'}</span></div>
+        <span class="s-value">${escapeHtml(d.meterType || 'onbekend')}</span></div>
       <hr class="summary-divider" />
       <div class="summary-item"><span class="s-label">Volledige CSV periode</span>
         <span class="s-value" style="font-size:0.92rem;">${formatDate(d.firstDate)} – ${formatDate(d.lastDate)}</span></div>
