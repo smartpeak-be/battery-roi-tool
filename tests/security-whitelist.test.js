@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { LEAD_CONTACT_RECIPIENTS as SERVER_CONTACT_RECIPIENTS } from '../functions/lead-mails.js';
 
 const ACCESS_WHITELIST = ['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be'];
 const LEAD_CONTACT_RECIPIENTS = ['kevin@smartpeak.be', 'ruben@smartpeak.be'];
@@ -22,7 +23,8 @@ describe('security whitelist drift guard', () => {
     expect(emailsIn(path)).toEqual([...ACCESS_WHITELIST].sort());
   });
 
-  it('lead-result contact mails go to the SmartPeak task users', () => {
-    expect(emailsIn('assets/js/pages/lead-result-app.js')).toEqual([...LEAD_CONTACT_RECIPIENTS].sort());
+  it('lead contact mails go to the SmartPeak mailboxes and are built on the server only', () => {
+    expect(emailsIn('assets/js/pages/lead-result-app.js')).toEqual([]);
+    expect(SERVER_CONTACT_RECIPIENTS).toEqual(LEAD_CONTACT_RECIPIENTS);
   });
 });

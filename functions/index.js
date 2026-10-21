@@ -5,6 +5,7 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import sanitizeHtml from 'sanitize-html';
+import { leadContactMailFor, leadResultMailFor } from './lead-mails.js';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -414,6 +415,75 @@ export const ocrSerial = functions.firestore.onDocumentWritten(
     concurrency: 1,
   },
   handleOcrSerial,
+);
+
+// Lead mails are queued here, never by clients: the Trigger Email extension sends every
+// document in `mail`, so a client-written document could send any content to anyone.
+// create() with a fixed ID per lead and kind makes retries and duplicate events harmless.
+const FIRESTORE_ALREADY_EXISTS = 6;
+
+export async function queueMail(mail, firestore = db) {
+  if (!mail) return false;
+  try {
+    await firestore.collection('mail').doc(mail.id).create({
+      ...mail.doc,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return true;
+  } catch (e) {
+    if (e?.code === FIRESTORE_ALREADY_EXISTS) return false;
+    throw e;
+  }
+}
+
+// Anyone can create a lead, so cap the result mails per address: a burst of leads with
+// someone else's address must not turn into a burst of SmartPeak mails to that person.
+const RESULT_MAILS_PER_ADDRESS_PER_DAY = 3;
+
+export async function recentResultMailCount(to, firestore = db, now = Date.now()) {
+  const snap = await firestore.collection('mail').where('to', '==', to).limit(20).get();
+  const since = now - 24 * 3600 * 1000;
+  return snap.docs.filter(d => {
+    const data = d.data();
+    const created = data.createdAt?.toMillis?.() ?? 0;
+    return data.kind === 'lead_result' && created >= since;
+  }).length;
+}
+
+async function queueLogged(label, task) {
+  try {
+    await task();
+  } catch (e) {
+    console.error(`Lead mail ${label} niet verstuurd`, e);
+  }
+}
+
+export const leadMailsOnCreate = functions.firestore.onDocumentCreated(
+  { document: 'leads/{leadId}', region: 'europe-west1' },
+  async (event) => {
+    const lead = event.data?.data();
+    const { leadId } = event.params;
+    await queueLogged(`lead_result_${leadId}`, async () => {
+      const mail = leadResultMailFor(leadId, lead);
+      if (!mail) return;
+      if (await recentResultMailCount(mail.doc.to) >= RESULT_MAILS_PER_ADDRESS_PER_DAY) {
+        console.warn(`Resultaatmail voor lead ${leadId} overgeslagen: limiet per adres bereikt`);
+        return;
+      }
+      await queueMail(mail);
+    });
+    await queueLogged(`lead_contact_${leadId}`, () => queueMail(leadContactMailFor(leadId, null, lead)));
+  },
+);
+
+export const leadMailsOnUpdate = functions.firestore.onDocumentUpdated(
+  { document: 'leads/{leadId}', region: 'europe-west1' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    const { leadId } = event.params;
+    await queueLogged(`lead_contact_${leadId}`, () => queueMail(leadContactMailFor(leadId, before, after)));
+  },
 );
 
 function setCors(req, res) {
