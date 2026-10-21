@@ -436,13 +436,43 @@ export async function queueMail(mail, firestore = db) {
   }
 }
 
+// Anyone can create a lead, so cap the result mails per address: a burst of leads with
+// someone else's address must not turn into a burst of SmartPeak mails to that person.
+const RESULT_MAILS_PER_ADDRESS_PER_DAY = 3;
+
+export async function recentResultMailCount(to, firestore = db, now = Date.now()) {
+  const snap = await firestore.collection('mail').where('to', '==', to).limit(20).get();
+  const since = now - 24 * 3600 * 1000;
+  return snap.docs.filter(d => {
+    const data = d.data();
+    const created = data.createdAt?.toMillis?.() ?? 0;
+    return data.kind === 'lead_result' && created >= since;
+  }).length;
+}
+
+async function queueLogged(label, task) {
+  try {
+    await task();
+  } catch (e) {
+    console.error(`Lead mail ${label} niet verstuurd`, e);
+  }
+}
+
 export const leadMailsOnCreate = functions.firestore.onDocumentCreated(
   { document: 'leads/{leadId}', region: 'europe-west1' },
   async (event) => {
     const lead = event.data?.data();
     const { leadId } = event.params;
-    await queueMail(leadResultMailFor(leadId, lead));
-    await queueMail(leadContactMailFor(leadId, null, lead));
+    await queueLogged(`lead_result_${leadId}`, async () => {
+      const mail = leadResultMailFor(leadId, lead);
+      if (!mail) return;
+      if (await recentResultMailCount(mail.doc.to) >= RESULT_MAILS_PER_ADDRESS_PER_DAY) {
+        console.warn(`Resultaatmail voor lead ${leadId} overgeslagen: limiet per adres bereikt`);
+        return;
+      }
+      await queueMail(mail);
+    });
+    await queueLogged(`lead_contact_${leadId}`, () => queueMail(leadContactMailFor(leadId, null, lead)));
   },
 );
 
@@ -451,7 +481,8 @@ export const leadMailsOnUpdate = functions.firestore.onDocumentUpdated(
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
-    await queueMail(leadContactMailFor(event.params.leadId, before, after));
+    const { leadId } = event.params;
+    await queueLogged(`lead_contact_${leadId}`, () => queueMail(leadContactMailFor(leadId, before, after)));
   },
 );
 

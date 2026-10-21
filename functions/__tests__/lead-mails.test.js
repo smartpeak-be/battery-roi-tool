@@ -35,3 +35,11 @@ describe('lead contact mail', () => {
     expect(leadContactMailFor('id1', null, { status: 'cold_lead' })).toBeNull();
   });
 });
+
+describe('addresses', () => {
+  it('only accepts one plain address', () => {
+    for (const bad of ['a@b.be,c@d.be', 'a@b.be?bcc=x@y.be', 'Jan <a@b.be>', 'a@b']) {
+      expect(leadResultMailFor('id', { ...analysisLead, email: bad })).toBeNull();
+    }
+  });
+});

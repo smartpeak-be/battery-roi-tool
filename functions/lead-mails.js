@@ -10,7 +10,10 @@ export const LEAD_RESULT_SUBJECT = 'Je batterij-analyse is klaar SmartPeak';
 export const LEAD_CONTACT_RECIPIENTS = ['kevin@smartpeak.be', 'ruben@smartpeak.be'];
 const DASHBOARD_URL = 'https://smartpeak-be.github.io/battery-roi-tool/dashboard.html';
 const COMPANIES_LINE = 'SmartPeak opereert onder Blox-it BV (BE0730.696.050) en LED’s Repair (BE1035.486.678).';
-const EMAIL_PATTERN = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
+// Deliberately strict: one plain address, nothing a mail library could read as a list or a
+// mailto: link could read as parameters.
+const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+export const isPlainEmail = (value) => EMAIL_PATTERN.test(String(value || '').trim());
 
 const oneLine = (value, max) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
@@ -87,7 +90,7 @@ export function buildLeadContactMailHtml(lead, leadId) {
   const row = (label, value) => value
     ? `<tr><td style="padding:4px 12px 4px 0;color:#6b7a8d;white-space:nowrap;vertical-align:top">${label}</td><td style="padding:4px 0">${value}</td></tr>`
     : '';
-  const email = escapeHtml(lead.email || '');
+  const email = isPlainEmail(lead.email) ? escapeHtml(String(lead.email).trim()) : '';
   const notes = String(lead.notes || '').trim();
   const source = lead.csvDailyCompact ? 'de batterij-analyse' : 'de website';
 
@@ -112,7 +115,7 @@ export function buildLeadContactMailHtml(lead, leadId) {
 // A lead from the analysis wizard (lead.html or the website embed) carries consumption data;
 // a plain website contact request does not and gets no result mail.
 export function leadResultMailFor(leadId, lead) {
-  if (!lead || !lead.csvDailyCompact || !EMAIL_PATTERN.test(String(lead.email || ''))) return null;
+  if (!lead || !lead.csvDailyCompact || !isPlainEmail(lead.email)) return null;
   return {
     id: `lead_result_${leadId}`,
     doc: {
