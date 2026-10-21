@@ -1842,19 +1842,6 @@ async function updateLeadToHot(leadId) {
   });
 }
 
-/** Write a document to the mail collection (triggers Firebase email extension). */
-async function createMailDoc(mailData) {
-  const db = getDb();
-  if (!mailData || !mailData.kind || !mailData.leadId) {
-    throw new Error('Mail mist verplichte metadata.');
-  }
-  const mailId = `${mailData.kind}_${mailData.leadId}`;
-  await db.collection('mail').doc(mailId).set({
-    ...mailData,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-  });
-}
-
 /**
  * Convert a lead into a project. Creates a new project doc with data from the lead.
  * Returns the new project ID.

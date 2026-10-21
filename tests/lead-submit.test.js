@@ -7,7 +7,6 @@ import {
   loadProductConfigs,
   submitLeadAnalysis
 } from '../assets/js/lead-submit.js';
-import { LEAD_RESULT_SUBJECT, buildLeadResultMailHtml } from '../assets/js/lead-mail.js';
 
 const CSV = readFileSync(new URL('../e2e/fixtures/test-fluvius.csv', import.meta.url), 'utf8');
 const BASE = 'https://firestore.test/v1/projects/p/databases/(default)/documents';
@@ -107,7 +106,7 @@ describe('buildLeadDoc', () => {
 });
 
 describe('submitLeadAnalysis', () => {
-  it('creates the lead first and then the result mail', async () => {
+  it('creates only the lead; the server queues the result mail', async () => {
     const { commits, fetchImpl } = fakeFirestore();
     const { leadId, resultUrl } = await submitLeadAnalysis(
       { csvText: CSV, name: 'Test', email: 'test@example.be', source: '/batterij-iets-voor-mij/' },
@@ -115,7 +114,7 @@ describe('submitLeadAnalysis', () => {
     );
     expect(leadId).toMatch(/^[A-Za-z0-9]{20}$/);
     expect(resultUrl).toBe(`https://tool.test/lead-result.html?r=${leadId}`);
-    expect(commits).toHaveLength(2);
+    expect(commits).toHaveLength(1);
 
     const [lead] = commits[0].writes;
     expect(lead.update.name).toBe(`projects/p/databases/(default)/documents/leads/${leadId}`);
@@ -134,14 +133,6 @@ describe('submitLeadAnalysis', () => {
     ]);
     // Only Zendure configs are proposed, as in lead.html.
     expect(JSON.stringify(f.result)).not.toContain('MARVE');
-
-    const [mail] = commits[1].writes;
-    expect(mail.update.name).toBe(`projects/p/databases/(default)/documents/mail/lead_result_${leadId}`);
-    const m = mail.update.fields;
-    expect(m.kind).toEqual({ stringValue: 'lead_result' });
-    expect(m.to).toEqual({ stringValue: 'test@example.be' });
-    expect(m.message.mapValue.fields.subject).toEqual({ stringValue: LEAD_RESULT_SUBJECT });
-    expect(m.message.mapValue.fields.html.stringValue).toContain(resultUrl);
   });
 
   it('refuses an invalid CSV before writing anything', async () => {
@@ -151,23 +142,5 @@ describe('submitLeadAnalysis', () => {
       { baseUrl: BASE, fetchImpl, resultPageUrl: 'https://tool.test/lead-result.html' }
     )).rejects.toThrow(/Verplichte kolommen/);
     expect(commits).toHaveLength(0);
-  });
-});
-
-describe('buildLeadResultMailHtml', () => {
-  it('escapes the name and lists the defaults that were used', () => {
-    const html = buildLeadResultMailHtml({
-      customerName: '<b>Jan</b>',
-      resultUrl: 'https://tool.test/lead-result.html?r=abc',
-      defaultsUsed: { pvInverterKw: true, pricePerKwh: true, houseAgeOver10Years: true }
-    });
-    expect(html).toContain('Hallo &lt;b&gt;Jan&lt;/b&gt;,');
-    expect(html).toContain('omvormervermogen (3,5 kW), energiekost (0,34 EUR/kWh), BTW-tarief (21%)');
-    expect(html).toContain('href="https://tool.test/lead-result.html?r=abc"');
-  });
-
-  it('leaves out the defaults note when everything was filled in', () => {
-    const html = buildLeadResultMailHtml({ customerName: 'Jan', resultUrl: 'x', defaultsUsed: {} });
-    expect(html).not.toContain('gemiddelde waarden');
   });
 });

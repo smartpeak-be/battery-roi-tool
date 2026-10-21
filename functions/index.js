@@ -5,6 +5,7 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import sanitizeHtml from 'sanitize-html';
+import { leadContactMailFor, leadResultMailFor } from './lead-mails.js';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -414,6 +415,44 @@ export const ocrSerial = functions.firestore.onDocumentWritten(
     concurrency: 1,
   },
   handleOcrSerial,
+);
+
+// Lead mails are queued here, never by clients: the Trigger Email extension sends every
+// document in `mail`, so a client-written document could send any content to anyone.
+// create() with a fixed ID per lead and kind makes retries and duplicate events harmless.
+const FIRESTORE_ALREADY_EXISTS = 6;
+
+export async function queueMail(mail, firestore = db) {
+  if (!mail) return false;
+  try {
+    await firestore.collection('mail').doc(mail.id).create({
+      ...mail.doc,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return true;
+  } catch (e) {
+    if (e?.code === FIRESTORE_ALREADY_EXISTS) return false;
+    throw e;
+  }
+}
+
+export const leadMailsOnCreate = functions.firestore.onDocumentCreated(
+  { document: 'leads/{leadId}', region: 'europe-west1' },
+  async (event) => {
+    const lead = event.data?.data();
+    const { leadId } = event.params;
+    await queueMail(leadResultMailFor(leadId, lead));
+    await queueMail(leadContactMailFor(leadId, null, lead));
+  },
+);
+
+export const leadMailsOnUpdate = functions.firestore.onDocumentUpdated(
+  { document: 'leads/{leadId}', region: 'europe-west1' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    await queueMail(leadContactMailFor(event.params.leadId, before, after));
+  },
 );
 
 function setCors(req, res) {

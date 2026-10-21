@@ -24,10 +24,6 @@ service cloud.firestore {
       return id is string && id.matches('^[A-Za-z0-9]{20}$');
     }
 
-    function leadPath(leadId) {
-      return /databases/$(database)/documents/leads/$(leadId);
-    }
-
     function isShortString(value, maxLen) {
       return value is string && value.size() > 0 && value.size() <= maxLen;
     }
@@ -138,41 +134,6 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'hotLeadAt'])
         && request.resource.data.status == 'hot_lead'
         && request.resource.data.hotLeadAt == request.time;
-    }
-
-    function hasValidMailEnvelope(kind) {
-      let data = request.resource.data;
-      return data.keys().hasOnly(['kind', 'leadId', 'to', 'message', 'createdAt'])
-        && data.kind == kind
-        && isAutoId(data.leadId)
-        && data.createdAt == request.time
-        && data.message is map
-        && data.message.keys().hasOnly(['subject', 'html'])
-        && data.message.subject is string
-        && data.message.subject.size() > 0
-        && data.message.subject.size() <= 200
-        && data.message.html is string
-        && data.message.html.size() > 0
-        && data.message.html.size() <= 50000
-        && exists(leadPath(data.leadId));
-    }
-
-    function isValidLeadResultMail() {
-      let data = request.resource.data;
-      return hasValidMailEnvelope('lead_result')
-        && data.to is string
-        && data.to == get(leadPath(data.leadId)).data.email
-        && data.message.subject == 'Je batterij-analyse is klaar SmartPeak';
-    }
-
-    function isValidLeadContactMail() {
-      let data = request.resource.data;
-      return hasValidMailEnvelope('lead_contact')
-        && data.to is list
-        && data.to.size() == 2
-        && 'kevin@smartpeak.be' in data.to
-        && 'ruben@smartpeak.be' in data.to
-        && data.message.subject.matches('^Nieuwe contactaanvraag:.*$');
     }
 
     function isValidShareCreate() {
@@ -356,10 +317,10 @@ service cloud.firestore {
     }
 
     // ─── Mail (trigger email extension) ──────────────────────────
+    // Only the Cloud Functions (Admin SDK) queue mails. A client-written mail would let
+    // anyone send any content from the SmartPeak address.
     match /mail/{mailId} {
-      allow create: if mailId == request.resource.data.kind + '_' + request.resource.data.leadId
-        && (isValidLeadResultMail() || isValidLeadContactMail());
-      allow read, update, delete: if false;
+      allow read, write: if false;
     }
 
     // ─── Product categories ────────────────────────────────────

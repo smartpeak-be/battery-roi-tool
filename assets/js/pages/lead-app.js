@@ -3,7 +3,6 @@ import { validateCsvHeaders } from '../csv.js';
 import { csvToAllDaysAndMeta, parseSheetConfigs } from '../calc-engine.js';
 import { resolveLeadInputs, selectBestConfigs, buildLeadResult, buildDefaultsNotes } from '../lead-calc.js';
 import { extractCsvForStorage } from '../csv.js';
-import { LEAD_RESULT_SUBJECT, buildLeadResultMailHtml } from '../lead-mail.js';
 
 // ─── STATE ──────────────────────────────────────────────────────────────
 let _csvText = null;
@@ -154,24 +153,9 @@ document.getElementById('btnSubmit').addEventListener('click', async () => {
       };
 
       // 6. Save to Firestore
-      const leadId = await createLead(leadDoc);
+      await createLead(leadDoc);
 
-      // 7. Send result email
-      const resultUrl = `${window.location.origin}${window.location.pathname.replace('lead.html', 'lead-result.html')}?r=${leadId}`;
-
-      await createMailDoc({
-        kind: 'lead_result',
-        leadId,
-        to: leadDoc.email,
-        message: {
-          subject: LEAD_RESULT_SUBJECT,
-          html: buildLeadResultMailHtml({
-            customerName: leadDoc.customerName,
-            resultUrl,
-            defaultsUsed: leadDoc.defaultsUsed
-          })
-        }
-      });
+      // 7. The result mail is queued by the leadMailsOnCreate Cloud Function.
 
       // 8. Show confirmation
       document.getElementById('confirmEmail').textContent = leadDoc.email;

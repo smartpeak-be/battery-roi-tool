@@ -322,10 +322,14 @@ spec na deze iteratie.
    **Website-embed (2026-10)**: `assets/js/widgets/lead-wizard.js` is dezelfde wizard als
    `lead.html`, maar als ES-module-widget voor smartpeak.be (mount `#smartpeak-analyse`,
    geen Bootstrap/Firebase SDK, geen keys). Rekenen en schrijven zit in
-   `assets/js/lead-submit.js` (Firestore REST `:commit`: eerst de lead met
-   `createdAt` = REQUEST_TIME, daarna in een aparte commit `mail/lead_result_<id>`,
-   want de mail-rule checkt dat de lead al bestaat). De resultaatmail komt uit
-   `assets/js/lead-mail.js`, gedeeld met `lead.html` zodat beide identiek blijven.
+   `assets/js/lead-submit.js` (Firestore REST `:commit`, enkel de lead met
+   `createdAt` = REQUEST_TIME).
+   **Lead-mails (2026-10)**: clients schrijven nooit naar `mail` (rules: `allow read, write: if false`),
+   anders kan iedereen via de Trigger Email-extensie mails sturen vanaf het SmartPeak-adres.
+   De Cloud Functions `leadMailsOnCreate` (resultaatmail als de lead verbruiksdata heeft) en
+   `leadMailsOnUpdate` (contactmail naar Kevin en Ruben bij cold → hot) bouwen de mails uit
+   het lead-document met `functions/lead-mails.js` en schrijven ze met `create()` op een vast ID.
+   Publieke lead-ID's moeten 20 letters/cijfers zijn (rule `isAutoId`).
    **Wijzig je de lead- of mail-rules, of de lead-velden**, test dan ook de embed:
    in smartpeak-site draait de manuele workflow "Test website forms against lead
    rules" (`roi_ref` = je branch) beide website-formulieren tegen de emulator.

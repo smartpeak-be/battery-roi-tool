@@ -6,7 +6,6 @@
 import { validateCsvHeaders, extractCsvForStorage } from './csv.js';
 import { csvToAllDaysAndMeta, parseSheetConfigs } from './calc-engine.js';
 import { resolveLeadInputs, selectBestConfigs, buildLeadResult, buildDefaultsNotes } from './lead-calc.js';
-import { LEAD_RESULT_SUBJECT, buildLeadResultMailHtml } from './lead-mail.js';
 
 export const FIRESTORE_URL =
   'https://firestore.googleapis.com/v1/projects/smartpeak-projects/databases/(default)/documents';
@@ -116,7 +115,7 @@ export function buildLeadDoc({ csvText, allDays, name, email, pvInverterKw, pric
 }
 
 /**
- * Create the lead (cold_lead) and queue the result mail, like lead.html does.
+ * Create the lead (cold_lead), like lead.html does. The server sends the result mail.
  * @param {object} input  csvText, name, email and the optional fields of the wizard
  * @param {object} opts   resultPageUrl (lead-result.html), configs (optional, preloaded),
  *                        baseUrl and fetchImpl (for tests)
@@ -148,24 +147,7 @@ export async function submitLeadAnalysis(input, { resultPageUrl, configs, baseUr
     currentDocument: { exists: false }
   }]);
 
+  // The result mail is queued by the leadMailsOnCreate Cloud Function, not by the client.
   const resultUrl = `${resultPageUrl}?r=${leadId}`;
-  // The mail rule checks that the lead exists, so this must be a second commit.
-  await commit(fetchImpl, baseUrl, [{
-    update: {
-      name: `${root}/mail/lead_result_${leadId}`,
-      fields: toFirestoreFields({
-        kind: 'lead_result',
-        leadId,
-        to: leadDoc.email,
-        message: {
-          subject: LEAD_RESULT_SUBJECT,
-          html: buildLeadResultMailHtml({ customerName: leadDoc.customerName, resultUrl, defaultsUsed: leadDoc.defaultsUsed })
-        }
-      })
-    },
-    updateTransforms: [{ fieldPath: 'createdAt', setToServerValue: 'REQUEST_TIME' }],
-    currentDocument: { exists: false }
-  }]);
-
   return { leadId, resultUrl };
 }
