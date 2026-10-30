@@ -1,5 +1,6 @@
 import { escapeHtml, showToast, showState, shortEmail, fmtDate, fmtRelTime, withSpinner, showConfirm } from '../shared-helpers.js';
 import { gridConnectionLabel } from '../grid-compatibility.js';
+import { LEAD_DEFAULTS } from '../lead-calc.js';
 import { parseSheetConfigs, processDataPure, buildAllDaysFromDailyCompact, serializeDForLastCalcRun } from '../calc-engine.js';
 import { mountProjectDocuments, mergeProjectDocuments, resolveDocumentDownloadUrls } from '../project-documents.js';
 import { buildClosingDossierModel, buildClosingDossierDraftTexts, openClosingDossierPrintWindow, renderClosingDossierEditorModalHtml } from '../project-closing-dossier.js';
@@ -2062,7 +2063,7 @@ async function precomputeLastCalcRunForLead(lead) {
   const pvKw    = (typeof lead.pvInverterKw === 'number' && lead.pvInverterKw > 0)
     ? lead.pvInverterKw : 3.5;
   const tariff  = (typeof lead.pricePerKwh  === 'number' && lead.pricePerKwh  > 0)
-    ? lead.pricePerKwh  : 0.34;
+    ? lead.pricePerKwh  : LEAD_DEFAULTS.pricePerKwh;
 
   let d;
   try {
