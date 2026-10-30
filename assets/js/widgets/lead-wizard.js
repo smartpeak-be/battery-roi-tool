@@ -93,8 +93,6 @@ const CSS = `
 .spa .spa-consent{display:flex;gap:.6rem;align-items:flex-start;font-weight:400}
 .spa .spa-consent input{width:1.15rem;height:1.15rem;margin:.2rem 0 0;flex:none;accent-color:var(--spa-accent-deep)}
 .spa .spa-field input[type=tel]{width:100%;font:inherit;color:var(--spa-ink);background:#fff;border:1.5px solid #c9d5d1;border-radius:8px;padding:.7rem .8rem;min-height:3rem}
-.spa .spa-link{background:none;border:0;padding:0;font:inherit;color:var(--spa-ink);text-decoration:underline;cursor:pointer}
-.spa .spa-link:focus-visible{outline:3px solid var(--spa-focus);outline-offset:2px}
 @keyframes spa-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.spa .spa-spinner{animation-duration:2.4s}}
 @media (max-width:720px){.spa .spa-metrics{grid-template-columns:1fr}}
@@ -171,7 +169,7 @@ function template(cfg, uid) {
     </div>
     <p class="spa-msg spa-msg-error" data-submit-msg role="alert" hidden></p>
     <div class="spa-nav">
-      <button type="button" class="spa-link" data-restart>Ander bestand of andere prijs</button>
+      <span></span>
       <button type="submit" class="spa-btn" data-submit>Neem contact met me op</button>
     </div>
     ${phone}
@@ -297,8 +295,6 @@ function mount(root, index) {
     prefetchConfigs();
     document.dispatchEvent(new CustomEvent('sp:analysis', { detail: { indication: Boolean(indication) } }));
   });
-
-  $('[data-restart]').addEventListener('click', () => goTo(1));
 
   // Step 2: contact request (optional)
   const form = $('[data-contact]');
