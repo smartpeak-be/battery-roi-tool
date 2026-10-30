@@ -1,5 +1,6 @@
 import { escapeHtml, showToast } from '../shared-helpers.js';
 import { renderResult, yearlyFigures } from '../lead-result/renderers.js';
+import { LEAD_DEFAULTS } from '../lead-calc.js';
 
 const container = document.getElementById('resultContainer');
 
@@ -166,8 +167,8 @@ function wireCTA(leadId, lead, btnId = 'btnContact') {
       // Build defaults info for admin
       const du = lead.defaultsUsed || {};
       const defItems = [];
-      if (du.pvInverterKw)       defItems.push('omvormervermogen (3,5 kW)');
-      if (du.pricePerKwh)        defItems.push('energiekost (0,34 EUR/kWh)');
+      if (du.pvInverterKw)       defItems.push(`omvormervermogen (${String(LEAD_DEFAULTS.pvInverterKw).replace('.', ',')} kW)`);
+      if (du.pricePerKwh)        defItems.push(`energiekost (${String(LEAD_DEFAULTS.pricePerKwh).replace('.', ',')} EUR/kWh)`);
       if (du.houseAgeOver10Years) defItems.push('BTW-tarief (21%)');
       const defaultsRow = defItems.length
         ? `<tr><td style="padding:4px 0;color:#6b7a8d;font-size:13px">Standaardwaarden: ${defItems.join(', ')}</td></tr>`

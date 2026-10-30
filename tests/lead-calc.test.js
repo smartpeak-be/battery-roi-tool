@@ -4,7 +4,8 @@ import {
   selectBestConfig,
   selectBestConfigs,
   buildLeadResult,
-  buildDefaultsNotes
+  buildDefaultsNotes,
+  buildPublicIndication
 } from '../assets/js/lead-calc.js';
 
 // ─── resolveLeadInputs ─────────────────────────────────────────────────
@@ -13,7 +14,7 @@ describe('resolveLeadInputs', () => {
   it('uses all defaults when nothing provided', () => {
     const result = resolveLeadInputs({});
     expect(result.pvInverterKw).toBe(3.5);
-    expect(result.pricePerKwh).toBe(0.34);
+    expect(result.pricePerKwh).toBe(0.39);
     expect(result.effectiveBtw).toBe(21);
     expect(result.defaultsUsed.pvInverterKw).toBe(true);
     expect(result.defaultsUsed.pricePerKwh).toBe(true);
@@ -49,7 +50,7 @@ describe('resolveLeadInputs', () => {
   it('ignores zero values (treated as not provided)', () => {
     const result = resolveLeadInputs({ pvInverterKw: 0, pricePerKwh: 0 });
     expect(result.pvInverterKw).toBe(3.5);
-    expect(result.pricePerKwh).toBe(0.34);
+    expect(result.pricePerKwh).toBe(0.39);
     expect(result.defaultsUsed.pvInverterKw).toBe(true);
     expect(result.defaultsUsed.pricePerKwh).toBe(true);
   });
@@ -297,7 +298,7 @@ describe('buildDefaultsNotes', () => {
     });
     expect(notes).toContain('Standaardwaarden gebruikt:');
     expect(notes).toContain('3,5 kW');
-    expect(notes).toContain('0,34 EUR/kWh');
+    expect(notes).toContain('0,39 EUR/kWh');
     expect(notes).toContain('21%');
   });
 
@@ -308,7 +309,34 @@ describe('buildDefaultsNotes', () => {
       houseAgeOver10Years: false
     });
     expect(notes).toContain('3,5 kW');
-    expect(notes).not.toContain('0,34');
+    expect(notes).not.toContain('0,39');
     expect(notes).not.toContain('21%');
+  });
+});
+
+// ─── buildPublicIndication (website result: size, kWh and "saving up to") ───
+
+describe('buildPublicIndication', () => {
+  const year = (afname, injectie) => Array.from({ length: 365 }, (_, i) => ({
+    date: new Date(2025, 0, 1 + i),
+    afname, injectie, afnamedag: 0, afnamenacht: 0, injectiedag: 0, injectienacht: 0
+  }));
+
+  it('sizes the battery on 100 full days and rounds the saving up to 50 euro', () => {
+    const ind = buildPublicIndication(year(10, 8), 0.39);
+    expect(ind.capacityKwh).toBe(7.5);            // 8 kWh surplus every day fills 7,5 kWh, not 10
+    expect(ind.storedKwhPerYear).toBe(2464);      // 7,5 × 0,9 × 365
+    expect(ind.savingUpToEur).toBe(1000);         // 960,7 euro rounded up to 50
+    expect(ind.pricePerKwh).toBe(0.39);
+  });
+
+  it('never stores more than the consumption of that day', () => {
+    const ind = buildPublicIndication(year(2, 8), 0.39);
+    expect(ind.storedKwhPerYear).toBe(730);
+  });
+
+  it('gives no indication without enough surplus', () => {
+    expect(buildPublicIndication(year(10, 1), 0.39)).toBeNull();
+    expect(buildPublicIndication([], 0.39)).toBeNull();
   });
 });

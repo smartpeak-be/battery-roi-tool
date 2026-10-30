@@ -162,7 +162,7 @@ describe('buildLeadResultMailHtml', () => {
       defaultsUsed: { pvInverterKw: true, pricePerKwh: true, houseAgeOver10Years: true }
     });
     expect(html).toContain('Hallo &lt;b&gt;Jan&lt;/b&gt;,');
-    expect(html).toContain('omvormervermogen (3,5 kW), energiekost (0,34 EUR/kWh), BTW-tarief (21%)');
+    expect(html).toContain('omvormervermogen (3,5 kW), energiekost (0,39 EUR/kWh), BTW-tarief (21%)');
     expect(html).toContain('href="https://tool.test/lead-result.html?r=abc"');
   });
 

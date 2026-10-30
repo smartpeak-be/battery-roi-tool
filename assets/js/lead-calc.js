@@ -1,7 +1,7 @@
 // Lead-specific calculation logic: resolve defaults, select best config, build result.
 // Pure functions — no DOM, no Firestore.
 
-import { processDataPure } from './calc-engine.js';
+import { processDataPure, calcScenario } from './calc-engine.js';
 
 // parseSheetConfigs will be used by lead.html directly, not by these helpers.
 // Re-export it here for convenience.
@@ -9,9 +9,54 @@ export { parseSheetConfigs } from './calc-engine.js';
 
 export const LEAD_DEFAULTS = {
   pvInverterKw: 3.5,
-  pricePerKwh: 0.34,
+  pricePerKwh: 0.39,
   btw: 21
 };
+
+// Customer-facing indication (website analysis and lead-result.html). No product, no price of an
+// installation and no payback time: only what the customer's own data says about a battery.
+export const PUBLIC_INDICATION = {
+  efficiency: 0.9,      // round trip of a lithium (LFP) home battery
+  roundSavingTo: 50     // "savings up to" is rounded up to the next 50 euro
+};
+
+/**
+ * What a battery would do with this customer's surplus, for the public result page.
+ * Size: the largest capacity that the daily solar surplus fills completely on at least
+ * 100 days a year (the capacity analysis of the calculator). Saving: the energy the
+ * battery delivers per year (self-consumption only), valued at the full price per kWh
+ * and rounded up to 50 euro, so it is shown as "up to". Dynamic tariffs, the capacity
+ * tariff and the injection fee are deliberately left out.
+ * @returns {null | { capacityKwh, fullDays, storedKwhPerYear, savingUpToEur, pricePerKwh, efficiency, daysInWindow, isFullYear }}
+ */
+export function buildPublicIndication(allDays, pricePerKwh) {
+  if (!Array.isArray(allDays) || !allDays.length || !(pricePerKwh > 0)) return null;
+  const d = processDataPure({ allDays }, 0, [], pricePerKwh, null);
+  const capacityKwh = d && d.capAnalysis && d.capAnalysis.maxCap;
+  if (!capacityKwh) return null;
+  const { efficiency, roundSavingTo } = PUBLIC_INDICATION;
+  const scen = calcScenario(d.windowDays, {
+    threshold: capacityKwh,
+    installPrice: 0,
+    batCap: capacityKwh,
+    eff: efficiency,
+    scaleFactor: d.isFullYear ? 1 : 365 / d.daysInWindow,
+    effectivePrice: pricePerKwh,
+    totalAfname: d.totalAfname,
+    totalInjectie: d.totalInjectie
+  });
+  if (!(scen.annualCharged > 0)) return null;
+  return {
+    capacityKwh,
+    fullDays: d.capAnalysis.rows.find(r => r.cap === capacityKwh)?.qualDays ?? null,
+    storedKwhPerYear: Math.round(scen.annualCharged),
+    savingUpToEur: Math.ceil(scen.annualSaving / roundSavingTo) * roundSavingTo,
+    pricePerKwh,
+    efficiency,
+    daysInWindow: d.daysInWindow,
+    isFullYear: d.isFullYear
+  };
+}
 
 export function resolveLeadInputs(raw) {
   const pvGiven    = typeof raw.pvInverterKw === 'number' && raw.pvInverterKw > 0;

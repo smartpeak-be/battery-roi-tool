@@ -1,11 +1,26 @@
 import { escapeHtml } from '../shared-helpers.js';
+import { buildAllDaysFromDailyCompact } from '../calc-engine.js';
+import { LEAD_DEFAULTS, buildPublicIndication } from '../lead-calc.js';
 
-// Customer-facing result of the lead wizard. SmartPeak deliberately shows no payback time:
-// it depends on too many things that change (prices, contract, rules, plans). The page shows
-// what the customer's own data says and what a battery would roughly do with it.
+// Customer-facing result of the lead wizard. SmartPeak deliberately shows no payback time and no
+// installation price: they depend on too many things that change (prices, contract, rules, plans).
+// The page shows what the customer's own data says, what a battery would roughly do with it and
+// the yearly saving that self-consumption alone allows ("up to").
+
+/** The public indication, computed from the stored daily data (also for leads from before it existed). */
+export function publicIndication(lead) {
+  const dc = lead.csvDailyCompact;
+  if (!dc || !dc.startDate || !Array.isArray(dc.afname) || !dc.afname.length) return null;
+  const price = lead.pricePerKwh > 0 ? lead.pricePerKwh : LEAD_DEFAULTS.pricePerKwh;
+  try {
+    return buildPublicIndication(buildAllDaysFromDailyCompact(dc), price);
+  } catch {
+    return null;
+  }
+}
 
 /** Yearly totals from the stored daily data, scaled to 365 days when the period is shorter. */
-export function yearlyFigures(lead) {
+export function yearlyFigures(lead, indication = publicIndication(lead)) {
   const dc = lead.csvDailyCompact;
   if (!dc || !Array.isArray(dc.afname) || dc.afname.length === 0) return null;
   const days = dc.afname.length;
@@ -14,6 +29,10 @@ export function yearlyFigures(lead) {
   const afname = sum(dc.afname) * scale;
   const injectie = sum(dc.injectie) * scale;
   let stored = null;
+  if (indication) {
+    const kwh = Math.min(indication.storedKwhPerYear, afname);
+    return { days, afname, injectie, stored: { min: kwh, max: kwh } };
+  }
   const r = lead.result;
   const price = lead.pricePerKwh;
   if (r && price > 0) {
@@ -27,11 +46,14 @@ export function yearlyFigures(lead) {
 }
 
 export function renderResult(lead) {
-  const y = yearlyFigures(lead);
+  const ind = publicIndication(lead);
+  const y = yearlyFigures(lead, ind);
   const r = lead.result;
   const parts = [];
-  if (r && y && y.stored) {
-    parts.push(heroCard(y), dataCard(y, r), usageChartCard(lead));
+  if (ind && y) {
+    parts.push(heroCard(y, ind), dataCard(y, { min: ind.capacityKwh, max: ind.capacityKwh }, true), savingCard(ind, lead), usageChartCard(lead));
+  } else if (r && y && y.stored) {
+    parts.push(heroCard(y), dataCard(y, r.batteryCapKwh), usageChartCard(lead));
   } else {
     parts.push(noSizeCard(y), y ? usageChartCard(lead) : '');
   }
@@ -51,17 +73,35 @@ export function rVal(field) {
   return { min: field, max: field };
 }
 
-function heroCard(y) {
+function heroCard(y, ind) {
+  const saving = ind ? `
+      <div class="sp-hero-subtitle mt-3">Dat is een besparing <strong>tot ${fmtEur(ind.savingUpToEur)} per jaar</strong>, enkel door meer van je eigen zonne-energie zelf te gebruiken.</div>` : '';
   return `
     <div class="sp-result-card sp-hero-card text-center">
       <div class="sp-hero-eyebrow">Op basis van jouw eigen verbruik</div>
       <div class="sp-hero-amount">${fmtKwhRange(y.stored)}<span class="sp-hero-amount-unit"> per jaar</span></div>
-      <div class="sp-hero-subtitle">van je eigen zonne-energie kan je met een batterij zelf gebruiken, in plaats van ze op het net te zetten en later terug te kopen.</div>
+      <div class="sp-hero-subtitle">van je eigen zonne-energie kan je met een batterij zelf gebruiken, in plaats van ze op het net te zetten en later terug te kopen.</div>${saving}
     </div>
   `;
 }
 
-function dataCard(y, r) {
+function savingCard(ind, lead) {
+  const own = lead.defaultsUsed && lead.defaultsUsed.pricePerKwh === false;
+  const priceTxt = `${fmtNl(ind.pricePerKwh, 2)} euro per kWh`;
+  return `
+    <div class="sp-result-card">
+      <h5 class="text-center mb-3">Hoe we die besparing berekenen</h5>
+      <ul class="mb-3">
+        <li>We gaan uit van een batterij van ongeveer ${fmtNl(ind.capacityKwh, 1)} kWh: de grootte die je met je zonne-overschot op minstens 100 dagen per jaar volledig kan laden.</li>
+        <li>Elke kWh die de batterij 's avonds of 's nachts levert, hoef je niet van het net te halen. Die kWh rekenen we aan ${own ? `jouw prijs van ${priceTxt}` : `${priceTxt}, een gangbare prijs met alles inbegrepen`}.</li>
+        <li>We rekenen met de verliezen bij het laden en ontladen, maar de vergoeding die je nu eventueel krijgt voor wat je op het net zet, trekken we er niet af. We ronden af naar boven op 50 euro. Daarom spreken we van een besparing <em>tot</em>.</li>
+      </ul>
+      <p class="mb-0">Het gaat hier enkel om <strong>zelfverbruik</strong>. Met een dynamisch energiecontract kan een batterij ook laden wanneer stroom goedkoop is en ontladen wanneer ze duur is. Dan is mogelijk een grotere besparing haalbaar, net als wanneer de batterij je piek voor het capaciteitstarief beperkt. Dat bekijken we graag samen met je.</p>
+    </div>
+  `;
+}
+
+function dataCard(y, capacity, fromData = false) {
   const after = { min: Math.max(0, y.afname - y.stored.max), max: Math.max(0, y.afname - y.stored.min) };
   return `
     <div class="sp-result-card">
@@ -78,9 +118,9 @@ function dataCard(y, r) {
           <div class="sp-metric-detail">Met een batterij wordt dat ongeveer ${fmtKwhRange(after)}.</div>
         </div>
         <div class="sp-metric-tile">
-          <div class="sp-result-metric-value">${fmtRange(r.batteryCapKwh, 1, ' kWh')}</div>
+          <div class="sp-result-metric-value">${fmtRange(capacity, 1, ' kWh')}</div>
           <div class="sp-result-metric-label">Indicatieve batterijgrootte</div>
-          <div class="sp-metric-detail">Een vertrekpunt. De juiste grootte hangt ook af van je wensen en plannen.</div>
+          <div class="sp-metric-detail">${fromData ? 'Wat je overschot op minstens 100 dagen per jaar volledig vult. ' : ''}Een vertrekpunt. De juiste grootte hangt ook af van je wensen en plannen.</div>
         </div>
       </div>
     </div>
@@ -215,8 +255,8 @@ function packageCard() {
 function renderDisclaimer(lead) {
   const defaults = [];
   if (lead.defaultsUsed) {
-    if (lead.defaultsUsed.pvInverterKw) defaults.push('<li>Omvormervermogen: standaardwaarde 3,5 kW gebruikt</li>');
-    if (lead.defaultsUsed.pricePerKwh) defaults.push('<li>Energiekost: standaardwaarde 0,34 EUR/kWh gebruikt</li>');
+    if (lead.defaultsUsed.pvInverterKw) defaults.push(`<li>Omvormervermogen: standaardwaarde ${fmtNl(LEAD_DEFAULTS.pvInverterKw, 1)} kW gebruikt</li>`);
+    if (lead.defaultsUsed.pricePerKwh) defaults.push(`<li>Energiekost: standaardwaarde ${fmtNl(lead.pricePerKwh > 0 ? lead.pricePerKwh : LEAD_DEFAULTS.pricePerKwh, 2)} EUR/kWh gebruikt</li>`);
     if (lead.defaultsUsed.houseAgeOver10Years) defaults.push('<li>BTW: 21% (woningtype niet opgegeven)</li>');
   }
   const defaultsHtml = defaults.length ? `<p class="mb-1 mt-2"><small>Aannames:</small></p><ul>${defaults.join('')}</ul>` : '';
@@ -226,6 +266,10 @@ function renderDisclaimer(lead) {
       <p class="mb-0"><small>Dit resultaat is een eerste indicatie op basis van je dagelijkse meetgegevens. Het houdt geen rekening met je pieken, je energiecontract of je plannen. Die bekijken we graag samen met je.</small></p>
     </div>
   `;
+}
+
+function fmtEur(n) {
+  return `€ ${Math.round(n).toLocaleString('nl-BE')}`;
 }
 
 function fmtNl(n, decimals = 1) {
