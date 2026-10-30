@@ -1,6 +1,6 @@
 import { escapeHtml, showToast } from '../shared-helpers.js';
-import { renderResult, yearlyFigures } from '../lead-result/renderers.js';
-import { LEAD_DEFAULTS } from '../lead-calc.js';
+import { renderResult, yearlyFigures, publicIndication } from '../lead-result/renderers.js';
+import { LEAD_CONTACT_TO, leadContactSubject, buildLeadContactMailHtml } from '../lead-mail.js';
 
 const container = document.getElementById('resultContainer');
 
@@ -164,60 +164,13 @@ function wireCTA(leadId, lead, btnId = 'btnContact') {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Even geduld...';
     try {
       await updateLeadToHot(leadId);
-      // Build defaults info for admin
-      const du = lead.defaultsUsed || {};
-      const defItems = [];
-      if (du.pvInverterKw)       defItems.push(`omvormervermogen (${String(LEAD_DEFAULTS.pvInverterKw).replace('.', ',')} kW)`);
-      if (du.pricePerKwh)        defItems.push(`energiekost (${String(LEAD_DEFAULTS.pricePerKwh).replace('.', ',')} EUR/kWh)`);
-      if (du.houseAgeOver10Years) defItems.push('BTW-tarief (21%)');
-      const defaultsRow = defItems.length
-        ? `<tr><td style="padding:4px 0;color:#6b7a8d;font-size:13px">Standaardwaarden: ${defItems.join(', ')}</td></tr>`
-        : '';
-
       await createMailDoc({
         kind: 'lead_contact',
         leadId,
-        to: ['kevin@smartpeak.be', 'ruben@smartpeak.be'],
+        to: LEAD_CONTACT_TO,
         message: {
-          subject: `Nieuwe contactaanvraag: ${lead.customerName || 'Onbekend'}`,
-          html: `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:24px 0">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden">
-  <!-- Header -->
-  <tr><td style="padding:28px 32px 16px">
-    <span style="font-size:22px;font-weight:700;color:#2c7be5">SmartPeak</span><br>
-    <span style="font-size:13px;color:#6b7a8d">Admin notificatie</span>
-    <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0 0">
-  </td></tr>
-  <!-- Body -->
-  <tr><td style="padding:8px 32px 0;color:#333;font-size:15px;line-height:1.6">
-    <p style="margin:0 0 16px">Er is een nieuwe contactaanvraag via de batterij-analyse tool:</p>
-    <table cellpadding="0" cellspacing="0" style="margin:0 0 16px;font-size:15px;line-height:1.6">
-      <tr>
-        <td style="padding:4px 12px 4px 0;color:#6b7a8d;white-space:nowrap">Naam</td>
-        <td style="padding:4px 0;font-weight:600">${escapeHtml(lead.customerName || '')}</td>
-      </tr>
-      <tr>
-        <td style="padding:4px 12px 4px 0;color:#6b7a8d;white-space:nowrap">Email</td>
-        <td style="padding:4px 0"><a href="mailto:${escapeHtml(lead.email || '')}" style="color:#2c7be5;text-decoration:none">${escapeHtml(lead.email || '')}</a></td>
-      </tr>
-      ${defaultsRow}
-    </table>
-  </td></tr>
-  <!-- CTA -->
-  <tr><td align="center" style="padding:8px 32px 24px">
-    <a href="https://smartpeak-be.github.io/battery-roi-tool/dashboard.html" style="display:inline-block;padding:14px 28px;background:#2c7be5;color:#ffffff;text-decoration:none;border-radius:8px;font-size:15px;font-weight:600">Open dashboard</a>
-  </td></tr>
-  <!-- Footer -->
-  <tr><td style="background:#f0f2f5;padding:16px 32px;border-top:1px solid #e2e8f0">
-    <p style="margin:0;font-size:11px;color:#adb5bd;line-height:1.4">SmartPeak opereert onder Blox-it BV (BE0730.696.050) en LED’s Repair (BE1035.486.678).</p>
-  </td></tr>
-</table>
-</td></tr>
-</table>
-</body></html>`
+          subject: leadContactSubject(lead.customerName),
+          html: buildLeadContactMailHtml(lead, { indication: publicIndication(lead), source: 'resultaatpagina' })
         }
       });
       // Replace every CTA card with the confirmation message so neither button can be clicked again.

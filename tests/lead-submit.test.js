@@ -171,3 +171,27 @@ describe('buildLeadResultMailHtml', () => {
     expect(html).not.toContain('gemiddelde waarden');
   });
 });
+
+describe('submitLeadAnalysis with a contact request', () => {
+  it('makes the lead hot and notifies Kevin and Ruben in the second commit', async () => {
+    const { commits, fetchImpl } = fakeFirestore();
+    await submitLeadAnalysis(
+      { csvText: CSV, name: 'Test', email: 'test@example.be', phone: '0470 12 34 56<script>', requestContact: true, source: '/batterij-iets-voor-mij/' },
+      { baseUrl: BASE, fetchImpl, resultPageUrl: 'https://tool.test/lead-result.html' }
+    );
+    expect(commits).toHaveLength(2);
+    const lead = commits[0].writes[0].update.fields;
+    expect(lead.status.stringValue).toBe('cold_lead');
+    expect(lead.notes.stringValue).toContain('Vraagt contact na de analyse. Telefoon: 0470 12 34 56');
+    const [hot, contact, result] = commits[1].writes;
+    expect(hot.updateMask.fieldPaths).toEqual(['status']);
+    expect(hot.update.fields.status.stringValue).toBe('hot_lead');
+    expect(hot.updateTransforms[0].fieldPath).toBe('hotLeadAt');
+    expect(contact.update.name).toMatch(/\/mail\/lead_contact_/);
+    const to = contact.update.fields.to.arrayValue.values.map(v => v.stringValue);
+    expect(to).toEqual(['kevin@smartpeak.be', 'ruben@smartpeak.be']);
+    expect(contact.update.fields.message.mapValue.fields.subject.stringValue).toBe('Nieuwe contactaanvraag: Test');
+    expect(result.update.name).toMatch(/\/mail\/lead_result_/);
+  });
+});
+

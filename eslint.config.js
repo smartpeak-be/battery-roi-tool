@@ -226,7 +226,7 @@ export default [
 
   // ── Website embed of the lead wizard: an ES module, unlike the other widgets ──
   {
-    files: ['assets/js/widgets/lead-wizard.js'],
+    files: ['assets/js/widgets/lead-wizard.js', 'assets/js/widgets/analysis-result.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',

@@ -5,8 +5,10 @@
 
 import { validateCsvHeaders, extractCsvForStorage } from './csv.js';
 import { csvToAllDaysAndMeta, parseSheetConfigs } from './calc-engine.js';
-import { resolveLeadInputs, selectBestConfigs, buildLeadResult, buildDefaultsNotes } from './lead-calc.js';
-import { LEAD_RESULT_SUBJECT, buildLeadResultMailHtml } from './lead-mail.js';
+import { resolveLeadInputs, selectBestConfigs, buildLeadResult, buildDefaultsNotes, buildPublicIndication } from './lead-calc.js';
+import {
+  LEAD_RESULT_SUBJECT, LEAD_CONTACT_TO, leadContactSubject, buildLeadResultMailHtml, buildLeadContactMailHtml
+} from './lead-mail.js';
 
 export const FIRESTORE_URL =
   'https://firestore.googleapis.com/v1/projects/smartpeak-projects/databases/(default)/documents';
@@ -88,7 +90,7 @@ export async function loadProductConfigs({ baseUrl = FIRESTORE_URL, fetchImpl = 
  * Pure: the lead document exactly as lead.html stores it (minus the server timestamps).
  * `source` (optional) is noted so the dashboard shows where the lead came from.
  */
-export function buildLeadDoc({ csvText, allDays, name, email, pvInverterKw, pricePerKwh, houseAgeOver10Years, source }, configs) {
+export function buildLeadDoc({ csvText, allDays, name, email, phone, pvInverterKw, pricePerKwh, houseAgeOver10Years, source, requestContact }, configs) {
   const rawInputs = {
     pvInverterKw: Number(pvInverterKw) || 0,
     pricePerKwh: Number(pricePerKwh) || 0,
@@ -96,8 +98,10 @@ export function buildLeadDoc({ csvText, allDays, name, email, pvInverterKw, pric
   };
   const resolved = resolveLeadInputs(rawInputs);
   const bestConfigs = selectBestConfigs(allDays, configs, resolved.pvInverterKw, resolved.pricePerKwh, resolved.effectiveBtw);
+  const cleanPhone = cleanPhoneNumber(phone);
   const notes = [
     source ? `Verbruiksanalyse via de website (${String(source).slice(0, 200)})` : '',
+    requestContact ? `Vraagt contact na de analyse${cleanPhone ? `. Telefoon: ${cleanPhone}` : ''}` : '',
     buildDefaultsNotes(resolved.defaultsUsed)
   ].filter(Boolean).join('\n\n');
   return {
@@ -115,8 +119,15 @@ export function buildLeadDoc({ csvText, allDays, name, email, pvInverterKw, pric
   };
 }
 
+/** A phone number as typed, limited to digits, spaces and the usual separators. */
+export function cleanPhoneNumber(phone) {
+  return String(phone || '').replace(/[^\d+ ()./-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 30);
+}
+
 /**
  * Create the lead (cold_lead) and queue the result mail, like lead.html does.
+ * With `requestContact` (the visitor asked for a site visit) the lead becomes a hot lead in the
+ * same second commit and Kevin and Ruben get the contact notification, as from lead-result.html.
  * @param {object} input  csvText, name, email and the optional fields of the wizard
  * @param {object} opts   resultPageUrl (lead-result.html), configs (optional, preloaded),
  *                        baseUrl and fetchImpl (for tests)
@@ -150,7 +161,35 @@ export async function submitLeadAnalysis(input, { resultPageUrl, configs, baseUr
 
   const resultUrl = `${resultPageUrl}?r=${leadId}`;
   // The mail rule checks that the lead exists, so this must be a second commit.
-  await commit(fetchImpl, baseUrl, [{
+  const followUp = [];
+  if (input.requestContact) {
+    followUp.push({
+      // Same change as updateLeadToHot: only status and hotLeadAt (isPublicHotLeadUpdate).
+      update: { name: `${root}/leads/${leadId}`, fields: toFirestoreFields({ status: 'hot_lead' }) },
+      updateMask: { fieldPaths: ['status'] },
+      updateTransforms: [{ fieldPath: 'hotLeadAt', setToServerValue: 'REQUEST_TIME' }],
+      currentDocument: { exists: true }
+    }, {
+      update: {
+        name: `${root}/mail/lead_contact_${leadId}`,
+        fields: toFirestoreFields({
+          kind: 'lead_contact',
+          leadId,
+          to: LEAD_CONTACT_TO,
+          message: {
+            subject: leadContactSubject(leadDoc.customerName),
+            html: buildLeadContactMailHtml(
+              { ...leadDoc, phone: cleanPhoneNumber(input.phone) },
+              { indication: buildPublicIndication(read.allDays, leadDoc.pricePerKwh), source: input.source || '' }
+            )
+          }
+        })
+      },
+      updateTransforms: [{ fieldPath: 'createdAt', setToServerValue: 'REQUEST_TIME' }],
+      currentDocument: { exists: false }
+    });
+  }
+  await commit(fetchImpl, baseUrl, [...followUp, {
     update: {
       name: `${root}/mail/lead_result_${leadId}`,
       fields: toFirestoreFields({
