@@ -94,7 +94,6 @@ function savingCard(ind, lead) {
       <ul class="mb-3">
         <li>We gaan uit van een batterij van ongeveer ${fmtNl(ind.capacityKwh, 1)} kWh: de grootte die je met je zonne-overschot op minstens 100 dagen per jaar volledig kan laden.</li>
         <li>Elke kWh die de batterij 's avonds of 's nachts levert, hoef je niet van het net te halen. Die kWh rekenen we aan ${own ? `jouw prijs van ${priceTxt}` : `${priceTxt}, een gangbare prijs met alles inbegrepen`}.</li>
-        <li>We rekenen met de verliezen bij het laden en ontladen, maar de vergoeding die je nu eventueel krijgt voor wat je op het net zet, trekken we er niet af. We ronden af naar boven op 50 euro. Daarom spreken we van een besparing <em>tot</em>.</li>
       </ul>
       <p class="mb-0">Het gaat hier enkel om <strong>zelfverbruik</strong>. Met een dynamisch energiecontract kan een batterij ook laden wanneer stroom goedkoop is en ontladen wanneer ze duur is. Dan is mogelijk een grotere besparing haalbaar, net als wanneer de batterij je piek voor het capaciteitstarief beperkt. Dat bekijken we graag samen met je.</p>
     </div>

@@ -58,6 +58,5 @@ export function renderAnalysisResult(ind, totals, { priceGiven = false, headingL
   <li><strong>Enkel zelfverbruik.</strong> Met een dynamisch energiecontract of door je piek voor het capaciteitstarief te beperken, kan een batterij nog meer opleveren.</li>
   <li><strong>Een benadering.</strong> Verandert je verbruik, bijvoorbeeld door een elektrische wagen of een warmtepomp, dan verandert ook het resultaat, in beide richtingen.</li>
   <li><strong>Een richting voor de grootte.</strong> Je plannen of je eigen wensen kunnen een kleinere of grotere batterij verantwoorden. Wil je bewust groter gaan, dan houden we daar evengoed rekening mee. Ons advies is altijd open en transparant.</li>
-  <li><strong>Zo rekenen we.</strong> Met de verliezen van de batterij, zonder de vergoeding die je nu eventueel voor injectie krijgt, en naar boven afgerond op 50 euro. Geen installatieprijs: die hangt af van je woning en je installatie.</li>
 </ul>`;
 }
