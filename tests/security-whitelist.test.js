@@ -1,3 +1,4 @@
+import { LEAD_CONTACT_TO } from '../assets/js/lead-mail.js';
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
@@ -22,7 +23,9 @@ describe('security whitelist drift guard', () => {
     expect(emailsIn(path)).toEqual([...ACCESS_WHITELIST].sort());
   });
 
-  it('lead-result contact mails go to the SmartPeak task users', () => {
-    expect(emailsIn('assets/js/pages/lead-result-app.js')).toEqual([...LEAD_CONTACT_RECIPIENTS].sort());
+  it('lead contact mails go to the SmartPeak task users', () => {
+    // lead-result.html and the website widget both use LEAD_CONTACT_TO from lead-mail.js.
+    expect([...LEAD_CONTACT_TO].sort()).toEqual([...LEAD_CONTACT_RECIPIENTS].sort());
+    expect(emailsIn('assets/js/pages/lead-result-app.js')).toEqual([]);
   });
 });

@@ -191,7 +191,7 @@ function ctaCard(btnId, btnText, eyebrow) {
       <button type="button" class="btn btn-primary btn-lg sp-cta-button" id="${btnId}">
         <i class="fa-solid fa-phone" aria-hidden="true"></i> ${escapeHtml(btnText)}
       </button>
-      <p class="sp-cta-sub">Geen verplichting · Plaatsbezoek gratis · Antwoord binnen 24&nbsp;uur</p>
+      <p class="sp-cta-sub">Geen verplichting · Antwoord binnen 24&nbsp;uur</p>
     </div>
   `;
 }

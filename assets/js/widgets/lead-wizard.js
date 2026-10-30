@@ -1,5 +1,8 @@
-// SmartPeak verbruiksanalyse as an embeddable widget (the lead.html wizard, without Bootstrap,
-// the Firebase SDK or any key). Same calculation, same lead and same result mail as lead.html.
+// SmartPeak verbruiksanalyse as an embeddable widget for smartpeak.be (no Bootstrap, no Firebase
+// SDK, no keys). Open by design: the visitor uploads the Fluvius CSV, optionally gives a price per
+// kWh, and sees the result right away, calculated in the browser. Nothing is stored or sent until
+// the visitor asks to be contacted; then the lead (hot), the result mail and the notification to
+// Kevin and Ruben are written exactly like lead.html and lead-result.html do.
 //
 // Embed:
 //   <div id="smartpeak-analyse"
@@ -9,15 +12,17 @@
 //   <script type="module" src="https://smartpeak-be.github.io/battery-roi-tool/assets/js/widgets/lead-wizard.js"></script>
 //
 // Optional data attributes on the mount element:
-//   data-inverter-help-url  page that explains where to find the inverter power
+//   data-phone, data-phone-href  phone number shown next to the contact form
 //   data-source         where the lead came from (default: the page path), noted on the lead
 //   data-heading-level  heading level for the step titles (default 3)
 //   data-firestore      Firestore REST base URL (tests only, e.g. the emulator)
+// The host page hears about a contact request through the "sp:lead" event on document.
 // Styling: the widget injects a small default stylesheet driven by CSS custom properties
 // (--spa-accent, --spa-ink, --spa-line, ...), so the host page can restyle it.
 
 import { readConsumptionCsv, loadProductConfigs, submitLeadAnalysis, FIRESTORE_URL } from '../lead-submit.js';
-import { LEAD_DEFAULTS } from '../lead-calc.js';
+import { LEAD_DEFAULTS, buildPublicIndication } from '../lead-calc.js';
+import { renderAnalysisResult, yearlyTotals } from './analysis-result.js';
 
 const RESULT_PAGE_URL = new URL('../../../lead-result.html', import.meta.url).href;
 const STYLE_ID = 'spa-lead-wizard-css';
@@ -74,8 +79,23 @@ const CSS = `
 .spa .spa-done{text-align:center;justify-items:center;padding:1rem 0}
 .spa .spa-done svg{width:3.2rem;height:3.2rem;color:var(--spa-accent-deep)}
 .spa a{color:inherit}
+.spa .spa-subtitle{margin:.5rem 0 0;font-size:1.08rem}
+.spa .spa-metrics{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.9rem}
+.spa .spa-metric{display:grid;align-content:start;gap:.3rem;padding:1rem 1.1rem;border-radius:var(--spa-radius);background:var(--spa-paper);margin:0}
+.spa .spa-metric-label{font-size:.9rem;font-weight:600;color:var(--spa-soft)}
+.spa .spa-metric-value{font-size:1.45rem;font-weight:700;line-height:1.2;color:var(--spa-accent-deep)}
+.spa .spa-metric-detail{font-size:.9rem;color:var(--spa-soft)}
+.spa .spa-notes{margin:0;padding-left:1.2rem;display:grid;gap:.45rem;color:var(--spa-soft)}
+.spa .spa-notes strong{color:var(--spa-ink)}
+.spa .spa-contact{display:grid;gap:1rem;margin-top:.5rem;padding:clamp(1rem,3vw,1.5rem);border:1.5px solid var(--spa-accent);border-radius:var(--spa-radius-l);background:#f4fbf7}
+.spa .spa-consent{display:flex;gap:.6rem;align-items:flex-start;font-weight:400}
+.spa .spa-consent input{width:1.15rem;height:1.15rem;margin:.2rem 0 0;flex:none;accent-color:var(--spa-accent-deep)}
+.spa .spa-field input[type=tel]{width:100%;font:inherit;color:var(--spa-ink);background:#fff;border:1.5px solid #c9d5d1;border-radius:8px;padding:.7rem .8rem;min-height:3rem}
+.spa .spa-link{background:none;border:0;padding:0;font:inherit;color:var(--spa-ink);text-decoration:underline;cursor:pointer}
+.spa .spa-link:focus-visible{outline:3px solid var(--spa-focus);outline-offset:2px}
 @keyframes spa-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.spa .spa-spinner{animation-duration:2.4s}}
+@media (max-width:720px){.spa .spa-metrics{grid-template-columns:1fr}}
 @media (max-width:560px){.spa .spa-row{grid-template-columns:1fr}.spa .spa-nav .spa-btn{flex:1 1 auto}}
 `;
 
@@ -98,15 +118,9 @@ function template(cfg, uid) {
   const h = `h${cfg.headingLevel}`;
   const id = (name) => `${uid}-${name}`;
   const help = cfg.helpUrl ? ` <a href="${esc(cfg.helpUrl)}">Hoe download je dat bestand?</a>` : '';
-  const inverterHelp = cfg.inverterHelpUrl ? ` <a href="${esc(cfg.inverterHelpUrl)}">Waar vind ik dat?</a>` : '';
-  const privacy = cfg.privacyUrl ? ` Meer daarover in onze <a href="${esc(cfg.privacyUrl)}">privacyverklaring</a>.` : '';
+  const privacy = cfg.privacyUrl ? ` (<a href="${esc(cfg.privacyUrl)}">privacyverklaring</a>)` : '';
+  const phone = cfg.phone ? `<p class="spa-help">Liever bellen? <a href="${esc(cfg.phoneHref || `tel:${cfg.phone}`)}">${esc(cfg.phone)}</a></p>` : '';
   return `
-<ol class="spa-steps" aria-label="Stappen">
-  <li class="is-active" data-dot="1"><span class="spa-num">1</span>Verbruik</li>
-  <li data-dot="2"><span class="spa-num">2</span>Jouw gegevens</li>
-  <li data-dot="3"><span class="spa-num">3</span>Extra info</li>
-</ol>
-
 <section class="spa-step" data-step="1" aria-labelledby="${id('t1')}">
   <${h} class="spa-title" id="${id('t1')}" tabindex="-1">Laad je verbruik op</${h}>
   <p class="spa-text">Download in Mijn Fluvius je verbruiksgegevens als CSV-bestand, liefst van minstens een jaar.${help}</p>
@@ -117,65 +131,55 @@ function template(cfg, uid) {
     <input type="file" accept=".csv,text/csv" data-file aria-describedby="${id('csvmsg')}">
   </label>
   <p class="spa-msg" id="${id('csvmsg')}" data-csv-msg role="status" hidden></p>
-  <div class="spa-nav"><span></span><button type="button" class="spa-btn" data-next="2" disabled>Volgende</button></div>
+  <div class="spa-field">
+    <label for="${id('price')}">Jouw prijs per kWh <span class="spa-optional">(optioneel, in euro)</span></label>
+    <input type="text" inputmode="decimal" id="${id('price')}" data-price placeholder="bv. ${nl(LEAD_DEFAULTS.pricePerKwh)}" aria-describedby="${id('price-help')} ${id('price-err')}">
+    <p class="spa-help" id="${id('price-help')}">De totale prijs die je betaalt, alles inbegrepen: energie, netkosten, heffingen en btw. Je vindt hem op je jaarafrekening. Niet ingevuld: ${nl(LEAD_DEFAULTS.pricePerKwh)} euro.</p>
+    <p class="spa-error" id="${id('price-err')}" hidden>Vul een prijs tussen 0,01 en 2 euro in, bijvoorbeeld ${nl(LEAD_DEFAULTS.pricePerKwh)}.</p>
+  </div>
+  <p class="spa-help">Je bestand wordt enkel in je browser verwerkt. We ontvangen niets, tenzij je daarna zelf vraagt om contact.</p>
+  <div class="spa-nav"><span></span><button type="button" class="spa-btn" data-calc disabled>Bereken mijn resultaat</button></div>
 </section>
 
 <section class="spa-step" data-step="2" aria-labelledby="${id('t2')}" hidden>
-  <${h} class="spa-title" id="${id('t2')}" tabindex="-1">Waar mogen we je resultaat naartoe sturen?</${h}>
-  <div class="spa-field">
-    <label for="${id('name')}">Naam</label>
-    <input type="text" id="${id('name')}" data-name autocomplete="name" maxlength="120" required aria-describedby="${id('name-err')}">
-    <p class="spa-error" id="${id('name-err')}" hidden>Vul je naam in.</p>
-  </div>
-  <div class="spa-field">
-    <label for="${id('email')}">E-mail</label>
-    <input type="email" id="${id('email')}" data-email autocomplete="email" maxlength="254" required aria-describedby="${id('email-err')}">
-    <p class="spa-error" id="${id('email-err')}" hidden>Vul een geldig e-mailadres in.</p>
-  </div>
-  <p class="spa-help">We sturen je resultaat naar dit adres en gebruiken je gegevens om je analyse op te volgen.${privacy}</p>
-  <div class="spa-nav">
-    <button type="button" class="spa-btn spa-btn-ghost" data-back="1">Terug</button>
-    <button type="button" class="spa-btn" data-next="3">Volgende</button>
-  </div>
-</section>
-
-<section class="spa-step" data-step="3" aria-labelledby="${id('t3')}" hidden>
-  <${h} class="spa-title" id="${id('t3')}" tabindex="-1">Maak je resultaat nauwkeuriger</${h}>
-  <p class="spa-text">Deze gegevens zijn optioneel. Laat je iets leeg, dan rekenen we met een gangbare standaardwaarde.</p>
-  <fieldset class="spa-field">
-    <legend class="spa-legend">Is je woning 10 jaar of ouder?</legend>
-    <p class="spa-help">Dat bepaalt mee het btw-tarief: 6% of 21%. Niet ingevuld: ${LEAD_DEFAULTS.btw}%.</p>
-    <div class="spa-choices">
-      <label class="spa-choice"><input type="radio" name="${id('age')}" value="true">Ja, 10 jaar of ouder</label>
-      <label class="spa-choice"><input type="radio" name="${id('age')}" value="false">Nee, jonger dan 10 jaar</label>
-    </div>
-  </fieldset>
-  <div class="spa-row">
+  <${h} class="spa-title" id="${id('t2')}" tabindex="-1">Jouw resultaat</${h}>
+  <div data-result></div>
+  <form class="spa-contact" data-contact novalidate aria-labelledby="${id('t3')}">
+    <${h} class="spa-subtitle" id="${id('t3')}">Bekijken we het samen?</${h}>
+    <p class="spa-text">Laat je gegevens achter. We bekijken je resultaat en nemen contact met je op om de volgende stap te bespreken. Je krijgt dit resultaat dan ook per mail.</p>
     <div class="spa-field">
-      <label for="${id('pv')}">Vermogen omvormer <span class="spa-optional">(kW)</span></label>
-      <input type="text" inputmode="decimal" id="${id('pv')}" data-pv placeholder="bv. ${nl(LEAD_DEFAULTS.pvInverterKw)}" aria-describedby="${id('pv-help')} ${id('pv-err')}">
-      <p class="spa-help" id="${id('pv-help')}">Het AC-vermogen, op het typeplaatje van je omvormer.${inverterHelp} Niet ingevuld: ${nl(LEAD_DEFAULTS.pvInverterKw)} kW.</p>
-      <p class="spa-error" id="${id('pv-err')}" hidden>Vul een vermogen tussen 0,1 en 100 kW in.</p>
+      <label for="${id('name')}">Naam</label>
+      <input type="text" id="${id('name')}" data-name autocomplete="name" maxlength="120" required aria-describedby="${id('name-err')}">
+      <p class="spa-error" id="${id('name-err')}" hidden>Vul je naam in.</p>
+    </div>
+    <div class="spa-row">
+      <div class="spa-field">
+        <label for="${id('email')}">E-mail</label>
+        <input type="email" id="${id('email')}" data-email autocomplete="email" maxlength="254" required aria-describedby="${id('email-err')}">
+        <p class="spa-error" id="${id('email-err')}" hidden>Vul een geldig e-mailadres in.</p>
+      </div>
+      <div class="spa-field">
+        <label for="${id('phone')}">Telefoon <span class="spa-optional">(optioneel)</span></label>
+        <input type="tel" id="${id('phone')}" data-phone autocomplete="tel" maxlength="30">
+      </div>
     </div>
     <div class="spa-field">
-      <label for="${id('price')}">Energieprijs <span class="spa-optional">(euro per kWh)</span></label>
-      <input type="text" inputmode="decimal" id="${id('price')}" data-price placeholder="bv. ${nl(LEAD_DEFAULTS.pricePerKwh)}" aria-describedby="${id('price-help')} ${id('price-err')}">
-      <p class="spa-help" id="${id('price-help')}">Je totale prijs per kWh, alles inbegrepen, zoals op je energiefactuur. Niet ingevuld: ${nl(LEAD_DEFAULTS.pricePerKwh)} euro.</p>
-      <p class="spa-error" id="${id('price-err')}" hidden>Vul een prijs tussen 0,01 en 2 euro in.</p>
+      <label class="spa-consent"><input type="checkbox" data-consent required aria-describedby="${id('consent-err')}"><span>SmartPeak mag me contacteren over deze analyse en bewaart daarvoor mijn verbruiksgegevens${privacy}.</span></label>
+      <p class="spa-error" id="${id('consent-err')}" hidden>Vink dit aan, anders kunnen we geen contact opnemen.</p>
     </div>
-  </div>
-  <p class="spa-msg spa-msg-error" data-submit-msg role="alert" hidden></p>
-  <div class="spa-nav">
-    <button type="button" class="spa-btn spa-btn-ghost" data-back="2">Terug</button>
-    <button type="button" class="spa-btn" data-submit>Bereken mijn resultaat</button>
-  </div>
+    <p class="spa-msg spa-msg-error" data-submit-msg role="alert" hidden></p>
+    <div class="spa-nav">
+      <button type="button" class="spa-link" data-restart>Ander bestand of andere prijs</button>
+      <button type="submit" class="spa-btn" data-submit>Neem contact met me op</button>
+    </div>
+    ${phone}
+  </form>
 </section>
 
-<section class="spa-step spa-done" data-step="4" aria-labelledby="${id('t4')}" hidden>
+<section class="spa-step spa-done" data-step="3" aria-labelledby="${id('t4')}" hidden>
   ${ICON_MAIL}
-  <${h} class="spa-title" id="${id('t4')}" tabindex="-1">Je resultaat is onderweg</${h}>
-  <p class="spa-text">We hebben je persoonlijke analyse verstuurd naar <strong data-confirm-email></strong>. Kijk ook even in je spammap.</p>
-  <p class="spa-text">Het resultaat is een eerste inschatting. We bekijken het graag samen met je, met je wensen en plannen erbij.</p>
+  <${h} class="spa-title" id="${id('t4')}" tabindex="-1">Bedankt, we nemen contact op</${h}>
+  <p class="spa-text">We bekijken je resultaat en nemen snel contact met je op. Je resultaat staat ook in je mailbox op <strong data-confirm-email></strong>. Kijk ook even in je spammap.</p>
 </section>`;
 }
 
@@ -191,9 +195,10 @@ function mount(root, index) {
   root.dataset.spaReady = '1';
   const cfg = {
     helpUrl: root.dataset.helpUrl || '',
-    inverterHelpUrl: root.dataset.inverterHelpUrl || '',
     privacyUrl: root.dataset.privacyUrl || '',
     email: root.dataset.email || 'info@smartpeak.be',
+    phone: root.dataset.phone || '',
+    phoneHref: root.dataset.phoneHref || '',
     source: root.dataset.source || (location.hostname + location.pathname),
     headingLevel: Math.min(6, Math.max(2, Number(root.dataset.headingLevel) || 3)),
     baseUrl: root.dataset.firestore || FIRESTORE_URL
@@ -203,22 +208,16 @@ function mount(root, index) {
   root.innerHTML = template(cfg, uid);
 
   const $ = (sel) => root.querySelector(sel);
-  const state = { csvText: null, configs: null };
+  const state = { csvText: null, allDays: null, price: 0, configs: null };
 
   function goTo(step) {
     root.querySelectorAll('[data-step]').forEach(el => { el.hidden = Number(el.dataset.step) !== step; });
-    root.querySelectorAll('[data-dot]').forEach(el => {
-      const n = Number(el.dataset.dot);
-      el.classList.toggle('is-active', n === step);
-      el.classList.toggle('is-done', n < step);
-      if (n === step) el.setAttribute('aria-current', 'step'); else el.removeAttribute('aria-current');
-    });
     $(`[data-step="${step}"] .spa-title`).focus({ preventScroll: true });
     const top = root.getBoundingClientRect().top;
     if (top < 0) root.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  // Start loading the product list early; retried on submit if it failed.
+  // The product list is only needed for the (internal) lead result; loaded once a result is shown.
   function prefetchConfigs() {
     if (!state.configs) {
       state.configs = loadProductConfigs({ baseUrl: cfg.baseUrl });
@@ -227,11 +226,18 @@ function mount(root, index) {
     return state.configs;
   }
 
-  // Step 1: the CSV file
+  function setError(input, errorEl, invalid) {
+    input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+    errorEl.hidden = !invalid;
+    return !invalid;
+  }
+
+  // Step 1: the CSV file and the price
   const fileInput = $('[data-file]');
   const drop = $('[data-drop]');
   const csvMsg = $('[data-csv-msg]');
-  const next2 = $('[data-next="2"]');
+  const calcBtn = $('[data-calc]');
+  const priceInput = $('[data-price]');
 
   function showCsv(kind, text) {
     csvMsg.className = `spa-msg spa-msg-${kind}`;
@@ -243,7 +249,8 @@ function mount(root, index) {
     if (!file) return;
     $('[data-file-name]').textContent = file.name;
     state.csvText = null;
-    next2.disabled = true;
+    state.allDays = null;
+    calcBtn.disabled = true;
     if (!/\.csv$/i.test(file.name)) {
       showCsv('error', 'Kies een CSV-bestand (.csv), zoals Mijn Fluvius het aanbiedt.');
       return;
@@ -255,13 +262,13 @@ function mount(root, index) {
       return;
     }
     state.csvText = text;
-    next2.disabled = false;
+    state.allDays = read.allDays;
+    calcBtn.disabled = false;
     if (read.days < 365) {
-      showCsv('warn', `Bestand geladen: ${read.days} dagen verbruik. Dat is minder dan een jaar, dus we schatten het resultaat op basis van die periode.`);
+      showCsv('warn', `Bestand geladen: ${read.days} dagen verbruik. Dat is minder dan een jaar, dus we rekenen het om naar een jaar.`);
     } else {
       showCsv('ok', `Bestand geladen: ${read.days} dagen verbruik gevonden.`);
     }
-    prefetchConfigs();
   }
 
   fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
@@ -273,69 +280,68 @@ function mount(root, index) {
     handleFile(e.dataTransfer.files[0]);
   });
 
-  // Navigation
-  root.querySelectorAll('[data-back]').forEach(btn => btn.addEventListener('click', () => goTo(Number(btn.dataset.back))));
-  next2.addEventListener('click', () => { if (state.csvText) goTo(2); });
+  calcBtn.addEventListener('click', () => {
+    if (!state.allDays) return;
+    const p = parseDecimal(priceInput.value);
+    const okPrice = p.empty || (!p.invalid && p.value >= 0.01 && p.value <= 2);
+    if (!setError(priceInput, $(`#${uid}-price-err`), !okPrice)) { priceInput.focus(); return; }
+    state.price = p.empty ? 0 : p.value;
+    const price = state.price || LEAD_DEFAULTS.pricePerKwh;
+    const indication = buildPublicIndication(state.allDays, price);
+    $('[data-result]').innerHTML = renderAnalysisResult(indication, yearlyTotals(state.allDays), {
+      priceGiven: !p.empty, headingLevel: cfg.headingLevel
+    });
+    goTo(2);
+    prefetchConfigs();
+    document.dispatchEvent(new CustomEvent('sp:analysis', { detail: { indication: Boolean(indication) } }));
+  });
 
-  function setError(input, errorEl, invalid) {
-    input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
-    errorEl.hidden = !invalid;
-    return !invalid;
-  }
+  $('[data-restart]').addEventListener('click', () => goTo(1));
 
+  // Step 2: contact request (optional)
+  const form = $('[data-contact]');
   const nameInput = $('[data-name]');
   const emailInput = $('[data-email]');
+  const consentInput = $('[data-consent]');
+  const submitBtn = $('[data-submit]');
+  const submitMsg = $('[data-submit-msg]');
+
   function validateContact() {
     const okName = setError(nameInput, $(`#${uid}-name-err`), !nameInput.value.trim());
     const email = emailInput.value.trim();
     const okEmail = setError(emailInput, $(`#${uid}-email-err`), !(email && emailInput.validity.valid && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)));
-    if (!okName) nameInput.focus(); else if (!okEmail) emailInput.focus();
-    return okName && okEmail;
-  }
-  $('[data-next="3"]').addEventListener('click', () => { if (validateContact()) goTo(3); });
-
-  // Step 3: optional fields and submit
-  const pvInput = $('[data-pv]');
-  const priceInput = $('[data-price]');
-  function readOptional(input, errorEl, min, max) {
-    const p = parseDecimal(input.value);
-    if (p.empty) { setError(input, errorEl, false); return { ok: true, value: 0 }; }
-    const ok = !p.invalid && p.value >= min && p.value <= max;
-    setError(input, errorEl, !ok);
-    return { ok, value: ok ? p.value : 0 };
+    const okConsent = setError(consentInput, $(`#${uid}-consent-err`), !consentInput.checked);
+    if (!okName) nameInput.focus(); else if (!okEmail) emailInput.focus(); else if (!okConsent) consentInput.focus();
+    return okName && okEmail && okConsent;
   }
 
-  const submitBtn = $('[data-submit]');
-  const submitMsg = $('[data-submit-msg]');
-  submitBtn.addEventListener('click', async () => {
-    const pv = readOptional(pvInput, $(`#${uid}-pv-err`), 0.1, 100);
-    const price = readOptional(priceInput, $(`#${uid}-price-err`), 0.01, 2);
-    if (!pv.ok) { pvInput.focus(); return; }
-    if (!price.ok) { priceInput.focus(); return; }
-    const age = root.querySelector(`input[name="${uid}-age"]:checked`);
-
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!validateContact()) return;
     submitMsg.hidden = true;
-    root.querySelectorAll('.spa-step[data-step="3"] button').forEach(b => { b.disabled = true; });
-    submitBtn.innerHTML = '<span class="spa-spinner" aria-hidden="true"></span>Even rekenen…';
+    form.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    submitBtn.innerHTML = '<span class="spa-spinner" aria-hidden="true"></span>Even versturen…';
     try {
       const configs = await prefetchConfigs();
       await submitLeadAnalysis({
         csvText: state.csvText,
         name: nameInput.value,
         email: emailInput.value,
-        pvInverterKw: pv.value,
-        pricePerKwh: price.value,
-        houseAgeOver10Years: age ? age.value === 'true' : null,
+        phone: $('[data-phone]').value,
+        pricePerKwh: state.price,
+        houseAgeOver10Years: null,
+        requestContact: true,
         source: cfg.source
       }, { resultPageUrl: RESULT_PAGE_URL, configs, baseUrl: cfg.baseUrl });
       $('[data-confirm-email]').textContent = emailInput.value.trim();
-      goTo(4);
+      goTo(3);
+      document.dispatchEvent(new CustomEvent('sp:lead', { detail: { bron: 'verbruiksanalyse' } }));
     } catch (error) {
       console.error('SmartPeak analyse:', error);
       submitMsg.innerHTML = `Er ging iets mis bij het versturen. Probeer het opnieuw, of mail je CSV-bestand naar <a href="mailto:${esc(cfg.email)}">${esc(cfg.email)}</a>.`;
       submitMsg.hidden = false;
-      root.querySelectorAll('.spa-step[data-step="3"] button').forEach(b => { b.disabled = false; });
-      submitBtn.textContent = 'Bereken mijn resultaat';
+      form.querySelectorAll('button').forEach(b => { b.disabled = false; });
+      submitBtn.textContent = 'Neem contact met me op';
     }
   });
 }
