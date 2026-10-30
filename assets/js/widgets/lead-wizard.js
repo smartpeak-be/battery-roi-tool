@@ -16,7 +16,9 @@
 //   data-source         where the lead came from (default: the page path), noted on the lead
 //   data-heading-level  heading level for the step titles (default 3)
 //   data-firestore      Firestore REST base URL (tests only, e.g. the emulator)
-// The host page hears about a contact request through the "sp:lead" event on document.
+// The host page hears about usage through events on document, for its own (consented) analytics:
+// "sp:analysis" with detail.stap 'bestand' (CSV loaded) or 'resultaat' (met_grootte: true/false),
+// and "sp:lead" when the visitor asks to be contacted. They never carry consumption data.
 // Styling: the widget injects a small default stylesheet driven by CSS custom properties
 // (--spa-accent, --spa-ink, --spa-line, ...), so the host page can restyle it.
 
@@ -264,6 +266,7 @@ function mount(root, index) {
     state.csvText = text;
     state.allDays = read.allDays;
     calcBtn.disabled = false;
+    document.dispatchEvent(new CustomEvent('sp:analysis', { detail: { stap: 'bestand' } }));
     if (read.days < 365) {
       showCsv('warn', `Bestand geladen: ${read.days} dagen verbruik. Dat is minder dan een jaar, dus we rekenen het om naar een jaar.`);
     } else {
@@ -293,7 +296,7 @@ function mount(root, index) {
     });
     goTo(2);
     prefetchConfigs();
-    document.dispatchEvent(new CustomEvent('sp:analysis', { detail: { indication: Boolean(indication) } }));
+    document.dispatchEvent(new CustomEvent('sp:analysis', { detail: { stap: 'resultaat', met_grootte: Boolean(indication) } }));
   });
 
   // Step 2: contact request (optional)
