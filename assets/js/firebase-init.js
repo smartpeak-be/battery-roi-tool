@@ -485,7 +485,9 @@ async function createProject({ projectName, customerName, status, csvData, metad
       eanCode:     csvData.eanCode,
       meterNr:     csvData.meterNr,
       meterType:   csvData.meterType,
+      dataGranularity: csvData.dataGranularity || 'daily',
       dailyCompact: csvData.dailyCompact,
+      quarterCompact: csvData.quarterCompact || null,
     } : null,
     lastCalcRun: null,
   };
@@ -625,7 +627,9 @@ async function setProjectCsv(id, csvData) {
       eanCode:     csvData.eanCode,
       meterNr:     csvData.meterNr,
       meterType:   csvData.meterType,
+      dataGranularity: csvData.dataGranularity || 'daily',
       dailyCompact: csvData.dailyCompact,
+      quarterCompact: csvData.quarterCompact || null,
     },
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
   });
@@ -1897,7 +1901,9 @@ async function convertLeadToProject(lead, opts = {}) {
     csvUpload:    lead.csvDailyCompact ? {
       uploadedAt:   now,
       uploadedBy:   email,
+      dataGranularity: lead.csvDataGranularity || 'daily',
       dailyCompact: lead.csvDailyCompact,
+      quarterCompact: lead.csvQuarterCompact || null,
     } : null,
     // Caller may precompute the full ROI run so the project opens with
     // results already rendered (no manual Bereken needed). Falls back to
