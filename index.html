@@ -70,13 +70,23 @@
     </div>
     <div class="form-group">
       <label>Kostprijs elektriciteit dag</label>
-      <input type="number" id="elecPrice" min="0" step="0.001" placeholder="bijv. 0.28" />
+      <input type="number" id="elecPrice" min="0" step="0.001" value="0.32" placeholder="bijv. 0.32" />
       <span class="unit">€ / kWh — dagtarief (ma–vr 07:00–22:00) of enkelvoudig tarief</span>
     </div>
     <div class="form-group">
       <label>Kostprijs elektriciteit nacht <span style="font-weight:400;text-transform:none;color:var(--muted)">(optioneel)</span></label>
       <input type="number" id="elecPriceNight" min="0" step="0.001" placeholder="bijv. 0.18" />
       <span class="unit">€ / kWh — nachttarief. Vul in voor tweevoudig tarief.</span>
+    </div>
+    <div class="form-group">
+      <label>Injectievergoeding</label>
+      <input type="number" id="injectionPrice" min="0" step="0.001" value="0.03" />
+      <span class="unit">€ / kWh — vergoeding die wegvalt wanneer de batterij injectie opvangt</span>
+    </div>
+    <div class="form-group">
+      <label>Capaciteitstarief <span style="font-weight:400;text-transform:none;color:var(--muted)">(apart resultaat)</span></label>
+      <input type="number" id="capacityTariffRate" min="0" step="0.01" value="56.59" />
+      <span class="unit">€ / kW / jaar — gemiddelde Vlaanderen 2026 incl. 6% btw; enkel berekend bij kwartierdata</span>
     </div>
   </div>
 </div>
@@ -177,6 +187,6 @@
 <!-- TOAST -->
 <div id="toast"></div>
 
-<script type="module" src="assets/js/pages/index-app.js?v=1"></script>
+<script type="module" src="assets/js/pages/index-app.js?v=2"></script>
 </body>
 </html>
