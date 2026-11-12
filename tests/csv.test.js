@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseCSV, parseDate, parsVolume, extractCsvForStorage, validateCsvHeaders } from '../assets/js/csv.js';
+import {
+  parseCSV, parseDate, parsVolume, extractCsvForStorage, validateCsvHeaders,
+  buildTimeBlocksFromQuarterCompact, localDateKey,
+} from '../assets/js/csv.js';
 
 describe('parseCSV', () => {
   it('splits semicolon-separated rows into objects keyed by header', () => {
@@ -220,9 +223,7 @@ describe('extractCsvForStorage', () => {
 
   it('returns correct dailyCompact shape', () => {
     const result = extractCsvForStorage(sampleCSV);
-    // Note: parseDate uses local Date constructor, which may produce off-by-one in UTC conversion
-    // The important thing is that dates are sorted and aggregated correctly
-    expect(result.dailyCompact.startDate).toMatch(/2024-01-01|2023-12-31/);
+    expect(result.dailyCompact.startDate).toBe('2024-01-01');
     expect(result.dailyCompact.afname).toHaveLength(2);
     expect(result.dailyCompact.injectie).toHaveLength(2);
   });
@@ -291,5 +292,24 @@ describe('extractCsvForStorage', () => {
     expect(result.dailyCompact.injectie[0]).toBeCloseTo(4.2, 2);
     expect(result.dailyCompact.afname[1]).toBeCloseTo(8.0, 2);
     expect(result.dailyCompact.injectie[1]).toBeCloseTo(6.1, 2);
+  });
+
+  it('keeps the Belgian calendar date without a UTC one-day shift', () => {
+    expect(localDateKey(parseDate('20-03-2024'))).toBe('2024-03-20');
+  });
+
+  it('stores and restores quarter-hour values compactly', () => {
+    const csv = [
+      'Van (datum);Van (tijdstip);Tot (datum);Tot (tijdstip);Register;Volume',
+      '01-06-2026;12:00;01-06-2026;12:15;Injectie;0,750',
+      '01-06-2026;12:15;01-06-2026;12:30;Afname;0,500',
+    ].join('\n');
+    const result = extractCsvForStorage(csv);
+    expect(result.dataGranularity).toBe('quarter');
+    expect(result.quarterCompact).not.toBeNull();
+    const blocks = buildTimeBlocksFromQuarterCompact(result.quarterCompact);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].injectie).toBeCloseTo(0.75, 3);
+    expect(blocks[1].afname).toBeCloseTo(0.5, 3);
   });
 });
