@@ -2073,8 +2073,13 @@ async function precomputeLastCalcRunForLead(lead) {
     // capture EAN/meter info) — explicit '' so serializeDForLastCalcRun
     // doesn't emit undefined fields, which Firestore rejects.
     d = processDataPure(
-      { allDays, eanCode: '', meterNr: '', meterType: '' },
-      pvKw, selectedConfigs, tariff, null
+      {
+        allDays,
+        quarterCompact: lead.csvQuarterCompact || null,
+        eanCode: '', meterNr: '', meterType: '',
+      },
+      pvKw, selectedConfigs, tariff, null,
+      { injectionPrice: 0.03, capacityTariffRate: 56.59 }
     );
   } catch (e) {
     console.warn('[lead-precompute] processDataPure threw:', e);
@@ -2090,6 +2095,8 @@ async function precomputeLastCalcRunForLead(lead) {
         pvInv:      pvKw,
         priceDay:   tariff,
         priceNight: null,
+        injectionPrice: 0.03,
+        capacityTariffRate: 56.59,
         selectedConfigTypes: selectedConfigs.map(c => c.type),
       },
       results: serializeDForLastCalcRun(d),
