@@ -91,6 +91,7 @@ export async function loadProductConfigs({ baseUrl = FIRESTORE_URL, fetchImpl = 
  * `source` (optional) is noted so the dashboard shows where the lead came from.
  */
 export function buildLeadDoc({ csvText, allDays, name, email, phone, pvInverterKw, pricePerKwh, houseAgeOver10Years, source, requestContact }, configs) {
+  const csvStorage = extractCsvForStorage(csvText);
   const rawInputs = {
     pvInverterKw: Number(pvInverterKw) || 0,
     pricePerKwh: Number(pricePerKwh) || 0,
@@ -107,7 +108,9 @@ export function buildLeadDoc({ csvText, allDays, name, email, phone, pvInverterK
   return {
     customerName: String(name).replace(/\s+/g, ' ').trim().slice(0, 120),
     email: String(email).trim(),
-    csvDailyCompact: extractCsvForStorage(csvText).dailyCompact,
+    csvDailyCompact: csvStorage.dailyCompact,
+    csvQuarterCompact: csvStorage.quarterCompact || null,
+    csvDataGranularity: csvStorage.dataGranularity || 'daily',
     pvInverterKw: resolved.pvInverterKw,
     pricePerKwh: resolved.pricePerKwh,
     houseAgeOver10Years: rawInputs.houseAgeOver10Years,
