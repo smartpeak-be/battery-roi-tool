@@ -1,10 +1,9 @@
-import { fmt2, fmtEur, renderWithAvg } from '../calc-engine.js';
+import { fmt2, fmtEur } from '../calc-engine.js';
 import { escapeHtml } from '../shared-helpers.js';
 
 /** Build HTML for a single scenario card (Worst Case or Realistisch). */
 export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, extraInfo, mainColorOverride, scenAvg) {
   const fkw  = n => fmt2(n) + ' kWh';
-  const fday = n => Math.round(n) + ' d';
   const feur = n => fmtEur(n) + ' / jaar';
 
   const paybackText = !isFinite(scen.payback) || scen.payback <= 0 ? '—'
@@ -14,7 +13,7 @@ export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, e
   const pctPartial = Math.min(scen.recoveryPctPartial, 100 - pctFull);
   const injFull    = Math.min(scen.injPctFull,    100);
   const injPartial = Math.min(scen.injPctPartial, 100 - injFull);
-  const priceLine  = d.dualTariff ? `<div style="font-size:0.8rem;color:var(--primary);margin-top:4px;">💱 Effectieve prijs: <strong>${fmtEur(d.effectivePrice)}/kWh</strong></div>` : '';
+  const priceLine  = `<div style="font-size:0.8rem;color:var(--primary);margin-top:4px;">💱 Afname: <strong>${fmtEur(d.effectivePrice)}/kWh</strong> &nbsp;·&nbsp; injectie: <strong>${fmtEur(d.injectionPrice || 0)}/kWh</strong></div>`;
   const barColor     = `var(--${mainColor === 'green' ? 'success' : mainColor === 'orange' ? 'warning' : 'primary'})`;
   // Partial color: clearly distinct from full color per scenario type
   // orange (worst-case) → red  |  blue (optimistic) → amber  |  green (optimal) → teal
@@ -71,14 +70,22 @@ export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, e
     <div class="stat-row"><span class="stat-label">Terugverdientijd</span><span class="stat-value big" style="color:var(--warning);display:flex;flex-direction:column;align-items:flex-end;">${paybackText}${avgPaybackLine}</span></div>
     <details class="scen-details">
       <summary>Details <span class="chev">▾</span></summary>
-      <div class="stat-row"><span class="stat-label">Min. dagelijkse injectie nodig</span><span class="stat-value">${fmt2(scen.threshold)} kWh</span></div>
-      <div class="stat-row"><span class="stat-label">Dagen drempel volledig bereikt</span><span class="stat-value">${renderWithAvg(scen.qualifyingDays, showAvg ? scenAvg.qualifyingDays : null, fday, N)}</span></div>
-      <div class="stat-row"><span class="stat-label">Dagen gedeeltelijk geladen</span><span class="stat-value" style="color:var(--warning)">${renderWithAvg(scen.partialDays, showAvg ? scenAvg.partialDays : null, fday, N)}</span></div>
-      <div class="stat-row"><span class="stat-label">Opgeslagen volle cycli (periode)</span><span class="stat-value">${renderWithAvg(scen.chargedFull, showAvg ? scenAvg.chargedFull : null, fkw, N)}</span></div>
-      <div class="stat-row"><span class="stat-label">Opgeslagen gedeeltelijk (periode)</span><span class="stat-value" style="color:var(--warning)">${renderWithAvg(scen.chargedPartial, showAvg ? scenAvg.chargedPartial : null, fkw, N)}</span></div>
-      <div class="stat-row"><span class="stat-label">Jaarl. besparing volle cycli</span><span class="stat-value green">${renderWithAvg(scen.annualSavingFull, showAvg ? scenAvg.annualSavingFull : null, feur, N)}</span></div>
-      <div class="stat-row"><span class="stat-label">Jaarl. besparing gedeeltelijk</span><span class="stat-value" style="color:var(--warning)">${renderWithAvg(scen.annualSavingPartial, showAvg ? scenAvg.annualSavingPartial : null, feur, N)}</span></div>
+      <div class="stat-row"><span class="stat-label">Uit injectie opgenomen</span><span class="stat-value">${fkw(scen.chargedInput || 0)}</span></div>
+      <div class="stat-row"><span class="stat-label">Door batterij aan woning geleverd</span><span class="stat-value green">${fkw(scen.delivered || 0)}</span></div>
+      <div class="stat-row"><span class="stat-label">Resterende netafname</span><span class="stat-value">${fkw(scen.remainingAfname || 0)}</span></div>
+      <div class="stat-row"><span class="stat-label">Resterende netinjectie</span><span class="stat-value">${fkw(scen.remainingInjectie || 0)}</span></div>
+      <div class="stat-row"><span class="stat-label">Waarde vermeden afname</span><span class="stat-value green">${fmtEur(scen.avoidedImportValue || 0)} / jaar</span></div>
+      <div class="stat-row"><span class="stat-label">Misgelopen injectievergoeding</span><span class="stat-value" style="color:var(--warning)">− ${fmtEur(scen.lostInjectionValue || 0)} / jaar</span></div>
+      <div class="stat-row"><span class="stat-label">Equivalent aantal cycli</span><span class="stat-value">${fmt2(scen.cycles || 0)}</span></div>
     </details>
+    ${scen.capacityTariff && scen.capacityTariff.available ? `
+    <details class="scen-details">
+      <summary>Capaciteitstarief (apart) <span class="chev">▾</span></summary>
+      <div class="stat-row"><span class="stat-label">Gem. maandpiek zonder batterij</span><span class="stat-value">${fmt2(scen.capacityTariff.originalAverageKw)} kW</span></div>
+      <div class="stat-row"><span class="stat-label">Gem. maandpiek met batterij</span><span class="stat-value">${fmt2(scen.capacityTariff.simulatedAverageKw)} kW</span></div>
+      <div class="stat-row"><span class="stat-label">Mogelijke extra besparing</span><span class="stat-value green">${fmtEur(scen.capacityTariff.annualSaving)} / jaar</span></div>
+      <div style="font-size:.75rem;color:var(--muted);margin-top:6px;">Indicatief, minimum 2,5 kW per maand toegepast. Niet opgenomen in de terugverdientijd hierboven.</div>
+    </details>` : ''}
     ${(() => {
       const avgRecPct = showAvg ? Math.min(100, scenAvg.recoveryPctFull + scenAvg.recoveryPctPartial) : null;
       const avgInjPct = showAvg ? Math.min(100, scenAvg.injPctFull      + scenAvg.injPctPartial)      : null;
