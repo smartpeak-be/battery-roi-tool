@@ -45,8 +45,8 @@ describe('index custom composition UI', () => {
     expect(source).toContain('compositionDescriptions[cr.cfg.type] = description;');
     expect(source).toContain('compositionNames: Object.keys(compositionNames).length > 0 ? compositionNames : null');
     expect(source).toContain('compositionDescriptions: Object.keys(compositionDescriptions).length > 0 ? compositionDescriptions : null');
-    expect(source).toContain('_restoredCompositionNames = state.v === 6 && state.compositionNames');
-    expect(source).toContain('_restoredCompositionDescriptions = state.v === 6 && state.compositionDescriptions');
+    expect(source).toContain('_restoredCompositionNames = state.v >= 6 && state.compositionNames');
+    expect(source).toContain('_restoredCompositionDescriptions = state.v >= 6 && state.compositionDescriptions');
   });
 
   it('renders a project-mode quote button for calculated custom compositions without clearing project context on restore', () => {
