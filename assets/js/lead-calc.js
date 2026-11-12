@@ -9,7 +9,7 @@ export { parseSheetConfigs } from './calc-engine.js';
 
 export const LEAD_DEFAULTS = {
   pvInverterKw: 3.5,
-  pricePerKwh: 0.39,
+  pricePerKwh: 0.32,
   btw: 21
 };
 
