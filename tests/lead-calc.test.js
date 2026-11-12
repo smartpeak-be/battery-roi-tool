@@ -14,7 +14,7 @@ describe('resolveLeadInputs', () => {
   it('uses all defaults when nothing provided', () => {
     const result = resolveLeadInputs({});
     expect(result.pvInverterKw).toBe(3.5);
-    expect(result.pricePerKwh).toBe(0.39);
+    expect(result.pricePerKwh).toBe(0.32);
     expect(result.effectiveBtw).toBe(21);
     expect(result.defaultsUsed.pvInverterKw).toBe(true);
     expect(result.defaultsUsed.pricePerKwh).toBe(true);
@@ -50,7 +50,7 @@ describe('resolveLeadInputs', () => {
   it('ignores zero values (treated as not provided)', () => {
     const result = resolveLeadInputs({ pvInverterKw: 0, pricePerKwh: 0 });
     expect(result.pvInverterKw).toBe(3.5);
-    expect(result.pricePerKwh).toBe(0.39);
+    expect(result.pricePerKwh).toBe(0.32);
     expect(result.defaultsUsed.pvInverterKw).toBe(true);
     expect(result.defaultsUsed.pricePerKwh).toBe(true);
   });
@@ -298,7 +298,7 @@ describe('buildDefaultsNotes', () => {
     });
     expect(notes).toContain('Standaardwaarden gebruikt:');
     expect(notes).toContain('3,5 kW');
-    expect(notes).toContain('0,39 EUR/kWh');
+    expect(notes).toContain('0,32 EUR/kWh');
     expect(notes).toContain('21%');
   });
 
@@ -309,7 +309,7 @@ describe('buildDefaultsNotes', () => {
       houseAgeOver10Years: false
     });
     expect(notes).toContain('3,5 kW');
-    expect(notes).not.toContain('0,39');
+    expect(notes).not.toContain('0,32');
     expect(notes).not.toContain('21%');
   });
 });
