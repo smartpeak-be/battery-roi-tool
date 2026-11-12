@@ -143,6 +143,8 @@ document.getElementById('btnSubmit').addEventListener('click', async () => {
         customerName:       document.getElementById('leadName').value.trim(),
         email:              document.getElementById('leadEmail').value.trim(),
         csvDailyCompact:    csvStorage.dailyCompact,
+        csvQuarterCompact:  csvStorage.quarterCompact || null,
+        csvDataGranularity: csvStorage.dataGranularity || 'daily',
         pvInverterKw:       resolved.pvInverterKw,
         pricePerKwh:        resolved.pricePerKwh,
         houseAgeOver10Years: rawInputs.houseAgeOver10Years,
