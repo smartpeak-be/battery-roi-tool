@@ -110,6 +110,155 @@ export function parseDate(str) {
   return date;
 }
 
+// Use calendar fields instead of toISOString(): midnight in Belgium is the
+// previous UTC date for most of the year, which used to shift every Fluvius day
+// one day backwards in the UI.
+export function localDateKey(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function parseTimeMinutes(str) {
+  if (str == null || str === '') return null;
+  const parts = String(str).trim().split(':');
+  if (parts.length < 2 || parts.length > 3) return null;
+  const hour = Number(parts[0]);
+  const minute = Number(parts[1]);
+  const second = parts.length === 3 ? Number(parts[2]) : 0;
+  if (![hour, minute, second].every(Number.isFinite)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return null;
+  return hour * 60 + minute + second / 60;
+}
+
+function utcDayNumber(date) {
+  return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
+}
+
+function tariffFromRow(row, register) {
+  const combined = `${register} ${row['Tarief'] || ''}`.toLowerCase();
+  if (combined.includes('nacht')) return 'night';
+  if (combined.includes('dag')) return 'day';
+  return 'single';
+}
+
+function intervalDurationHours(row, startDate, startMinutes) {
+  const endDate = parseDate(row['Tot (datum)'] || '') || startDate;
+  const endMinutes = parseTimeMinutes(row['Tot (tijdstip)']);
+  if (startMinutes == null || endMinutes == null) return null;
+  const minutes = (utcDayNumber(endDate) - utcDayNumber(startDate)) * 1440 + endMinutes - startMinutes;
+  return minutes > 0 ? minutes / 60 : null;
+}
+
+/** Build measured interval blocks when the CSV contains sub-daily timestamps. */
+export function rowsToTimeBlocks(rows) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const date = parseDate(row['Van (datum)']);
+    const minutes = parseTimeMinutes(row['Van (tijdstip)']);
+    const durationHours = date && minutes != null ? intervalDurationHours(row, date, minutes) : null;
+    // Daily Fluvius exports also contain 00:00 → next day 00:00. Do not treat
+    // those rows as measured interval data.
+    if (!date || minutes == null || durationHours == null || durationHours >= 23) continue;
+    const key = `${localDateKey(date)}|${minutes}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        start: new Date(date.getFullYear(), date.getMonth(), date.getDate(), Math.floor(minutes / 60), Math.floor(minutes % 60)),
+        durationHours,
+        afname: 0,
+        injectie: 0,
+        tariff: 'single',
+        measuredInterval: true,
+      });
+    }
+    const block = map.get(key);
+    block.durationHours = Math.min(block.durationHours, durationHours);
+    const register = (row['Register'] || '').toLowerCase();
+    const volume = parsVolume(row['Volume']);
+    if (register.includes('afname')) block.afname += volume;
+    if (register.includes('injectie')) block.injectie += volume;
+    const tariff = tariffFromRow(row, register);
+    if (tariff !== 'single') block.tariff = tariff;
+  }
+  return [...map.values()].sort((a, b) => a.start - b.start);
+}
+
+function uint16ToBase64(values) {
+  const bytes = new Uint8Array(values.buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function base64ToUint16(base64) {
+  const binary = atob(base64 || '');
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Uint16Array(bytes.buffer);
+}
+
+export function buildQuarterCompact(blocks) {
+  const measured = (blocks || []).filter(b => b.measuredInterval && Math.abs(b.durationHours - 0.25) < 0.01);
+  if (!measured.length) return null;
+  const first = measured[0].start;
+  const last = measured[measured.length - 1].start;
+  const firstDay = utcDayNumber(first);
+  const days = utcDayNumber(last) - firstDay + 1;
+  const slotsPerDay = 96;
+  const values = new Uint16Array(days * slotsPerDay * 2);
+  for (const block of measured) {
+    const dayOffset = utcDayNumber(block.start) - firstDay;
+    const minute = block.start.getHours() * 60 + block.start.getMinutes();
+    const slot = Math.floor(minute / 15);
+    if (dayOffset < 0 || dayOffset >= days || slot < 0 || slot >= slotsPerDay) continue;
+    const index = (dayOffset * slotsPerDay + slot) * 2;
+    // Store Wh as compact unsigned integers. Multiple rows for a slot are
+    // already aggregated by rowsToTimeBlocks.
+    values[index] = Math.min(65535, Math.round((block.afname || 0) * 1000));
+    values[index + 1] = Math.min(65535, Math.round((block.injectie || 0) * 1000));
+  }
+  return {
+    version: 1,
+    startDate: localDateKey(first),
+    days,
+    slotMinutes: 15,
+    whBase64: uint16ToBase64(values),
+  };
+}
+
+export function buildTimeBlocksFromQuarterCompact(compact) {
+  if (!compact || compact.version !== 1 || !compact.whBase64) return [];
+  const start = new Date(`${compact.startDate}T00:00:00`);
+  const values = base64ToUint16(compact.whBase64);
+  const slotsPerDay = Math.round(1440 / compact.slotMinutes);
+  const blocks = [];
+  for (let day = 0; day < compact.days; day++) {
+    for (let slot = 0; slot < slotsPerDay; slot++) {
+      const index = (day * slotsPerDay + slot) * 2;
+      const afname = (values[index] || 0) / 1000;
+      const injectie = (values[index + 1] || 0) / 1000;
+      if (afname === 0 && injectie === 0) continue;
+      const blockStart = new Date(start);
+      blockStart.setDate(start.getDate() + day);
+      blockStart.setMinutes(slot * compact.slotMinutes);
+      blocks.push({
+        start: blockStart,
+        durationHours: compact.slotMinutes / 60,
+        afname,
+        injectie,
+        tariff: 'single',
+        measuredInterval: true,
+      });
+    }
+  }
+  return blocks;
+}
+
 export function parsVolume(str) {
   if (!str || str === '') return 0;
   return parseFloat(str.replace(',', '.')) || 0;
@@ -149,16 +298,17 @@ export function extractCsvForStorage(csvText) {
     if (!dateStr) continue;
     const date = parseDate(dateStr);
     if (!date) { skippedDates++; continue; }
-    const key = date.toISOString().slice(0, 10);
+    const key = localDateKey(date);
     if (!dayMap[key]) dayMap[key] = { date, afname: 0, injectie: 0, afnamedag: 0, afnamenacht: 0, injectiedag: 0, injectienacht: 0 };
     const register = (row['Register'] || '').toLowerCase();
     const vol = parsVolume(row['Volume']);
     if (register.includes('afname'))   dayMap[key].afname   += vol;
     if (register.includes('injectie')) dayMap[key].injectie += vol;
-    if (register === 'afname dag')      dayMap[key].afnamedag    += vol;
-    if (register === 'afname nacht')    dayMap[key].afnamenacht  += vol;
-    if (register === 'injectie dag')    dayMap[key].injectiedag  += vol;
-    if (register === 'injectie nacht')  dayMap[key].injectienacht += vol;
+    const tariff = tariffFromRow(row, register);
+    if (register.includes('afname') && tariff === 'day') dayMap[key].afnamedag += vol;
+    if (register.includes('afname') && tariff === 'night') dayMap[key].afnamenacht += vol;
+    if (register.includes('injectie') && tariff === 'day') dayMap[key].injectiedag += vol;
+    if (register.includes('injectie') && tariff === 'night') dayMap[key].injectienacht += vol;
   }
 
   const allDays = Object.values(dayMap).sort((a, b) => a.date - b.date);
@@ -170,9 +320,12 @@ export function extractCsvForStorage(csvText) {
     throw new Error('Geen bruikbare data gevonden in het CSV bestand.' + detail);
   }
 
-  const startDate = allDays[0].date.toISOString().slice(0, 10);
+  const startDate = localDateKey(allDays[0].date);
+  const timeBlocks = rowsToTimeBlocks(rows);
   return {
     eanCode, meterNr, meterType,
+    dataGranularity: timeBlocks.length ? 'quarter' : 'daily',
+    quarterCompact: buildQuarterCompact(timeBlocks),
     dailyCompact: {
       startDate,
       afname:        allDays.map(d => d.afname),
