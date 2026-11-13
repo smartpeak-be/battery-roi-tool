@@ -24,10 +24,10 @@ function statusChipHTML(statusKey, projectId) {
   if (readonly) {
     return `<span class="badge status-chip readonly" style="background:${meta.color};color:#fff;">${escapeHtml(meta.label)}</span>`;
   }
-  const dropdownId = `stDd_${projectId}`;
+  const dropdownId = `stDd_${escapeHtml(projectId)}`;
   const options = PROJECT_STATUSES.map(s => `
     <li><button type="button" class="dropdown-item d-flex align-items-center gap-2"
-                data-status="${s.key}" data-project-id="${projectId}">
+                data-status="${s.key}" data-project-id="${escapeHtml(projectId)}">
       <span class="d-inline-block rounded-circle" style="width:10px;height:10px;background:${s.color};flex-shrink:0;"></span>
       ${escapeHtml(s.label)}
     </button></li>

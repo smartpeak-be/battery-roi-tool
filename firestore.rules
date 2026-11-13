@@ -18,6 +18,12 @@ service cloud.firestore {
       return signedInEmail() in ['kevin@bloxit.be', 'kevin@smartpeak.be', 'ledsrepair@gmail.com', 'ruben@smartpeak.be'];
     }
 
+    // Firestore auto-IDs and the website widgets' random IDs: 20 letters/digits.
+    // Public collections only accept this shape, so an ID can never carry markup.
+    function isAutoId(id) {
+      return id is string && id.matches('^[A-Za-z0-9]{20}$');
+    }
+
     function leadPath(leadId) {
       return /databases/$(database)/documents/leads/$(leadId);
     }
@@ -138,9 +144,7 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasOnly(['kind', 'leadId', 'to', 'message', 'createdAt'])
         && data.kind == kind
-        && data.leadId is string
-        && data.leadId.size() > 0
-        && data.leadId.size() <= 128
+        && isAutoId(data.leadId)
         && data.createdAt == request.time
         && data.message is map
         && data.message.keys().hasOnly(['subject', 'html'])
@@ -262,7 +266,7 @@ service cloud.firestore {
           'tag', 'includeInCloseoutPdf', 'includeInInspectionPack', 'showOnWebsite', 'uploadedAt', 'uploadedBy',
           'sourceReviewRequestId', 'sourceReviewId'
         ])
-        && isShortString(data.sourceReviewRequestId, 160)
+        && isAutoId(data.sourceReviewRequestId)
         && exists(reviewRequestPath(data.sourceReviewRequestId))
         && get(reviewRequestPath(data.sourceReviewRequestId)).data.projectId == projectId
         && get(reviewRequestPath(data.sourceReviewRequestId)).data.submittedAt == null
@@ -317,7 +321,7 @@ service cloud.firestore {
     match /reviewRequests/{requestId} {
       allow get:    if isWhitelisted() || isPublicReviewRequestGet();
       allow list:   if isWhitelisted();
-      allow create: if isSignedIn() && isValidReviewRequestCreate();
+      allow create: if isWhitelisted() && isAutoId(requestId) && isValidReviewRequestCreate();
       allow update: if isWhitelisted() || isPublicReviewRequestSubmissionUpdate();
       allow delete: if isWhitelisted();
     }
@@ -346,7 +350,7 @@ service cloud.firestore {
     match /leads/{leadId} {
       allow get:    if isWhitelisted() || isPublicLeadGet();
       allow list:   if isWhitelisted();
-      allow create: if isValidLeadCreate();
+      allow create: if isAutoId(leadId) && isValidLeadCreate();
       allow update: if isWhitelisted() || isPublicHotLeadUpdate();
       allow delete: if isWhitelisted();
     }

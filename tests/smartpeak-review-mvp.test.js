@@ -105,7 +105,7 @@ describe('SmartPeak review MVP', () => {
     expect(rules).toContain('match /reviewRequests/{requestId}');
     expect(rules).toContain('allow list:   if isWhitelisted();');
     expect(rules).not.toContain('allow list:   if isSignedIn();');
-    expect(rules).toContain('allow create: if isSignedIn() && isValidReviewRequestCreate();');
+    expect(rules).toContain('allow create: if isWhitelisted() && isAutoId(requestId) && isValidReviewRequestCreate();');
     expect(rules).toContain('data.createdBy == signedInEmail()');
     expect(rules).toContain('match /reviews/{reviewId}');
     expect(rules).toContain("'ratingCommunication'");
