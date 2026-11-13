@@ -128,7 +128,7 @@ describe('submitLeadAnalysis', () => {
     expect(f.resultExpiresAt.timestampValue).toBeTruthy();
     expect(f.houseAgeOver10Years).toEqual({ nullValue: null });
     expect(Object.keys(f).sort()).toEqual([
-      'csvDailyCompact', 'customerName', 'defaultsUsed', 'deletedAt', 'effectiveBtw', 'email',
+      'csvDailyCompact', 'csvDataGranularity', 'csvQuarterCompact', 'customerName', 'defaultsUsed', 'deletedAt', 'effectiveBtw', 'email',
       'hotLeadAt', 'houseAgeOver10Years', 'keuring', 'notes', 'pricePerKwh', 'pvInverterKw',
       'result', 'resultExpiresAt', 'status'
     ]);
@@ -162,7 +162,7 @@ describe('buildLeadResultMailHtml', () => {
       defaultsUsed: { pvInverterKw: true, pricePerKwh: true, houseAgeOver10Years: true }
     });
     expect(html).toContain('Hallo &lt;b&gt;Jan&lt;/b&gt;,');
-    expect(html).toContain('omvormervermogen (3,5 kW), energiekost (0,39 EUR/kWh), BTW-tarief (21%)');
+    expect(html).toContain('omvormervermogen (3,5 kW), energiekost (0,32 EUR/kWh), BTW-tarief (21%)');
     expect(html).toContain('href="https://tool.test/lead-result.html?r=abc"');
   });
 

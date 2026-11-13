@@ -1,4 +1,4 @@
-import { extractCsvForStorage } from '../csv.js';
+import { extractCsvForStorage, localDateKey } from '../csv.js';
 import {
   formatDate, fmt2, fmtEur, renderWithAvg,
   buildAllDaysFromDailyCompact,
@@ -87,11 +87,13 @@ function _serializeState() {
     if (keep.length > 0) meerkostLines[cr.cfg.type] = keep;
   });
   return {
-    v: 6,
+    v: 7,
     form: {
       pvInv:    d.pvInv,
       priceDay: d.priceDay,
       priceNight: (d.dualTariff && !isNaN(d.priceNight)) ? d.priceNight : null,
+      injectionPrice: d.injectionPrice,
+      capacityTariffRate: d.capacityTariffRate,
       selectedConfigTypes: d.configResults.map(cr => cr.cfg.type),
     },
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
@@ -101,9 +103,9 @@ function _serializeState() {
     compositionDescriptions: Object.keys(compositionDescriptions).length > 0 ? compositionDescriptions : null,
     r: {
       isFullYear: d.isFullYear,
-      windowStart: d.windowStart.toISOString().slice(0,10),
-      lastDate:    d.lastDate.toISOString().slice(0,10),
-      firstDate:   d.firstDate.toISOString().slice(0,10),
+      windowStart: localDateKey(d.windowStart),
+      lastDate:    localDateKey(d.lastDate),
+      firstDate:   localDateKey(d.firstDate),
       daysInWindow: d.daysInWindow,
       totalDaysCSV: d.allDays.length,
       totalAfname: d.totalAfname, totalInjectie: d.totalInjectie,
@@ -112,16 +114,19 @@ function _serializeState() {
       dualTariff: d.dualTariff, priceDay: d.priceDay,
       priceNight: d.dualTariff ? d.priceNight : null,
       effectivePrice: d.effectivePrice,
+      injectionPrice: d.injectionPrice,
+      capacityTariffRate: d.capacityTariffRate,
+      dataGranularity: d.dataGranularity,
       pvInv: d.pvInv,
       configResults: d.configResults,
       monthMap: d.monthMap,
       eanCode: d.eanCode, meterNr: d.meterNr, meterType: d.meterType,
       capAnalysis: d.capAnalysis,
       numYears:   d.numYears != null ? d.numYears : 1,
-      yearsStart: d.yearsStart ? d.yearsStart.toISOString().slice(0,10) : null,
+      yearsStart: d.yearsStart ? localDateKey(d.yearsStart) : null,
       avgTotals:  d.avgTotals  || null,
       dailyCompact: Array.isArray(d.allDays) ? {
-        startDate:     d.allDays[0].date.toISOString().slice(0, 10),
+        startDate:     localDateKey(d.allDays[0].date),
         afname:        d.allDays.map(x => x.afname),
         injectie:      d.allDays.map(x => x.injectie),
         afnamedag:     d.allDays.map(x => x.afnamedag),
@@ -166,6 +171,9 @@ function _restoreState(r) {
     r.allDays = { length: r.totalDaysCSV };
   }
   if (r.priceNight == null) r.priceNight = NaN;
+  if (r.injectionPrice == null) r.injectionPrice = 0.03;
+  if (r.capacityTariffRate == null) r.capacityTariffRate = 56.59;
+  if (!r.dataGranularity) r.dataGranularity = 'daily';
   // Multi-year fields: present in v3, absent in v2/v1.
   if (r.numYears == null)   r.numYears   = 1;
   if (r.yearsStart && typeof r.yearsStart === 'string') r.yearsStart = new Date(r.yearsStart + 'T00:00:00');
@@ -222,11 +230,11 @@ function _compositionMapToMeerkostLines(map) {
 }
 
 function _applyLoadedState(state, showBanner) {
-  if (!state || ![1,2,3,4,5,6].includes(state.v)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
-  _restoredCompositionNames = state.v === 6 && state.compositionNames && typeof state.compositionNames === 'object'
+  if (!state || ![1,2,3,4,5,6,7].includes(state.v)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
+  _restoredCompositionNames = state.v >= 6 && state.compositionNames && typeof state.compositionNames === 'object'
     ? { ...state.compositionNames }
     : {};
-  _restoredCompositionDescriptions = state.v === 6 && state.compositionDescriptions && typeof state.compositionDescriptions === 'object'
+  _restoredCompositionDescriptions = state.v >= 6 && state.compositionDescriptions && typeof state.compositionDescriptions === 'object'
     ? { ...state.compositionDescriptions }
     : {};
   const f = state.form || {};
@@ -234,6 +242,8 @@ function _applyLoadedState(state, showBanner) {
   set('pvInverter',    f.pvInv);
   set('elecPrice',     f.priceDay);
   set('elecPriceNight',f.priceNight);
+  set('injectionPrice',f.injectionPrice != null ? f.injectionPrice : 0.03);
+  set('capacityTariffRate',f.capacityTariffRate != null ? f.capacityTariffRate : 56.59);
 
   // Restore manual configs if present
   if (state.manualConfigs && typeof state.manualConfigs === 'object') {
@@ -245,10 +255,10 @@ function _applyLoadedState(state, showBanner) {
   }
 
   if (state.v >= 2 && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
-    const meerkostLines = (state.v === 6)
+    const meerkostLines = (state.v >= 6)
       ? (state.meerkostLines || {})
       : _migrateMeerkostMapToLines(state.meerkostMap || {});   // v:5 fallback
-    const compositionLines = state.v === 6 ? (state.compositionLines || {}) : {};
+    const compositionLines = state.v >= 6 ? (state.compositionLines || {}) : {};
     Object.entries(_compositionMapToMeerkostLines(compositionLines)).forEach(([type, lines]) => {
       if (!meerkostLines[type]) meerkostLines[type] = lines;
     });
@@ -1126,9 +1136,11 @@ async function calculate() {
   const pvInv      = parseFloat(document.getElementById('pvInverter').value);
   const priceDay   = parseFloat(document.getElementById('elecPrice').value);
   const priceNight = parseFloat(document.getElementById('elecPriceNight').value); // may be NaN
+  const injectionPrice = parseFloat(document.getElementById('injectionPrice').value);
+  const capacityTariffRate = parseFloat(document.getElementById('capacityTariffRate').value);
 
-  if (isNaN(pvInv) || isNaN(priceDay)) {
-    alert('Vul het ZP-omvormer vermogen en de elektriciteitsprijs in.');
+  if (isNaN(pvInv) || isNaN(priceDay) || isNaN(injectionPrice) || isNaN(capacityTariffRate)) {
+    alert('Vul het ZP-omvormer vermogen, de elektriciteitsprijs, injectievergoeding en het capaciteitstarief in.');
     return;
   }
   if (!_sheetConfigs) {
@@ -1163,8 +1175,12 @@ async function calculate() {
       const cu = _projectDoc.csvUpload;
       const allDays = buildAllDaysFromDailyCompact(cu.dailyCompact);
       await processDataAsync(
-        { allDays, eanCode: cu.eanCode || '', meterNr: cu.meterNr || '', meterType: cu.meterType || '' },
-        pvInv, selectedConfigs, priceDay, priceNight
+        {
+          allDays,
+          quarterCompact: cu.quarterCompact || null,
+          eanCode: cu.eanCode || '', meterNr: cu.meterNr || '', meterType: cu.meterType || '',
+        },
+        pvInv, selectedConfigs, priceDay, priceNight, { injectionPrice, capacityTariffRate }
       );
       return;
     }
@@ -1185,7 +1201,7 @@ async function calculate() {
       reader.readAsText(fileInput.files[0], 'UTF-8');
     });
 
-    await processDataAsync(text, pvInv, selectedConfigs, priceDay, priceNight);
+    await processDataAsync(text, pvInv, selectedConfigs, priceDay, priceNight, { injectionPrice, capacityTariffRate });
   } catch (err) {
     hideSpinner();
     console.error('Calculate error:', err);
@@ -1198,8 +1214,8 @@ async function calculate() {
 // and data rebuilding (_buildAllDaysFromDailyCompact) are in assets/js/calc-engine.js
 
 // Async wrapper for processData to allow awaiting the project save
-async function processDataAsync(input, pvInv, selectedConfigs, priceDay, priceNight) {
-  const d = processDataPure(input, pvInv, selectedConfigs, priceDay, priceNight);
+async function processDataAsync(input, pvInv, selectedConfigs, priceDay, priceNight, options = {}) {
+  const d = processDataPure(input, pvInv, selectedConfigs, priceDay, priceNight, options);
   if (!d) {
     hideSpinner();
     alert('Geen data gevonden in het CSV bestand.');
@@ -1231,13 +1247,16 @@ function renderPeriodAlert(d) {
 
 /** Render the scenario explanation + optional inverter-mismatch warning into #scenarioAlert. */
 function renderScenarioAlert(d) {
-  let html = `<div class="alert alert-info"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <div>Voor elke configuratie tonen we twee scenario's: <strong>Worst Case</strong> (conservatief — met cap op dagelijkse afname) en <strong>Realistisch</strong> (ideaal — geen beperking). De waarheid ligt ertussen.</div></div>`;
+  const sourceText = d.dataGranularity === 'quarter'
+    ? 'De virtuele batterij wordt kwartier per kwartier chronologisch geladen en ontladen, met begrenzing op batterijvermogen en beschikbare laadstand.'
+    : 'De virtuele batterij wordt chronologisch per dag-/nachtblok geladen en ontladen. Omdat het exacte verloop binnen zo’n blok onbekend is, tonen we een conservatieve en een realistische spreiding.';
+  let html = `<div class="alert alert-info"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <div>${sourceText}<br><strong>Worst Case</strong> verwerkt gelijktijdige afname/injectie conservatief en veronderstelt geconcentreerde productie. <strong>Realistisch</strong> veronderstelt een meer gespreid profiel. De energiebesparing is netto na de ingestelde injectievergoeding; een mogelijke piekbesparing staat apart.</div></div>`;
   const anyPvGtBat = d.configResults.some(cr => cr.pvGtBat);
   if (anyPvGtBat) {
     const names = d.configResults
       .map((cr, idx) => cr.pvGtBat ? `Config ${idx+1} (${fmt2(cr.cfg.batInv)} kW)` : null)
       .filter(Boolean).join(', ');
-    html += `<div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i> <div>ZP-omvormer (${d.pvInv} kW) is sterker dan de batterijomvormer bij: ${names}. Bij Worst Case wordt de drempel daarom hoger gezet voor deze configuraties.</div></div>`;
+    html += `<div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i> <div>ZP-omvormer (${d.pvInv} kW) is sterker dan de batterijomvormer bij: ${names}. De simulatie begrenst elke laadactie op het werkelijke batterijvermogen.</div></div>`;
   }
   document.getElementById('scenarioAlert').innerHTML = html;
 }
@@ -1296,6 +1315,16 @@ function renderSummaryCard(d) {
           Nacht: <strong>${fmtEur(d.priceNight)}/kWh</strong> (${fmt2(d.totalAfname>0?d.totalAfnamenacht/d.totalAfname*100:0)}% van afname)<br>
           <span style="color:var(--primary-dark);">→ Gewogen effectieve prijs: <strong>${fmtEur(d.effectivePrice)}/kWh</strong></span>
         </span></div>` : ''}
+      <hr class="summary-divider" />
+      <div class="summary-item" style="grid-column:1/-1;background:#eef4ff;border-color:var(--primary)">
+        <span class="s-label" style="color:var(--primary)">Financiële aannames</span>
+        <span class="s-value" style="font-size:0.9rem;font-weight:400;">
+          Afname: <strong>${fmtEur(d.effectivePrice)}/kWh</strong> &nbsp;|&nbsp;
+          Injectievergoeding: <strong>${fmtEur(d.injectionPrice || 0)}/kWh</strong> &nbsp;|&nbsp;
+          Capaciteitstarief: <strong>${fmtEur(d.capacityTariffRate || 0)}/kW/jaar</strong><br>
+          <span style="color:var(--muted);">Databron: ${d.dataGranularity === 'quarter' ? 'kwartierwaarden' : 'dag-/nachttotalen'}. Piekbesparing wordt apart gehouden van de energieterugverdientijd.</span>
+        </span>
+      </div>
     </div>`;
   document.getElementById('summaryCard').style.display = '';
 }
@@ -1325,7 +1354,7 @@ function renderCompositionDescriptionHtml(cfg) {
 function renderScenarioGrid(d) {
   let gridHTML = '';
   d.configResults.forEach((cr, idx) => {
-    const { cfg, pvGtBat, scenWC, scenOpt } = cr;
+    const { cfg, scenWC, scenOpt } = cr;
     const cfgLabel = cfg.isManual
       ? `${escapeHtml(cfg.omschrijving)} <span style="background:var(--primary);color:#fff;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">Manueel</span>`
       : `${escapeHtml(cfg.type)} — ${escapeHtml(cfg.omschrijving)}`;
@@ -1347,18 +1376,18 @@ function renderScenarioGrid(d) {
       </div>
       ${renderCompositionDescriptionHtml(cfg)}
     </div>`;
-    const subWC = pvGtBat
-      ? `ZP (${d.pvInv} kW) > bat-omv. (${fmt2(cfg.batInv)} kW) — laaddrempel ×${fmt2(d.pvInv/cfg.batInv)}. Verbruikscap toegepast (besparing begrensd door dagelijkse afname).`
-      : `Verbruikscap toegepast — besparing begrensd door dagelijkse afname.`;
+    const subWC = d.dataGranularity === 'quarter'
+      ? `Chronologische kwartiersimulatie · conservatieve verwerking · max. ${fmt2(cfg.batInv)} kW laden/ontladen.`
+      : `Chronologische dag-/nachtsimulatie · injectie conservatief geconcentreerd · max. ${fmt2(cfg.batInv)} kW laden/ontladen.`;
     gridHTML += makeScenCard(d,
       'Worst Case', '⚠️ Worst Case', 'badge-orange', 'worst-case',
       scenWC, cfg, subWC, 'orange',
       cr.scenWCAvg
     );
     if (scenOpt) {
-      const subOpt = pvGtBat
-        ? `Zelfde installatie — aanname: batterij laadt volledig (drempel = ${fmt2(cfg.batCap)} kWh) en wordt elke dag volledig verbruikt.`
-        : `Aanname: batterij laadt volledig en wordt elke dag volledig verbruikt.`;
+      const subOpt = d.dataGranularity === 'quarter'
+        ? `Chronologische kwartiersimulatie · gunstigste plausibele volgorde binnen één kwartier.`
+        : `Chronologische dag-/nachtsimulatie · productie en verbruik realistischer over het blok gespreid.`;
       gridHTML += makeScenCard(d,
         'Realistisch', '✨ Realistisch', 'badge-blue', 'optimistic',
         scenOpt, cfg, subOpt, 'blue',
@@ -1526,6 +1555,8 @@ async function saveProjectCalcRun(d) {
   const priceDay   = parseFloat(document.getElementById('elecPrice').value)  || 0;
   const priceNightRaw = document.getElementById('elecPriceNight').value;
   const priceNight = (priceNightRaw && priceNightRaw.trim() !== '') ? parseFloat(priceNightRaw) : null;
+  const injectionPrice = parseFloat(document.getElementById('injectionPrice').value) || 0;
+  const capacityTariffRate = parseFloat(document.getElementById('capacityTariffRate').value) || 0;
   const selectedConfigTypes = (d.configResults || []).map(cr => cr.cfg && cr.cfg.type).filter(Boolean);
 
   // Build adjustable lines from configResults.
@@ -1580,6 +1611,8 @@ async function saveProjectCalcRun(d) {
       pvInv: pvInverter,
       priceDay,
       priceNight,
+      injectionPrice,
+      capacityTariffRate,
       selectedConfigTypes,
       meerkostLines: Object.keys(meerkostLines).length > 0 ? meerkostLines : null,
       compositionLines: Object.keys(compositionLines).length > 0 ? compositionLines : null,
@@ -2030,7 +2063,7 @@ function applyProjectToCalcForm(project) {
   // Hide the whole "Installatieparameters" card when all three inputs are hidden.
   const installCard = document.getElementById('installParamsCard');
   if (installCard) {
-    const stillVisible = ['pvInverter', 'elecPrice', 'elecPriceNight']
+    const stillVisible = ['pvInverter', 'elecPrice', 'elecPriceNight', 'injectionPrice', 'capacityTariffRate']
       .map(id => document.getElementById(id))
       .filter(el => el && el.closest('.form-group') && el.closest('.form-group').style.display !== 'none');
     installCard.style.display = stillVisible.length === 0 ? 'none' : '';
@@ -2231,7 +2264,7 @@ function openProjectStatusPopover() {
   setTimeout(() => { document.addEventListener('click', closeProjectStatusPopover, { once: true }); }, 0);
 }
 
-// Build a v:5-shaped state object from a project document so we can feed it through
+// Build a versioned state object from a project document so we can feed it through
 // the existing _applyLoadedState restore-path (which already understands dailyCompact).
 function buildSavedFromProject(proj) {
   const r = (proj.lastCalcRun && proj.lastCalcRun.results) ? { ...proj.lastCalcRun.results } : {};
@@ -2256,11 +2289,13 @@ function buildSavedFromProject(proj) {
     ? inputs.compositionDescriptions
     : null;
   return {
-    v: 6,
+    v: 7,
     form: {
       pvInv: inputs.pvInv,
       priceDay: inputs.priceDay,
       priceNight: inputs.priceNight,
+      injectionPrice: inputs.injectionPrice != null ? inputs.injectionPrice : 0.03,
+      capacityTariffRate: inputs.capacityTariffRate != null ? inputs.capacityTariffRate : 56.59,
       selectedConfigTypes: inputs.selectedConfigTypes,
     },
     manualConfigs: proj.manualConfigs || {},

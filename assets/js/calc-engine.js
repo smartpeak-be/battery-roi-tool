@@ -2,7 +2,11 @@
 // Pure calculation functions extracted from index.html.
 // All functions are DOM-free and testable.
 
-import { parseCSV, parseDate, parsVolume } from './csv.js';
+import {
+  parseCSV, parseDate, parsVolume, localDateKey, rowsToTimeBlocks,
+  buildTimeBlocksFromQuarterCompact,
+} from './csv.js';
+import { buildAggregateBlocks, simulateVirtualBattery } from './battery-simulator.js';
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────────────────
 
@@ -168,20 +172,26 @@ export function csvToAllDaysAndMeta(csvText) {
     if (!dateStr) continue;
     const date = parseDate(dateStr);
     if (!date) continue; // skip rows with unparseable dates
-    const key = date.toISOString().slice(0, 10);
+    const key = localDateKey(date);
     if (!dayMap[key]) dayMap[key] = { date, afname: 0, injectie: 0, afnamedag: 0, afnamenacht: 0, injectiedag: 0, injectienacht: 0 };
     const register = (row['Register'] || '').toLowerCase();
     const vol = parsVolume(row['Volume']);
     if (register.includes('afname'))   dayMap[key].afname   += vol;
     if (register.includes('injectie')) dayMap[key].injectie += vol;
-    if (register === 'afname dag')      dayMap[key].afnamedag    += vol;
-    if (register === 'afname nacht')    dayMap[key].afnamenacht  += vol;
-    if (register === 'injectie dag')    dayMap[key].injectiedag  += vol;
-    if (register === 'injectie nacht')  dayMap[key].injectienacht += vol;
+    const tariffText = `${register} ${(row['Tarief'] || '').toLowerCase()}`;
+    if (register.includes('afname') && tariffText.includes('dag')) dayMap[key].afnamedag += vol;
+    if (register.includes('afname') && tariffText.includes('nacht')) dayMap[key].afnamenacht += vol;
+    if (register.includes('injectie') && tariffText.includes('dag')) dayMap[key].injectiedag += vol;
+    if (register.includes('injectie') && tariffText.includes('nacht')) dayMap[key].injectienacht += vol;
   }
 
   const allDays = Object.values(dayMap).sort((a, b) => a.date - b.date);
-  return { allDays, eanCode, meterNr, meterType };
+  const timeBlocks = rowsToTimeBlocks(rows);
+  return {
+    allDays, timeBlocks,
+    dataGranularity: timeBlocks.length ? 'quarter' : 'daily',
+    eanCode, meterNr, meterType,
+  };
 }
 
 // Convert a `d` (output of processDataPure) into the lastCalcRun.results shape
@@ -192,9 +202,9 @@ export function csvToAllDaysAndMeta(csvText) {
 export function serializeDForLastCalcRun(d) {
   return {
     isFullYear: d.isFullYear,
-    windowStart: d.windowStart.toISOString().slice(0, 10),
-    lastDate: d.lastDate.toISOString().slice(0, 10),
-    firstDate: d.firstDate.toISOString().slice(0, 10),
+    windowStart: localDateKey(d.windowStart),
+    lastDate: localDateKey(d.lastDate),
+    firstDate: localDateKey(d.firstDate),
     daysInWindow: d.daysInWindow,
     totalDaysCSV: d.allDays.length,
     totalAfname: d.totalAfname,
@@ -207,6 +217,9 @@ export function serializeDForLastCalcRun(d) {
     priceDay: d.priceDay,
     priceNight: d.dualTariff ? d.priceNight : null,
     effectivePrice: d.effectivePrice,
+    injectionPrice: d.injectionPrice,
+    capacityTariffRate: d.capacityTariffRate,
+    dataGranularity: d.dataGranularity,
     pvInv: d.pvInv,
     configResults: d.configResults,
     monthMap: d.monthMap,
@@ -215,7 +228,7 @@ export function serializeDForLastCalcRun(d) {
     meterType: d.meterType,
     capAnalysis: d.capAnalysis,
     numYears: d.numYears != null ? d.numYears : 1,
-    yearsStart: d.yearsStart ? d.yearsStart.toISOString().slice(0, 10) : null,
+    yearsStart: d.yearsStart ? localDateKey(d.yearsStart) : null,
     avgTotals: d.avgTotals || null,
   };
 }
@@ -314,7 +327,6 @@ export function calcScenario(windowDays, opts) {
     }
   }
 
-  const totalUsedFromBattery = usedFull + usedPartial;
   const annualChargedFull = usedFull * scaleFactor;
   const annualChargedPartial = usedPartial * scaleFactor;
   const annualCharged = annualChargedFull + annualChargedPartial;
@@ -383,7 +395,7 @@ export function computePerYearStats(allDays, pvInv, selectedConfigs, lastDate, p
        const thresholdOpt= cfg.batCap;
        const effWC       = cfg.eff * 0.85; // Worst case: 15% worse efficiency (losses, degradation)
        const effOpt      = cfg.eff;
-       function calc(threshold, eff, useCap) {
+       function calc(threshold, eff, _useCap) {
           // Same two-step simulation as calcScenario: charge then discharge every day.
           // Battery retains state across zero-injection days.
           let batteryFull = 0;
@@ -529,17 +541,25 @@ export function averageStats(perYear, selectedConfigs) {
 // Accepts either a raw CSV string OR a pre-built { allDays, eanCode, meterNr, meterType } object
 // (used by project-mode which loads data from Firestore instead of a file upload).
 // Returns null when no data is found.
-export function processDataPure(input, pvInv, selectedConfigs, priceDay, priceNight) {
-  const { allDays, eanCode, meterNr, meterType } =
-    (typeof input === 'string') ? csvToAllDaysAndMeta(input) : input;
+export function processDataPure(input, pvInv, selectedConfigs, priceDay, priceNight, options = {}) {
+  const parsedInput = (typeof input === 'string') ? csvToAllDaysAndMeta(input) : input;
+  const { allDays, eanCode, meterNr, meterType } = parsedInput;
 
   if (!allDays.length) return null;
+
+  const measuredBlocks = Array.isArray(parsedInput.timeBlocks) && parsedInput.timeBlocks.length
+    ? parsedInput.timeBlocks
+    : buildTimeBlocksFromQuarterCompact(parsedInput.quarterCompact);
+  const timeBlocks = measuredBlocks.length ? measuredBlocks : buildAggregateBlocks(allDays);
+  const dataGranularity = measuredBlocks.length ? 'quarter' : 'daily';
+  const injectionPrice = Number.isFinite(Number(options.injectionPrice)) ? Number(options.injectionPrice) : 0.03;
+  const capacityTariffRate = Number.isFinite(Number(options.capacityTariffRate)) ? Number(options.capacityTariffRate) : 56.59;
 
   // ── Rolling year window ────────────────────────────────────────────────────
   const lastDate    = allDays[allDays.length - 1].date;
   const firstDate   = allDays[0].date;
   const oneYearBack = new Date(lastDate);
-  oneYearBack.setFullYear(oneYearBack.getFullYear() - 1);
+  oneYearBack.setDate(oneYearBack.getDate() - 364);
   const windowStart = oneYearBack < firstDate ? firstDate : oneYearBack;
   const isFullYear  = oneYearBack >= firstDate;
   const windowDays  = allDays.filter(d => d.date >= windowStart && d.date <= lastDate);
@@ -555,51 +575,56 @@ export function processDataPure(input, pvInv, selectedConfigs, priceDay, priceNi
 
   // ── Effective price (dual tariff) ──────────────────────────────────────────
   const dualTariff = !isNaN(priceNight) && priceNight > 0;
-  const effectivePrice = (dualTariff && totalAfname > 0)
-    ? (totalAfnamedag / totalAfname) * priceDay + (totalAfnamenacht / totalAfname) * priceNight
-    : priceDay;
+  let effectivePrice = priceDay;
+  if (dualTariff && totalAfname > 0) {
+    if (totalAfnamedag + totalAfnamenacht > 0) {
+      effectivePrice = (totalAfnamedag / totalAfname) * priceDay + (totalAfnamenacht / totalAfname) * priceNight;
+    } else {
+      // Quarter exports often use Register=Afname/Injectie without a separate
+      // day/night register. Derive the tariff from the actual timestamp.
+      let value = 0, volume = 0;
+      const startKey = localDateKey(windowStart);
+      const endKey = localDateKey(lastDate);
+      for (const block of timeBlocks) {
+        const blockKey = localDateKey(block.start);
+        if (blockKey < startKey || blockKey > endKey || !(block.afname > 0)) continue;
+        const hour = block.start.getHours() + block.start.getMinutes() / 60;
+        const weekday = block.start.getDay() >= 1 && block.start.getDay() <= 5;
+        const tariff = weekday && hour >= 7 && hour < 22 ? priceDay : priceNight;
+        value += block.afname * tariff;
+        volume += block.afname;
+      }
+      effectivePrice = volume > 0 ? value / volume : priceDay;
+    }
+  }
 
-  // ── Per-config scenario calculation ───────────────────────────────────────
-  const scaleFactor = isFullYear ? 1 : (365 / daysInWindow);
-
+  // ── Per-config chronological virtual-battery simulation ──────────────────
+  const simulationOptions = {
+    pvInv, priceDay, priceNight, injectionPrice, capacityTariffRate,
+    metricStart: windowStart, metricEnd: lastDate,
+    annualizationFactor: isFullYear ? 1 : (365 / daysInWindow),
+  };
   const configResults = selectedConfigs.map(cfg => {
     // Defensive: skip configs with invalid battery specs to avoid division by zero
     if (!cfg.batCap || cfg.batCap <= 0 || !cfg.batInv || cfg.batInv <= 0 || !cfg.eff || cfg.eff <= 0) {
       return null;
     }
      const pvGtBat    = pvInv > cfg.batInv;
-     // Worst Case: higher threshold + lower efficiency for conservative estimate
-     const thresholdWC  = pvGtBat ? cfg.batCap * (pvInv / cfg.batInv) : cfg.batCap * 1.25;
-     const thresholdOpt = cfg.batCap;
      const effWC = cfg.eff * 0.85; // 15% worse efficiency (losses, degradation)
-     const effOpt = cfg.eff;
-     const scenWC  = calcScenario(windowDays, {
-       threshold: thresholdWC,
-       installPrice: cfg.price,
-       batCap: cfg.batCap,
-       eff: effWC,
-       useCap: true,
-       scaleFactor,
-       effectivePrice,
-       totalAfname,
-       totalInjectie,
-       pvInverter: pvInv,
-       batteryInverter: cfg.batInv,
+     const scenWC = simulateVirtualBattery(timeBlocks, { ...cfg, eff: effWC }, {
+       ...simulationOptions,
+       mode: 'worst',
      });
-     const scenOpt = calcScenario(windowDays, {
-       threshold: thresholdOpt,
-       installPrice: cfg.price,
-       batCap: cfg.batCap,
-       eff: effOpt,
-       useCap: false,
-       scaleFactor,
-       effectivePrice,
-       totalAfname,
-       totalInjectie,
-       pvInverter: pvInv,
-       batteryInverter: cfg.batInv,
+     const scenOpt = simulateVirtualBattery(timeBlocks, cfg, {
+       ...simulationOptions,
+       mode: 'realistic',
      });
-    return { cfg, pvGtBat, thresholdWC, thresholdOpt, scenWC, scenOpt };
+    return {
+      cfg, pvGtBat,
+      thresholdWC: scenWC.threshold,
+      thresholdOpt: scenOpt.threshold,
+      scenWC, scenOpt,
+    };
   }).filter(Boolean);
 
   // ── Monthly map (simplified — no threshold columns) ────────────────────────
@@ -617,6 +642,18 @@ export function processDataPure(input, pvInv, selectedConfigs, priceDay, priceNi
 
   // ── Multi-year per-year stats + averages (gated on N >= 2 in renderer) ─────
   const py = computePerYearStats(allDays, pvInv, selectedConfigs, lastDate, priceDay, priceNight);
+  py.perYear.forEach(year => {
+    year.scenarios = selectedConfigs.map(cfg => ({
+      scenWC: simulateVirtualBattery(timeBlocks, { ...cfg, eff: cfg.eff * 0.85 }, {
+        pvInv, priceDay, priceNight, injectionPrice, capacityTariffRate,
+        metricStart: year.windowStart, metricEnd: year.windowEnd, mode: 'worst',
+      }),
+      scenOpt: simulateVirtualBattery(timeBlocks, cfg, {
+        pvInv, priceDay, priceNight, injectionPrice, capacityTariffRate,
+        metricStart: year.windowStart, metricEnd: year.windowEnd, mode: 'realistic',
+      }),
+    }));
+  });
   const numYears  = py.numYears;
   const yearsStart= py.yearsStart;
   const avgTotals = numYears >= 2 ? averageStats(py.perYear, selectedConfigs) : null;
@@ -677,11 +714,11 @@ export function processDataPure(input, pvInv, selectedConfigs, priceDay, priceNi
     isFullYear, windowStart, lastDate, daysInWindow,
     totalAfname, totalInjectie,
     totalAfnamedag, totalAfnamenacht, totalInjectiedag, totalInjectienacht,
-    dualTariff, priceDay, priceNight, effectivePrice,
+    dualTariff, priceDay, priceNight, effectivePrice, injectionPrice, capacityTariffRate,
     pvInv, configResults,
     monthMap, eanCode, meterNr, meterType,
     firstDate, allDays, windowDays, capAnalysis,
-    numYears, yearsStart, avgTotals,
+    numYears, yearsStart, avgTotals, dataGranularity,
   };
 }
 
