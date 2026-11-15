@@ -576,6 +576,16 @@ function _readMeerkostLinesFromDom() {
   return out;
 }
 
+// Catalog configs (PC_…) reopen as editable compositions with a new type key. This maps
+// { newType: savedType } so saving carries the offerte over instead of deleting it.
+const _restoredTypeAliases = {};
+
+function _typeAliasesFor(types = []) {
+  const out = {};
+  types.forEach(t => { if (_restoredTypeAliases[t]) out[t] = _restoredTypeAliases[t]; });
+  return out;
+}
+
 function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositionLines = {}, compositionNames = {}, compositionDescriptions = {}) {
   selectedTypes.filter(Boolean).forEach(type => {
     if (_customCompositions[type]) return;
@@ -592,6 +602,7 @@ function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositi
     if (!cfg) return;
     const extraLines = Array.isArray(compositionLines[type]) ? compositionLines[type] : [];
     const customType = _customCompositionType();
+    _restoredTypeAliases[customType] = type;
     const lines = serializeCompositionLines([..._productLinesForConfig(cfg), ...extraLines]);
     _customCompositions[customType] = {
       type: customType,
@@ -1522,6 +1533,7 @@ async function renderResultsAsync(d) {
 // Returns true if the user confirms (or no PDFs are on the line), false if cancelled.
 async function _confirmConfigCascade(projectId, newSelectedTypes) {
   if (!projectId) return true; // no-project mode — no PDFs possible.
+  const carriedOver = Object.values(_typeAliasesFor(newSelectedTypes));
   try {
     const snap = await projectDoc(projectId).get();
     const data = snap.data() || {};
@@ -1530,12 +1542,12 @@ async function _confirmConfigCascade(projectId, newSelectedTypes) {
       ? data.lastCalcRun.inputs.selectedConfigTypes : [];
     const offertes = data.offertes || {};
     const removedWithPdf = prevSelected.filter(t =>
-      !newSelectedTypes.includes(t) && offertes[t] && offertes[t].storagePath);
+      !newSelectedTypes.includes(t) && !carriedOver.includes(t) && offertes[t] && offertes[t].storagePath);
     if (removedWithPdf.length === 0) return true;
     const label = removedWithPdf.join(', ');
     const msg = removedWithPdf.length === 1
-      ? `De config "${label}" heeft een offerte-PDF. Als je doorgaat wordt die ook verwijderd.`
-      : `De configs "${label}" hebben offerte-PDF's. Als je doorgaat worden die ook verwijderd.`;
+      ? `De config "${label}" heeft een offerte-PDF. Als je doorgaat wordt die ook verwijderd (behalve als er al een Billit-offerte aan hangt).`
+      : `De configs "${label}" hebben offerte-PDF's. Als je doorgaat worden die ook verwijderd (behalve als er al een Billit-offerte aan hangt).`;
     return showConfirm({
       title: 'Configuratie met offerte verwijderen?',
       message: msg,
@@ -1543,8 +1555,13 @@ async function _confirmConfigCascade(projectId, newSelectedTypes) {
       variant: 'danger',
     });
   } catch (e) {
-    console.warn('_confirmConfigCascade: snapshot read mislukt, doorgaan zonder confirm', e);
-    return true; // fail-open: don't block Bereken on a stale read error.
+    console.warn('_confirmConfigCascade: projectgegevens lezen mislukt', e);
+    return showConfirm({
+      title: 'Offertes konden niet gecontroleerd worden',
+      message: 'De tool kon niet nagaan of er offertes aan de gewijzigde configs hangen. Toch berekenen en opslaan?',
+      confirmText: 'Toch doorgaan',
+      variant: 'danger',
+    });
   }
 }
 
@@ -1621,6 +1638,7 @@ async function saveProjectCalcRun(d) {
     },
     results,
     manualConfigs: Object.keys(_manualConfigs).length > 0 ? _manualConfigs : null,
+    typeAliases: _typeAliasesFor(selectedConfigTypes),
   });
   showToast('💾 Opgeslagen in project');
 }
