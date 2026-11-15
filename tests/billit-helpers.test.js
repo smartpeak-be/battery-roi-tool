@@ -4,8 +4,8 @@ import { normalizeBillitEmail, normalizeBillitPhone } from '../assets/js/billit-
 describe('Billit helpers', () => {
   it('omits invalid phone numbers so Billit does not reject the order body', () => {
     expect(normalizeBillitPhone('12345')).toBe('');
-    expect(normalizeBillitPhone('0479717633')).toBe('0479717633');
-    expect(normalizeBillitPhone('+32 479 71 76 33')).toBe('+32 479 71 76 33');
+    expect(normalizeBillitPhone('0470000000')).toBe('0470000000');
+    expect(normalizeBillitPhone('+32 470 00 00 00')).toBe('+32 470 00 00 00');
   });
 
   it('omits invalid e-mail addresses but keeps valid addresses', () => {

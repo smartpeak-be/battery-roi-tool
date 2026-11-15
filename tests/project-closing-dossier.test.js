@@ -9,7 +9,7 @@ import {
 
 const baseProject = {
   id: 'p1',
-  customerName: 'David Verberkmoes',
+  customerName: 'Jan Peeters',
   status: 'keuring_gepland',
   customer: {
     email: 'david@example.be',
@@ -49,7 +49,7 @@ const baseProject = {
   },
   offertes: {
     'ZSF2400AC+_2X1': {
-      filename: 'Offerte_OFF-024035_DavidVerberckmoes.pdf',
+      filename: 'Offerte_OFF-024035_JanPeeters.pdf',
       contentType: 'application/pdf',
     },
   },
@@ -76,7 +76,7 @@ describe('project closing dossier', () => {
       generatedAt: '2026-06-11T18:00:00.000Z',
     });
 
-    expect(model.customer.name).toBe('David Verberkmoes');
+    expect(model.customer.name).toBe('Jan Peeters');
     expect(model.solution.description).toBe('2 X Solarflow 2400 AC+ + 1 bat 10,56 Kwh');
     expect(model.photos.situation).toHaveLength(1);
     expect(model.photos.serial).toHaveLength(1);
@@ -248,7 +248,7 @@ describe('project closing dossier', () => {
         source: 'project.offertes',
         documentKind: 'offer',
         configType: 'ZSF2400AC+_2X1',
-        name: 'Offerte_OFF-024035_DavidVerberckmoes.pdf',
+        name: 'Offerte_OFF-024035_JanPeeters.pdf',
         downloadUrl: 'https://storage.test/offerte.pdf',
       }],
       generatedAt: '2026-06-11T18:00:00.000Z',
@@ -256,7 +256,7 @@ describe('project closing dossier', () => {
     const html = renderClosingDossierHtml(model);
 
     expect(model.solution.offerteUrl).toBe('https://storage.test/offerte.pdf');
-    expect(html).toContain('<a href="https://storage.test/offerte.pdf" target="_blank" rel="noopener">Offerte_OFF-024035_DavidVerberckmoes.pdf</a>');
+    expect(html).toContain('<a href="https://storage.test/offerte.pdf" target="_blank" rel="noopener">Offerte_OFF-024035_JanPeeters.pdf</a>');
   });
 
   it('neemt geplaatste producten uit installedSolution wanneer de calc-config geen itemregels heeft', () => {
