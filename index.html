@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <title>SmartPeak - Batterij ROI Calculator</title>
-  <link rel="stylesheet" href="assets/css/calculator.css?v=1" />
+  <link rel="stylesheet" href="assets/css/calculator.css?v=2" />
   <!-- Chart.js loaded lazily on first use — see assets/js/chart-loader.js -->
   <script type="module" src="assets/js/csv.js"></script>
   <script src="assets/js/chart-loader.js"></script>
@@ -129,7 +129,15 @@
 
 <!-- RESULTS -->
 <div id="results">
-  <div id="periodAlert" style="margin-top:28px;"></div>
+  <aside id="resultDisclaimer" class="alert alert-info result-disclaimer" aria-labelledby="resultDisclaimerTitle" hidden>
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    <div>
+      <strong id="resultDisclaimerTitle">Indicatieve prijzen en berekening</strong>
+      <p>De getoonde installatieprijzen zijn gebaseerd op de informatie die beschikbaar was bij de berekening. Ze zijn indicatief en kunnen wijzigen vóór u een offerte ontvangt of ondertekent.</p>
+      <p>Op basis van de beschikbare verbruiksgegevens en de gebruikte aannames schatten we hoeveel een batterij op jaarbasis had kunnen besparen. De volledige berekening is vrijblijvend, zonder garantie op de getoonde besparing of terugverdientijd.</p>
+    </div>
+  </aside>
+  <div id="periodAlert"></div>
   <div id="scenarioAlert"></div>
 
   <div class="card" id="energyChartCard" style="display:none;margin-top:0;">
@@ -187,6 +195,6 @@
 <!-- TOAST -->
 <div id="toast"></div>
 
-<script type="module" src="assets/js/pages/index-app.js?v=2"></script>
+<script type="module" src="assets/js/pages/index-app.js?v=3"></script>
 </body>
 </html>

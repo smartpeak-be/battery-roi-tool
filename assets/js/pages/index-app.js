@@ -6,7 +6,7 @@ import {
   validateCalcInputs,
 } from '../calc-engine.js';
 import { escapeHtml, showSpinner, hideSpinner, withSpinner, showConfirm } from '../shared-helpers.js';
-import { makeScenCard } from '../index/scenario-card.js';
+import { makeScenCard } from '../index/scenario-card.js?v=3';
 import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js';
 import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
 import { gridConnectionLabel } from '../grid-compatibility.js';
@@ -56,9 +56,8 @@ function _migrateMeerkostMapToLines(map) {
   return out;
 }
 
-function _serializeState() {
-  if (!_saved) return null;
-  const d = _saved;
+function _serializeState(d = _saved) {
+  if (!d) return null;
   // Strip empty lines (no description AND zero amount) at serialize-time.
   const meerkostLines = {};
   const compositionLines = {};
@@ -296,6 +295,7 @@ let _showBatteryOnlyBaseConfigs = false;
 let _suppressProjectCalcAutoSave = false;
 let _compositionLinesByType = {};
 let _customCompositions = {};
+let _projectCalcWrite = Promise.resolve();
 let _restoredCompositionNames = {};
 let _restoredCompositionDescriptions = {};
 
@@ -578,7 +578,7 @@ function _readMeerkostLinesFromDom() {
 
 function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositionLines = {}, compositionNames = {}, compositionDescriptions = {}) {
   selectedTypes.filter(Boolean).forEach(type => {
-    if (_customCompositions[type]) return;
+    if (_customCompositions[type] || Object.values(_customCompositions).some(comp => comp.restoredType === type)) return;
     if (type.startsWith('CUSTOM_')) {
       _customCompositions[type] = {
         type,
@@ -595,6 +595,7 @@ function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositi
     const lines = serializeCompositionLines([..._productLinesForConfig(cfg), ...extraLines]);
     _customCompositions[customType] = {
       type: customType,
+      restoredType: type,
       name: cfg.omschrijving || cfg.productConfigName || 'Samenstelling',
       description: compositionDescriptions[type] || '',
       sourceName: cfg.productConfigName || '',
@@ -604,7 +605,7 @@ function _restoreSelectedTypesAsCustomCompositions(selectedTypes = [], compositi
   });
 }
 
-function _customCompositionCardHtml(comp) {
+function _customCompositionCardHtml(comp, index, compositions) {
   const lines = serializeCompositionLines(_compositionLinesByType[comp.type] || []);
   const productCount = lines.filter(ln => ln.kind === 'product').length;
   const manualCount = lines.filter(ln => ln.kind === 'manual').length;
@@ -617,16 +618,21 @@ function _customCompositionCardHtml(comp) {
   if (discountCount) bits.push(`${discountCount} korting${discountCount === 1 ? '' : 'en'}`);
   const summary = bits.length ? bits.join(' · ') : 'nog leeg';
   const description = String(comp.description || '').trim();
+  const name = escapeHtml(comp.name || 'Samenstelling');
+  const orderButtons = compositions.length > 1 ? `
+    <button type="button" class="btn btn-secondary composition-move" data-move="-1" aria-label="${name} omhoog" title="Omhoog" ${index === 0 ? 'disabled' : ''}>↑</button>
+    <button type="button" class="btn btn-secondary composition-move" data-move="1" aria-label="${name} omlaag" title="Omlaag" ${index === compositions.length - 1 ? 'disabled' : ''}>↓</button>` : '';
   return `
     <div class="custom-composition-card" data-config-type="${escapeHtml(comp.type)}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px;background:var(--card-bg);">
       <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
         <div>
-          <strong>${escapeHtml(comp.name || 'Samenstelling')}</strong>
+          <strong>${name}</strong>
           ${comp.sourceName ? `<span class="meerkost-summary-sum">gestart van ${escapeHtml(comp.sourceName)}</span>` : '<span class="meerkost-summary-sum">from scratch</span>'}<br>
           ${description ? `<span class="meerkost-summary-sum">${escapeHtml(description)}</span><br>` : ''}
           <span class="meerkost-summary-sum">${escapeHtml(summary)}</span>
         </div>
-        <div style="display:flex;gap:8px;">
+        <div class="composition-actions">
+          ${orderButtons}
           <button type="button" class="btn btn-secondary composer-open-btn" data-composer-type="${escapeHtml(comp.type)}"><i class="fa-solid fa-sliders" aria-hidden="true"></i> Samenstelling aanpassen</button>
           <button type="button" class="btn btn-secondary custom-composition-delete" data-config-type="${escapeHtml(comp.type)}" title="Verwijderen"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
         </div>
@@ -653,6 +659,84 @@ function renderConfigPickers(selectedTypes = null, _meerkostLines = null, compos
     </div>
     <div id="customCompositionCards">${cards || '<p class="text-muted" style="margin:12px 0 0;">Start leeg of kies een bestaande samenstelling als basis.</p>'}</div>
   `;
+}
+
+function moveComposition(button) {
+  const card = button.closest('.custom-composition-card');
+  const direction = Number(button.dataset.move);
+  const entries = Object.entries(_customCompositions);
+  const index = entries.findIndex(([type]) => type === card.dataset.configType);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= entries.length) return;
+
+  [entries[index], entries[target]] = [entries[target], entries[index]];
+  _customCompositions = Object.fromEntries(entries);
+  renderConfigPickers();
+  const movedCard = document.getElementById('customCompositionCards').children[target];
+  const nextButton = movedCard.querySelector(`[data-move="${direction}"]:enabled`);
+  (nextButton || movedCard.querySelector('.composition-move:enabled'))?.focus({ preventScroll: true });
+
+  if (!_saved) return;
+  const resultTypes = new Set(_saved.configResults.map(result => result.cfg.type));
+  const types = entries.map(([type, comp]) => resultTypes.has(type) ? type : comp.restoredType || type);
+  const order = new Map(types.map((type, position) => [type, position]));
+  const reordered = reorderConfigResults(_saved, order);
+  if (!reordered) return;
+  Object.assign(_saved, reordered);
+  renderScenarioAlert(_saved);
+  renderScenarioGrid(_saved);
+
+  if (_projectId && _projectDoc) {
+    const ref = projectDoc(_projectId);
+    queueProjectCalcWrite(() => saveProjectConfigOrder(ref, order)).catch(err => {
+      console.error('Config order save failed:', err);
+      showToast('⚠️ Volgorde niet opgeslagen. Klik op Bereken ROI om opnieuw op te slaan.');
+    });
+  }
+}
+
+function queueProjectCalcWrite(write) {
+  const pending = _projectCalcWrite.then(write);
+  _projectCalcWrite = pending.catch(() => {});
+  return pending;
+}
+
+// Reorder the matching slots and keep any entries without a composition card in place.
+function configOrderIndices(types, order) {
+  const indices = types.map((_, index) => index);
+  const matching = indices.filter(index => order.has(types[index]));
+  const sorted = [...matching].sort((a, b) => order.get(types[a]) - order.get(types[b]));
+  matching.forEach((index, position) => { indices[index] = sorted[position]; });
+  return indices;
+}
+
+function reorderConfigResults(results, order) {
+  const indices = configOrderIndices(results.configResults.map(result => result.cfg.type), order);
+  if (indices.every((index, position) => index === position)) return null;
+  const updates = { configResults: indices.map(index => results.configResults[index]) };
+  if (results.avgTotals?.scenarios?.length === indices.length) {
+    updates.avgTotals = {
+      ...results.avgTotals,
+      scenarios: indices.map(index => results.avgTotals.scenarios[index]),
+    };
+  }
+  return updates;
+}
+
+async function saveProjectConfigOrder(ref, order) {
+  await ref.firestore.runTransaction(async transaction => {
+    const run = (await transaction.get(ref)).data()?.lastCalcRun;
+    if (!run?.results?.configResults) return;
+    const results = reorderConfigResults(run.results, order);
+    if (!results) return;
+    const patch = { 'lastCalcRun.results.configResults': results.configResults };
+    if (results.avgTotals) patch['lastCalcRun.results.avgTotals.scenarios'] = results.avgTotals.scenarios;
+    const types = run.inputs?.selectedConfigTypes;
+    if (Array.isArray(types)) {
+      patch['lastCalcRun.inputs.selectedConfigTypes'] = configOrderIndices(types, order).map(index => types[index]);
+    }
+    transaction.update(ref, patch);
+  });
 }
 
 // Legacy shim — _applyLoadedState calls this name.
@@ -854,7 +938,8 @@ function _syncSavedCompositionMetadata(type) {
   if (!changed) return;
   renderScenarioGrid(_saved);
   if (_projectId && _projectDoc) {
-    saveProjectCalcRun(_saved).catch(err => {
+    const saved = _saved;
+    queueProjectCalcWrite(() => saveProjectCalcRun(saved)).catch(err => {
       console.error('Composition metadata save failed:', err);
       showToast('⚠️ Uitleg niet opgeslagen — controleer netwerk');
     });
@@ -1170,6 +1255,7 @@ async function calculate() {
   showSpinner({ message: 'Berekening uitvoeren...' });
 
   try {
+    await _projectCalcWrite;
     // ── Project-mode path: use the project's stored CSV instead of a file upload ──
     if (_projectId && _projectDoc && _projectDoc.csvUpload) {
       const cu = _projectDoc.csvUpload;
@@ -1247,10 +1333,14 @@ function renderPeriodAlert(d) {
 
 /** Render the scenario explanation + optional inverter-mismatch warning into #scenarioAlert. */
 function renderScenarioAlert(d) {
-  const sourceText = d.dataGranularity === 'quarter'
+  const isQuarter = d.dataGranularity === 'quarter';
+  const sourceText = isQuarter
     ? 'De virtuele batterij wordt kwartier per kwartier chronologisch geladen en ontladen, met begrenzing op batterijvermogen en beschikbare laadstand.'
-    : 'De virtuele batterij wordt chronologisch per dag-/nachtblok geladen en ontladen. Omdat het exacte verloop binnen zo’n blok onbekend is, tonen we een conservatieve en een realistische spreiding.';
-  let html = `<div class="alert alert-info"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <div>${sourceText}<br><strong>Worst Case</strong> verwerkt gelijktijdige afname/injectie conservatief en veronderstelt geconcentreerde productie. <strong>Realistisch</strong> veronderstelt een meer gespreid profiel. De energiebesparing is netto na de ingestelde injectievergoeding; een mogelijke piekbesparing staat apart.</div></div>`;
+    : 'De virtuele batterij wordt chronologisch per dag-/nachtblok geladen en ontladen. Binnen zo’n blok kennen we het exacte verloop van productie en verbruik niet.';
+  const scenarioText = isQuarter
+    ? '<strong>Conservatief</strong> rekent met de nettoafname of -injectie per kwartier. <strong>Normaal</strong> gebruikt de gunstigste plausibele volgorde van laden en ontladen binnen een kwartier.'
+    : '<strong>Conservatief</strong> gaat uit van geconcentreerde injectie en plaatst het verbruik vóór de productie binnen hetzelfde blok. <strong>Normaal</strong> gaat uit van meer gespreide productie die beschikbaar is voor later verbruik.';
+  let html = `<div class="alert alert-info"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <div>${sourceText}<br>${scenarioText} De energiebesparing houdt rekening met de misgelopen injectievergoeding. Een mogelijke piekbesparing staat apart.</div></div>`;
   const anyPvGtBat = d.configResults.some(cr => cr.pvGtBat);
   if (anyPvGtBat) {
     const names = d.configResults
@@ -1380,16 +1470,16 @@ function renderScenarioGrid(d) {
       ? `Chronologische kwartiersimulatie · conservatieve verwerking · max. ${fmt2(cfg.batInv)} kW laden/ontladen.`
       : `Chronologische dag-/nachtsimulatie · injectie conservatief geconcentreerd · max. ${fmt2(cfg.batInv)} kW laden/ontladen.`;
     gridHTML += makeScenCard(d,
-      'Worst Case', '⚠️ Worst Case', 'badge-orange', 'worst-case',
+      'Conservatief', 'worst-case',
       scenWC, cfg, subWC, 'orange',
       cr.scenWCAvg
     );
     if (scenOpt) {
       const subOpt = d.dataGranularity === 'quarter'
         ? `Chronologische kwartiersimulatie · gunstigste plausibele volgorde binnen één kwartier.`
-        : `Chronologische dag-/nachtsimulatie · productie en verbruik realistischer over het blok gespreid.`;
+        : `Chronologische dag-/nachtsimulatie · meer gespreide productie.`;
       gridHTML += makeScenCard(d,
-        'Realistisch', '✨ Realistisch', 'badge-blue', 'optimistic',
+        'Normaal', 'optimistic',
         scenOpt, cfg, subOpt, 'blue',
         cr.scenOptAvg
       );
@@ -1479,7 +1569,7 @@ function renderResults(d) {
 
   // Auto-save to Firestore if we're in project-mode
   if (_projectId && _projectDoc && !_suppressProjectCalcAutoSave) {
-    saveProjectCalcRun(d).catch(err => {
+    queueProjectCalcWrite(() => saveProjectCalcRun(d)).catch(err => {
       console.error('Auto-save failed:', err);
       showToast('⚠️ Niet opgeslagen — controleer netwerk');
     });
@@ -1507,7 +1597,7 @@ async function renderResultsAsync(d) {
   // Now do the save and wait for it
   if (_projectId && _projectDoc) {
     try {
-      await saveProjectCalcRun(d);
+      await queueProjectCalcWrite(() => saveProjectCalcRun(d));
     } catch (err) {
       console.error('Auto-save failed:', err);
       showToast('⚠️ Niet opgeslagen — controleer netwerk');
@@ -1588,7 +1678,7 @@ async function saveProjectCalcRun(d) {
 
   // Build results: same as _serializeState's `r` block, but strip dailyCompact since it lives
   // separately in csvUpload (otherwise we'd duplicate the per-day arrays in Firestore).
-  const r = _serializeState();
+  const r = _serializeState(d);
   if (!r) throw new Error('Geen berekening om op te slaan.');
   const results = { ...r.r };
   delete results.dailyCompact;
@@ -1767,6 +1857,11 @@ function wireIndexActions() {
       });
       return;
     }
+    const moveButton = e.target.closest('.composition-move');
+    if (moveButton) {
+      moveComposition(moveButton);
+      return;
+    }
     const delBtn = e.target.closest('.custom-composition-delete');
     if (delBtn) {
       const type = delBtn.dataset.configType;
@@ -1847,6 +1942,7 @@ async function loadShareAndEngageReadOnly(id) {
 // and no read-only warning banner.
 function engageReadOnly() {
   document.body.classList.add('readonly-mode');
+  document.getElementById('resultDisclaimer').hidden = false;
   const banner = document.getElementById('loadedBanner');
   if (banner) {
     banner.innerHTML = '';

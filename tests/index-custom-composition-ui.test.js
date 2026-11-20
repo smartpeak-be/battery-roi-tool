@@ -32,7 +32,7 @@ describe('index custom composition UI', () => {
     expect(source).toContain('function _syncSavedCompositionMetadata(type)');
     expect(source).toContain("cr.cfg.compositionDescription = comp.description || '';");
     expect(source).toContain('renderScenarioGrid(_saved);');
-    expect(source).toContain('saveProjectCalcRun(_saved).catch');
+    expect(source).toContain('queueProjectCalcWrite(() => saveProjectCalcRun(saved)).catch');
     expect(source).toContain('function renderCompositionDescriptionHtml');
     expect(source).toContain('composition-description');
     expect(source).toContain('const explicitName = (modal.querySelector(\'#composerCompositionName\')?.value || \'\').trim();');
