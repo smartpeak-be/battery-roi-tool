@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { staticProductDatasheets, staticProductPhotos } from '../assets/js/product-static-media.js';
 
-const source = readFileSync(new URL('../assets/js/pages/producten-beheer-app.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../assets/js/product-static-media.js', import.meta.url), 'utf8');
 
 describe('product static media links', () => {
   it('exposes official/static product documents for supported catalogue items', () => {
@@ -15,11 +16,13 @@ describe('product static media links', () => {
   });
 
   it('matches static media by brand/model text beyond Zendure only', () => {
-    expect(source).toContain('function staticProductMediaKey');
-    expect(source).toContain("haystack.includes('dl5.0c')");
-    expect(source).toContain("haystack.includes('powerbrick')");
-    expect(source).toContain("haystack.includes('powerbox g2')");
-    expect(source).toContain("haystack.includes('luna2000')");
-    expect(source).toContain("haystack.includes('sigen')");
+    expect(staticProductDatasheets({ model: 'Dyness DL5.0C Pro' })).not.toHaveLength(0);
+    expect(staticProductDatasheets({ model: 'Dyness DL5.0C' })).toHaveLength(0);
+    expect(staticProductDatasheets({ model: 'Dyness PowerBrick' })).not.toHaveLength(0);
+    expect(staticProductPhotos({ model: 'Dyness Powerbox G2' })).not.toHaveLength(0);
+    expect(staticProductDatasheets({ model: 'Huawei LUNA2000-7-S1' })).not.toHaveLength(0);
+    expect(staticProductDatasheets({ model: 'Huawei LUNA2000-S0' })).toHaveLength(0);
+    expect(staticProductPhotos({ model: 'Sigenergy SigenStor' })).not.toHaveLength(0);
+    expect(staticProductPhotos({ model: 'Sigenergy Sigen Energy Meter' })).toHaveLength(0);
   });
 });

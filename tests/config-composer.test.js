@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  compositionGrossProfitExVat,
   resolveCompositionToCalculatorConfig,
   selectableComposerProducts,
   serializeCompositionLines,
@@ -35,6 +36,28 @@ const categories = [
 ];
 
 describe('config composer', () => {
+  it('uses sales excluding VAT minus the stored purchase costs and excludes Bebat from profit', () => {
+    const pricedProducts = products.map(product => product.id === 'battery'
+      ? { ...product, specs: { ...product.specs, purchaseCostExVat: 510 }, discountType: 'fixed', discountValue: 25 }
+      : product);
+    const config = resolveCompositionToCalculatorConfig({
+      ...baseConfig,
+      prices: { '6_no': 1060 },
+      items: [{ productId: 'inverter', qty: 1 }],
+    }, {
+      type: baseConfig.type,
+      lines: [
+        { kind: 'product', productId: 'battery', qty: 2, vat: 21 },
+        { kind: 'installation_extra', description: 'Montage', amountExVat: 120, vat: 6 },
+        { kind: 'discount', description: 'Korting', amountExVat: -50, vat: 6 },
+      ],
+    }, pricedProducts, { btwPercent: 6, categories, bebatPricePerKg: 2.89 });
+
+    expect(config.compositionLines.some(line => line.kind === 'bebat')).toBe(true);
+    expect(compositionGrossProfitExVat(config, pricedProducts, 6)).toBeCloseTo(425);
+    expect(config).not.toHaveProperty('profit');
+  });
+
   it('resolves exactly the selected product, manual, discount and inspection lines into the calculator price', () => {
     const composition = {
       type: 'PC_cfg-1',

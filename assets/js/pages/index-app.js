@@ -6,16 +6,20 @@ import {
   validateCalcInputs,
 } from '../calc-engine.js';
 import { escapeHtml, showSpinner, hideSpinner, withSpinner, showConfirm } from '../shared-helpers.js';
-import { makeScenCard } from '../index/scenario-card.js?v=4';
+import { makeScenCard } from '../index/scenario-card.js?v=5';
 import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js?v=2';
 import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
 import { gridConnectionLabel } from '../grid-compatibility.js';
 import { calculatorConfigSpecsUrl } from '../product-spec-links.js';
+import { customerConfigProducts, loadCustomerProducts } from '../index/customer-products.js';
+import { configureCustomerProductDialog, customerProductPhotos } from '../index/customer-product-dialog.js';
+import { customerShareState } from '../index/customer-share.js';
 import {
+  compositionGrossProfitExVat,
   resolveCompositionToCalculatorConfig,
   selectableComposerProducts,
   serializeCompositionLines,
-} from '../config-composer.js';
+} from '../config-composer.js?v=2';
 import {
   buildQuoteContextFromProjectConfig,
   buildQuoteContextUrl,
@@ -27,6 +31,21 @@ import {
 
 // ─── SAVE / LOAD STATE ────────────────────────────────────────────────────────
 let _saved = null; // last renderResults argument, set at render time
+let _customerProducts = new Map();
+
+function setCustomerProducts(catalog) {
+  _customerProducts = new Map((Array.isArray(catalog) ? catalog : [])
+    .filter(product => typeof product?.id === 'string')
+    .map(product => [product.id, product]));
+}
+
+function getCalculationProducts(configResults) {
+  return loadCustomerProducts(configResults, {
+    getProduct: async id => _sheetProducts.find(product => product.id === id) || getProduct(id),
+    listPhotos: listProductPhotos,
+    listDatasheets: listProductDatasheets,
+  });
+}
 
 function isRoiV2() {
   return document.documentElement.classList.contains('roi-v2');
@@ -141,9 +160,6 @@ function _serializeState(d = _saved) {
   };
 }
 
-function _stateToB64(state) {
-  return btoa(unescape(encodeURIComponent(JSON.stringify(state))));
-}
 function _b64ToState(b64) {
   return JSON.parse(decodeURIComponent(escape(atob(b64))));
 }
@@ -193,21 +209,24 @@ async function copyShareLink() {
 
   return withSpinner(async () => {
     try {
-      const ref = await createShare(state, _projectId || null);
+      const { catalog, incomplete } = await getCalculationProducts(state.r.configResults);
+      const ref = await createShare(customerShareState(state, catalog), _projectId || null);
       const url = location.origin + location.pathname + '?s=' + ref.id + (isRoiV2() ? '&view=v2' : '');
       urlInput.value = url;
+      const partialMessage = incomplete ? ' Sommige productbestanden konden niet worden opgehaald.' : '';
       if (navigator.clipboard) {
         try {
           await navigator.clipboard.writeText(url);
-          showToast('🔗 Deellink gekopieerd naar klembord!');
+          showToast('🔗 Deellink gekopieerd.' + partialMessage);
         } catch {
           urlRow.style.display = '';
           urlInput.select();
-          showToast('Kopieer de link hieronder handmatig.');
+          showToast('Kopieer de link hieronder handmatig.' + partialMessage);
         }
       } else {
         urlRow.style.display = '';
         urlInput.select();
+        if (incomplete) showToast('Kopieer de link hieronder handmatig.' + partialMessage);
       }
     } catch (e) {
       showToast('❌ Deellink maken mislukt: ' + (e && e.message ? e.message : e));
@@ -232,8 +251,9 @@ function _compositionMapToMeerkostLines(map) {
   return out;
 }
 
-function _applyLoadedState(state, showBanner) {
+function _applyLoadedState(state, isCustomer = false) {
   if (!state || ![1,2,3,4,5,6,7].includes(state.v)) { alert('Onbekend of verouderd bestandsformaat.'); return; }
+  if (isCustomer) setCustomerProducts(state.customerProducts);
   _restoredCompositionNames = state.v >= 6 && state.compositionNames && typeof state.compositionNames === 'object'
     ? { ...state.compositionNames }
     : {};
@@ -249,7 +269,7 @@ function _applyLoadedState(state, showBanner) {
   set('capacityTariffRate',f.capacityTariffRate != null ? f.capacityTariffRate : 56.59);
 
   // Restore manual configs if present
-  if (state.manualConfigs && typeof state.manualConfigs === 'object') {
+  if (!isCustomer && state.manualConfigs && typeof state.manualConfigs === 'object') {
     _manualConfigs = { ...state.manualConfigs };
     renderManualConfigCards();
     // Show manual config button when restoring manual configs
@@ -257,7 +277,7 @@ function _applyLoadedState(state, showBanner) {
     if (mcBtn) mcBtn.style.display = '';
   }
 
-  if (state.v >= 2 && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
+  if (!isCustomer && state.v >= 2 && f.selectedConfigTypes && f.selectedConfigTypes.some(t => t)) {
     const meerkostLines = (state.v >= 6)
       ? (state.meerkostLines || {})
       : _migrateMeerkostMapToLines(state.meerkostMap || {});   // v:5 fallback
@@ -268,14 +288,6 @@ function _applyLoadedState(state, showBanner) {
     loadConfigs().then(() => _populateConfigSelects(f.selectedConfigTypes.filter(t => !isManualConfig(t)), meerkostLines, compositionLines)).catch(() => {});
   }
   const r = _restoreState(state.r);
-  if (showBanner) {
-    const banner = document.getElementById('loadedBanner');
-    banner.innerHTML = `<div class="alert alert-info">
-      📥 <div><strong>Geladen vanuit opgeslagen berekening.</strong><br>
-      EAN: <strong>${r.eanCode || 'onbekend'}</strong> &nbsp;|&nbsp; Periode: <strong>${formatDate(r.windowStart)} – ${formatDate(r.lastDate)}</strong> &nbsp;|&nbsp; ${r.daysInWindow} dagen<br>
-      <span style="font-size:0.85rem;margin-top:4px;display:inline-block;">Upload een nieuwe CSV en klik op <em>Bereken ROI</em> om opnieuw te berekenen met actuele data.</span></div></div>`;
-    banner.style.display = '';
-  }
   renderResults(r);
 }
 
@@ -397,6 +409,7 @@ function _startFromSelectedComposition() {
 }
 
 async function _openBaseCompositionModal() {
+  if (document.body.classList.contains('readonly-mode')) return;
   if (!_sheetConfigs) await loadConfigs();
   const modal = _ensureBaseCompositionModal();
   modal.style.display = 'flex';
@@ -430,12 +443,26 @@ function _renderBaseCompositionOptions(selected = '') {
     </option>`).join('');
   const select = document.getElementById('baseCompositionSelect');
   if (select) select.innerHTML = `<option value="">— Zoek/kies bestaande samenstelling —</option>${opts}`;
+  _updateBaseCompositionPreview();
   const toggle = document.getElementById('toggleBatteryOnlyConfigs');
   if (toggle) {
     toggle.setAttribute('aria-pressed', String(_showBatteryOnlyBaseConfigs));
     toggle.classList.toggle('btn-calculate', _showBatteryOnlyBaseConfigs);
     toggle.classList.toggle('btn-secondary', !_showBatteryOnlyBaseConfigs);
   }
+}
+
+function _updateBaseCompositionPreview() {
+  const preview = document.getElementById('baseCompositionPreview');
+  if (!preview) return;
+  const type = document.getElementById('baseCompositionSelect').value;
+  const cfg = (_sheetConfigs || []).find(c => c.type === type);
+  preview.textContent = '';
+  preview.hidden = !cfg;
+  if (!cfg) return;
+  const btw = parseFloat(document.getElementById('btwSelect').value) || 21;
+  const resolved = _resolveComposerPreview(cfg, [], btw);
+  preview.innerHTML = `Totaal incl. btw <strong>${fmtEur(resolved.price)}</strong> · Brutowinst excl. btw <strong>${fmtEur(compositionGrossProfitExVat(resolved, _sheetProducts, btw))}</strong>`;
 }
 
 function _ensureBaseCompositionModal() {
@@ -463,6 +490,7 @@ function _ensureBaseCompositionModal() {
           <label>Bestaande samenstelling</label>
           <select id="baseCompositionSelect" size="8" style="min-height:220px;"></select>
         </div>
+        <p id="baseCompositionPreview" class="meerkost-summary-sum" style="margin-top:10px;" hidden></p>
       </div>
       <div style="padding:14px 20px;border-top:1px solid var(--border,#ddd);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">
         <button type="button" class="btn btn-secondary" data-base-composition-close>Annuleren</button>
@@ -488,6 +516,7 @@ function _ensureBaseCompositionModal() {
       _renderBaseCompositionOptions(document.getElementById('baseCompositionSelect')?.value || '');
     }
   });
+  modal.querySelector('#baseCompositionSelect').addEventListener('change', _updateBaseCompositionPreview);
   return modal;
 }
 
@@ -631,7 +660,7 @@ function _customCompositionCardHtml(comp, index, compositions) {
       <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
         <div>
           <strong>${name}</strong>
-          ${comp.sourceName ? `<span class="meerkost-summary-sum">gestart van ${escapeHtml(comp.sourceName)}</span>` : '<span class="meerkost-summary-sum">from scratch</span>'}<br>
+          ${comp.sourceName ? `<span class="meerkost-summary-sum">gestart van ${escapeHtml(comp.sourceName)}</span>` : ''}<br>
           ${description ? `<span class="meerkost-summary-sum">${escapeHtml(description)}</span><br>` : ''}
           <span class="meerkost-summary-sum">${escapeHtml(summary)}</span>
         </div>
@@ -659,7 +688,7 @@ function renderConfigPickers(selectedTypes = null, _meerkostLines = null, compos
         <button type="button" class="btn btn-calculate" id="startEmptyComposition" style="margin:0;"><i class="fa-solid fa-plus" aria-hidden="true"></i> Leeg starten</button>
         <button type="button" class="btn btn-secondary" id="startFromComposition" style="margin:0;"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Starten van bestaande</button>
       </div>
-      <p style="margin:8px 0 0;color:var(--muted);font-size:.86rem;">Elke samenstelling is volledig bewerkbaar: producten toevoegen, verwijderen, manuele lijnen, extra installatiekosten en kortingen toevoegen. Sheet-configs worden hier niet meer getoond.</p>
+      <p style="margin:8px 0 0;color:var(--muted);font-size:.86rem;">Pas de producten, installatiekosten en kortingen aan per samenstelling.</p>
     </div>
     <div id="customCompositionCards">${cards || '<p class="text-muted" style="margin:12px 0 0;">Start leeg of kies een bestaande samenstelling als basis.</p>'}</div>
   `;
@@ -837,6 +866,7 @@ function _composerBaseConfig(type) {
 }
 
 function _openComposerModal(type) {
+  if (document.body.classList.contains('readonly-mode')) return;
   const cfg = _composerBaseConfig(type);
   if (!cfg) return;
   const modal = _ensureComposerModal();
@@ -856,8 +886,7 @@ function _openComposerModal(type) {
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 8px;"><h4 style="margin:0;">Producten</h4><button type="button" class="btn btn-secondary" id="configComposerAddProduct">+ Product toevoegen</button></div>
     <div id="configComposerProducts">${productRows || ''}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 8px;"><h4 style="margin:0;">Manuele lijnen en kortingen</h4><button type="button" class="btn btn-secondary" id="configComposerAddManual">+ Lijn toevoegen</button></div>
-    <div id="configComposerManuals">${manualRows || ''}</div>
-    <div id="configComposerPreview" class="alert alert-info" style="margin-top:14px;"></div>`;
+    <div id="configComposerManuals">${manualRows || ''}</div>`;
   modal.style.display = 'flex';
   _updateComposerPreview();
 }
@@ -889,24 +918,29 @@ function _readComposerModalLines() {
   return serializeCompositionLines([...productLines, ...manualLines]);
 }
 
+function _resolveComposerPreview(cfg, lines, btwPercent) {
+  return resolveCompositionToCalculatorConfig(cfg, { type: cfg.type, baseProductConfigId: cfg.productConfigId, lines }, _sheetProducts, {
+    btwPercent,
+    categories: _sheetCategories,
+    bebatPricePerKg: currentBebatPricePerKg(),
+    existingInverterPowerKw: parseFloat(document.getElementById('pvInverter')?.value) || 0,
+  });
+}
+
 function _updateComposerPreview() {
   const modal = document.getElementById('configComposerModal');
   if (!modal || modal.style.display === 'none') return;
   const type = modal.dataset.configType;
   const cfg = _composerBaseConfig(type);
+  if (!cfg) return;
   const lines = _readComposerModalLines();
   const btwPercent = parseFloat(document.getElementById('btwSelect')?.value) || 21;
-  const resolved = resolveCompositionToCalculatorConfig(cfg, { type, baseProductConfigId: cfg?.productConfigId, lines }, _sheetProducts, {
-    btwPercent,
-    categories: _sheetCategories,
-    bebatPricePerKg: currentBebatPricePerKg(),
-  });
-  const preview = modal.querySelector('#configComposerPreview');
+  const resolved = _resolveComposerPreview(cfg, lines, btwPercent);
   const summary = modal.querySelector('#configComposerSummary');
-  const adjustableTotal = (resolved?.compositionLines || []).filter(ln => !ln.automatic).reduce((sum, ln) => sum + ln.amountInclBtw, 0);
-  const html = `Samenstelling: <strong>${fmt2(resolved?.batCap || 0)} kWh</strong> · <strong>${fmt2(resolved?.batInv || 0)} kW</strong> · lijnen: <strong>${fmtEur(adjustableTotal)}</strong> incl. BTW · totaal: <strong>${fmtEur(resolved?.price || 0)}</strong>`;
-  if (preview) preview.innerHTML = html;
-  if (summary) summary.innerHTML = html;
+  const adjustableTotal = resolved.compositionLines.filter(ln => !ln.automatic).reduce((sum, ln) => sum + ln.amountInclBtw, 0);
+  const profit = compositionGrossProfitExVat(resolved, _sheetProducts, btwPercent);
+  summary.innerHTML = `<strong>${fmt2(resolved.batCap)} kWh · ${fmt2(resolved.batInv)} kW</strong> · Lijnen <strong>${fmtEur(adjustableTotal)}</strong> · Totaal <strong>${fmtEur(resolved.price)}</strong> incl. btw<br>
+    Brutowinst excl. btw <strong>${fmtEur(profit)}</strong> <span title="Verkoopbedrag min gekende aankoopkosten. Manuele lijnen tellen mee als verkoopbedrag.">(op basis van gekende aankoopkosten)</span>`;
 }
 
 function _saveComposerModal() {
@@ -1447,6 +1481,7 @@ function renderCompositionDescriptionHtml(cfg) {
 
 function renderScenarioGrid(d) {
   const v2 = isRoiV2();
+  const customerView = document.body.classList.contains('readonly-mode');
   let gridHTML = '';
   d.configResults.forEach((cr, idx) => {
     const { cfg, scenWC, scenOpt } = cr;
@@ -1455,8 +1490,14 @@ function renderScenarioGrid(d) {
       : `${escapeHtml(cfg.type)} — ${escapeHtml(cfg.omschrijving)}`;
     const specsUrl = calculatorConfigSpecsUrl(cfg);
     const specsBtn = specsUrl
-      ? `<a class="btn-spec" href="${escapeHtml(specsUrl)}" target="_blank" rel="noopener">📖 Productspecs ↗</a>`
+      ? (v2 || customerView
+          ? `<button type="button" class="btn-spec" aria-haspopup="dialog" data-roi-product-action="specs" data-result-index="${idx}">Productspecificaties</button>`
+          : `<a class="btn-spec" href="${escapeHtml(specsUrl)}" target="_blank" rel="noopener">📖 Productspecs ↗</a>`)
       : '';
+    const [firstPhoto] = customerProductPhotos(customerConfigProducts(cfg, _customerProducts));
+    const photoBtn = firstPhoto ? `<button type="button" class="roi-product-preview" aria-haspopup="dialog" data-roi-product-action="gallery" data-result-index="${idx}" aria-label="Productfoto’s bekijken voor ${escapeHtml(cfg.omschrijving || cfg.type)}">
+      <img src="${escapeHtml(firstPhoto.thumb)}" alt="" width="80" height="64" loading="lazy" referrerpolicy="no-referrer" /><span>Bekijk foto’s</span>
+    </button>` : '';
     const quoteUrl = quotePreviewUrlForCalculatedConfig(d, cfg.type);
     const quoteBtn = quoteUrl
       ? `<a class="btn-spec" href="${escapeHtml(quoteUrl)}" target="_blank" rel="noopener"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i> Offerte maken ↗</a>`
@@ -1470,7 +1511,7 @@ function renderScenarioGrid(d) {
           <li>${Math.round(cfg.eff * 100)}% rendement</li>
         </ul>
       </div>
-      ${specsBtn || quoteBtn ? `<div class="roi-config-links">${specsBtn}${quoteBtn}</div>` : ''}
+      ${specsBtn || quoteBtn || photoBtn ? `<div class="roi-config-links">${specsBtn}${quoteBtn}${photoBtn}</div>` : ''}
     </header>${renderCompositionDescriptionHtml(cfg)}` : `<div style="grid-column:1/-1;">
       <div class="config-group-header">
         🔋 Configuratie ${idx+1}
@@ -1478,6 +1519,7 @@ function renderScenarioGrid(d) {
         <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}${cfg.meerkostTotalInclBtw > 0 ? ` <span style="font-size:0.75rem;color:var(--muted);">(incl. ${fmtEur(cfg.meerkostTotalInclBtw)} meerkost)</span>` : ''}</span>
         ${specsBtn}
         ${quoteBtn}
+        ${photoBtn}
       </div>
       ${renderCompositionDescriptionHtml(cfg)}
     </div>`;
@@ -1487,7 +1529,7 @@ function renderScenarioGrid(d) {
     let scenarios = makeScenCard(d,
       'Conservatief', 'worst-case',
       scenWC, cfg, subWC, 'orange',
-      cr.scenWCAvg, v2
+      cr.scenWCAvg, v2, customerView
     );
     if (scenOpt) {
       const subOpt = d.dataGranularity === 'quarter'
@@ -1496,7 +1538,7 @@ function renderScenarioGrid(d) {
       scenarios += makeScenCard(d,
         'Normaal', 'optimistic',
         scenOpt, cfg, subOpt, 'blue',
-        cr.scenOptAvg, v2
+        cr.scenOptAvg, v2, customerView
       );
     }
     gridHTML += v2
@@ -1583,6 +1625,13 @@ function renderResults(d) {
   renderScenarioAlert(d);
   renderSummaryCard(d);
   renderScenarioGrid(d);
+  if (_projectId && _projectDoc) {
+    getCalculationProducts(d.configResults).then(({ catalog }) => {
+      if (d !== _saved) return;
+      setCustomerProducts(catalog);
+      if (catalog.length && !document.getElementById('roiProductDialog').open) renderScenarioGrid(d);
+    }).catch(error => console.warn('Productbestanden laden mislukt:', error));
+  }
   renderCapAnalysis(d.capAnalysis, d.isFullYear, d.daysInWindow, d.numYears);
   renderMonthlyTable(d);
   renderEnergyChart(d);
@@ -1855,11 +1904,32 @@ function wireIndexActions() {
   const viewToggle = document.getElementById('roiViewToggle');
   function arrangeResults() {
     const section = document.getElementById('configResultsSection');
-    if (isRoiV2()) document.getElementById('resultDisclaimer').after(section);
+    const disclaimer = document.getElementById('resultDisclaimer');
+    if (isRoiV2()) disclaimer.after(section);
     else document.getElementById('capAnalysisCard').before(section);
+    if (isRoiV2() && document.body.classList.contains('readonly-mode')) {
+      disclaimer.after(document.getElementById('periodAlert'));
+      const calculationInfo = document.getElementById('roiCalculationInfo');
+      calculationInfo.hidden = false;
+      calculationInfo.querySelector('.roi-calculation-body').append(
+        ...['scenarioAlert', 'summaryCard', 'capAnalysisCard', 'monthlyCard'].map(id => document.getElementById(id))
+      );
+    }
     if (viewToggle) viewToggle.textContent = isRoiV2() ? 'Klassieke weergave' : 'Bekijk in V2';
   }
   arrangeResults();
+  const productDialog = document.getElementById('roiProductDialog');
+  const openProductDialog = configureCustomerProductDialog(productDialog);
+  const grid = document.getElementById('scenariosGrid');
+  grid.addEventListener('click', event => {
+    const trigger = event.target.closest('[data-roi-product-action]');
+    if (!trigger) return;
+    const cfg = _saved?.configResults[Number(trigger.dataset.resultIndex)]?.cfg;
+    if (cfg) openProductDialog(cfg, customerConfigProducts(cfg, _customerProducts), trigger.dataset.roiProductAction === 'gallery');
+  });
+  grid.addEventListener('error', event => {
+    if (event.target.matches('.roi-product-preview img')) event.target.hidden = true;
+  }, true);
   viewToggle?.addEventListener('click', () => {
     const url = new URL(window.location.href);
     if (document.documentElement.classList.toggle('roi-v2')) url.searchParams.set('view', 'v2');
@@ -2254,7 +2324,7 @@ async function loadProjectIntoUI(id) {
       const prevSuppressProjectCalcAutoSave = _suppressProjectCalcAutoSave;
       _suppressProjectCalcAutoSave = true;
       try {
-        _applyLoadedState(restored, /*showBanner*/ false);
+        _applyLoadedState(restored);
       } finally {
         _suppressProjectCalcAutoSave = prevSuppressProjectCalcAutoSave;
       }
@@ -2333,7 +2403,7 @@ function wireProjectCsvUpload() {
         // Hydrate the saved state with the new CSV but keep the (possibly stale) lastCalcRun.
         if (_projectDoc.lastCalcRun) {
           const restored = buildSavedFromProject(_projectDoc);
-          _applyLoadedState(restored, /*showBanner*/ false);
+          _applyLoadedState(restored);
         } else {
           // No prior calc — reset UI to fresh form state.
           // Future: pre-populate eanCode etc. For Phase 1 we simply tell the user to recompute.
