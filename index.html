@@ -22,11 +22,13 @@
 </head>
 <body>
 <script>
-// Access gate: bare index.html (no ?project= and no ?data=) is not a public
-// entry point. Redirect to dashboard so random visitors hit the login wall.
+// Keep the editor hidden while a V2 customer link loads.
 (function () {
   var p = new URLSearchParams(window.location.search);
-  if (!p.has('project') && !p.has('data') && !p.has('s')) {
+  var shared = p.has('data') || p.has('s');
+  if (shared && p.get('view') === 'v2') {
+    document.body.classList.add('readonly-mode');
+  } else if (!p.has('project') && !shared) {
     window.location.replace('dashboard.html');
   }
 })();
@@ -35,7 +37,7 @@
 <header class="roi-site-header roi-v2-only">
   <div class="roi-header-inner">
     <a class="roi-brand" href="https://smartpeak.be/" aria-label="SmartPeak, naar de startpagina">
-      <img src="assets/img/roi-v2-logo-mark.webp" alt="" width="44" height="44" loading="lazy" />
+      <img src="assets/img/roi-v2-logo-mark.webp" alt="" width="44" height="43" />
       SmartPeak
     </a>
     <a class="roi-contact" href="https://smartpeak.be/contact/">Contacteer ons</a>
