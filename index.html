@@ -1,11 +1,17 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="nl-BE">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <title>SmartPeak - Batterij ROI Calculator</title>
-  <link rel="stylesheet" href="assets/css/calculator.css?v=2" />
+  <link rel="stylesheet" href="assets/css/calculator.css?v=3" />
+  <link rel="stylesheet" href="assets/css/calculator-v2.css" />
+  <script>
+    if (new URLSearchParams(window.location.search).get('view') === 'v2') {
+      document.documentElement.classList.add('roi-v2');
+    }
+  </script>
   <!-- Chart.js loaded lazily on first use — see assets/js/chart-loader.js -->
   <script type="module" src="assets/js/csv.js"></script>
   <script src="assets/js/chart-loader.js"></script>
@@ -26,12 +32,29 @@
 })();
 </script>
 
+<header class="roi-site-header roi-v2-only">
+  <div class="roi-header-inner">
+    <a class="roi-brand" href="https://smartpeak.be/" aria-label="SmartPeak, naar de startpagina">
+      <img src="assets/img/roi-v2-logo-mark.webp" alt="" width="44" height="44" loading="lazy" />
+      SmartPeak
+    </a>
+    <a class="roi-contact" href="https://smartpeak.be/contact/">Contacteer ons</a>
+  </div>
+</header>
+
+<main class="roi-content">
+<div class="roi-heading roi-v2-only">
+  <h1>Je batterijberekening</h1>
+  <p>Vergelijk de installatieprijs, de geschatte besparing en de terugverdientijd per samenstelling.</p>
+</div>
+
 <div id="projectBanner" class="project-banner" style="display:none;">
   <span class="pb-name" id="pbName">…</span>
   <span class="pb-customer">👤 <span id="pbCustomer">…</span></span>
   <span id="pbStatusChip"></span>
   <button type="button" class="btn btn-secondary" id="pbCsvBtn" style="font-size:0.85rem;padding:4px 10px;">📁 CSV</button>
   <input type="file" id="pbCsvFile" accept=".csv" style="display:none;" />
+  <button type="button" class="btn btn-secondary" id="roiViewToggle">Bekijk in V2</button>
   <a class="pb-back" href="dashboard.html">← Terug naar dashboard</a>
 </div>
 
@@ -48,8 +71,8 @@
   <div class="pv-grid" id="pvGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px 16px;margin-top:12px;font-size:0.9rem;"></div>
 </details>
 
-<h1>⚡ SmartPeak - Batterij ROI Calculator</h1>
-<p class="subtitle">Bereken de terugverdientijd van uw batterijinstallatie op basis van uw verbruikshistoriek.</p>
+<h1 class="roi-classic-only">⚡ SmartPeak - Batterij ROI Calculator</h1>
+<p class="subtitle roi-classic-only">Bereken de terugverdientijd van uw batterijinstallatie op basis van uw verbruikshistoriek.</p>
 
 <!-- INPUT CARD -->
 <div class="card" id="csvUploadCard">
@@ -162,7 +185,10 @@
     <div id="summaryContent"></div>
   </div>
 
-  <div class="scenarios-grid" id="scenariosGrid"></div>
+  <section id="configResultsSection" aria-label="Resultaten per samenstelling">
+    <h2 class="roi-v2-only roi-result-title">Samenstellingen vergelijken</h2>
+    <div class="scenarios-grid" id="scenariosGrid"></div>
+  </section>
 
   <div class="card" id="capAnalysisCard" style="display:none; margin-top:0;">
     <h2><span class="icon">🔋</span> Maximale batterijcapaciteit analyse <span style="font-size:0.85rem;font-weight:400;color:var(--muted);margin-left:8px;">bij gelijke omvormers — ≥ 100 zonnedagen volledig geladen</span></h2>
@@ -191,10 +217,11 @@
     </div>
   </div>
 </div>
+</main>
 
 <!-- TOAST -->
 <div id="toast"></div>
 
-<script type="module" src="assets/js/pages/index-app.js?v=3"></script>
+<script type="module" src="assets/js/pages/index-app.js?v=4"></script>
 </body>
 </html>

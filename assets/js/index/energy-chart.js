@@ -117,6 +117,7 @@ export async function renderEnergyChart(d) {
   const card = document.getElementById('energyChartCard');
   if (!card) return;
   const canvas = document.getElementById('energyChartCanvas');
+  if (!canvas) return;
 
   try {
     await window.SmartPeakChartLoader.loadChartJs();
@@ -179,6 +180,17 @@ export async function renderEnergyChart(d) {
   }
 
   const cfg = buildChartConfig(buckets, d.dualTariff);
+  if (document.documentElement.classList.contains('roi-v2')) {
+    const barColors = d.dualTariff
+      ? ['#1aa5b6', '#0a6a78', '#17c15c', '#0b7a42']
+      : ['#0a6a78', '#17c15c'];
+    cfg.data.datasets.forEach((dataset, index) => {
+      if (dataset.type === 'bar') dataset.backgroundColor = barColors[index];
+      else dataset.borderColor = index === barColors.length ? '#143e49' : '#075331';
+    });
+    cfg.options.color = '#4b5661';
+    cfg.options.font = { family: 'Instrument Sans, system-ui, sans-serif' };
+  }
   _energyChartInstance = new window.Chart(canvas.getContext('2d'), cfg);
   card.style.display = '';
 }
