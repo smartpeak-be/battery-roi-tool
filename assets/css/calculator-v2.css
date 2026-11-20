@@ -58,11 +58,13 @@ html:not(.roi-v2) .roi-v2-only,
   letter-spacing: -.02em;
 }
 .roi-brand img { display: block; width: 44px; height: auto; }
-.roi-contact {
+.roi-action-button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 2.5rem;
   padding: .35rem 1.05rem;
+  border: 0;
   border-radius: 999px;
   background: var(--text);
   color: #fff;
@@ -70,8 +72,10 @@ html:not(.roi-v2) .roi-v2-only,
   white-space: nowrap;
   font-size: .95rem;
   font-weight: 600;
+  line-height: inherit;
+  cursor: pointer;
 }
-.roi-contact:hover { background: var(--success); }
+.roi-action-button:hover { background: var(--success); }
 
 .roi-v2 .roi-content { width: var(--roi-wrap); margin-inline: auto; }
 .roi-v2 .roi-heading { padding-block: clamp(2.25rem, 5vw, 4.25rem) 2rem; }

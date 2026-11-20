@@ -1482,6 +1482,7 @@ function renderCompositionDescriptionHtml(cfg) {
 function renderScenarioGrid(d) {
   const v2 = isRoiV2();
   const customerView = document.body.classList.contains('readonly-mode');
+  const specsButtonClass = v2 && customerView ? 'roi-action-button' : 'btn-spec';
   let gridHTML = '';
   d.configResults.forEach((cr, idx) => {
     const { cfg, scenWC, scenOpt } = cr;
@@ -1491,7 +1492,7 @@ function renderScenarioGrid(d) {
     const specsUrl = calculatorConfigSpecsUrl(cfg);
     const specsBtn = specsUrl
       ? (v2 || customerView
-          ? `<button type="button" class="btn-spec" aria-haspopup="dialog" data-roi-product-action="specs" data-result-index="${idx}">Productspecificaties</button>`
+          ? `<button type="button" class="${specsButtonClass}" aria-haspopup="dialog" data-roi-product-action="specs" data-result-index="${idx}">Productspecificaties</button>`
           : `<a class="btn-spec" href="${escapeHtml(specsUrl)}" target="_blank" rel="noopener">📖 Productspecs ↗</a>`)
       : '';
     const [firstPhoto] = customerProductPhotos(customerConfigProducts(cfg, _customerProducts));
