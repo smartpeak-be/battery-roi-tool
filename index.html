@@ -6,7 +6,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <title>SmartPeak - Batterij ROI Calculator</title>
   <link rel="stylesheet" href="assets/css/calculator.css?v=3" />
-  <link rel="stylesheet" href="assets/css/calculator-v2.css" />
+  <link rel="stylesheet" href="assets/css/calculator-v2.css?v=2" />
+  <link rel="stylesheet" href="assets/css/customer-products.css" />
   <script>
     if (new URLSearchParams(window.location.search).get('view') === 'v2') {
       document.documentElement.classList.add('roi-v2');
@@ -18,15 +19,16 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js" integrity="sha384-+65NgAKqXr1Nb7sBmV6O09pL8ASqZsi29OE718meKinGAWaa70VE5V6LNjXVBjIA" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js" integrity="sha384-I1LYojsZ5RM1cOda44Z2h42Qa6YfsQ1XkXxREnhp4ueYBR/4d1pG1K+NZM537Vsj" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js" integrity="sha384-YHSscHG455M7b+d6r5ibTMznxrZxV272bMjXT9ndTgmx05fLR7HsdmcVklhpBSyt" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js" integrity="sha384-XgUhjZUY/4vSJ8bUS7DFmLGK73fbJgS+nlrQDEC5X3QBpGgO+597wN8Syegw3ONj" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="assets/js/firebase-init.js?v=2"></script>
 </head>
 <body>
 <script>
-// Keep the editor hidden while a V2 customer link loads.
+// Keep the editor hidden while a customer link loads.
 (function () {
   var p = new URLSearchParams(window.location.search);
   var shared = p.has('data') || p.has('s');
-  if (shared && p.get('view') === 'v2') {
+  if (shared) {
     document.body.classList.add('readonly-mode');
   } else if (!p.has('project') && !shared) {
     window.location.replace('dashboard.html');
@@ -204,11 +206,16 @@
     </details>
   </div>
 
+  <details class="roi-calculation-info" id="roiCalculationInfo" hidden>
+    <summary>Rekenmethode en meetgegevens</summary>
+    <div class="roi-calculation-body"></div>
+  </details>
+
   <!-- SAVE / SHARE CARD -->
   <div class="card" id="saveCard" style="display:none; margin-top:0;">
-    <h2><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Bewaar / Deel resultaten</h2>
+    <h2>Deel de berekening</h2>
     <p style="font-size:0.88rem;color:var(--muted);margin-bottom:14px;">
-      Sla de berekening op als deelbare URL of als JSON-bestand. De CSV-data wordt <strong>niet</strong> opgeslagen — enkel de berekende resultaten en ingegeven parameters.
+      Kopieer de deellink om de berekening aan je klant te tonen of door te sturen.
     </p>
     <div class="save-actions">
       <button type="button" id="copyShareLinkBtn" class="btn btn-secondary btn-copyshare">🔗 Kopieer deellink</button>
@@ -221,9 +228,27 @@
 </div>
 </main>
 
+<dialog class="roi-product-dialog" id="roiProductDialog" aria-labelledby="roiProductDialogTitle">
+  <header>
+    <h2 id="roiProductDialogTitle">Productspecificaties</h2>
+    <form method="dialog">
+      <button type="submit" class="roi-dialog-control" aria-label="Sluiten" autofocus>×</button>
+    </form>
+  </header>
+  <div class="roi-product-dialog-body"></div>
+  <div class="roi-gallery" hidden>
+    <figure><img alt="" referrerpolicy="no-referrer" /><figcaption></figcaption></figure>
+    <div class="roi-gallery-controls">
+      <button type="button" class="roi-dialog-control" data-photo-step="-1" aria-label="Vorige foto">←</button>
+      <output class="roi-gallery-count" aria-live="polite"></output>
+      <button type="button" class="roi-dialog-control" data-photo-step="1" aria-label="Volgende foto">→</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
-<script type="module" src="assets/js/pages/index-app.js?v=4"></script>
+<script type="module" src="assets/js/pages/index-app.js?v=5"></script>
 </body>
 </html>

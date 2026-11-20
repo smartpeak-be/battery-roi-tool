@@ -6,6 +6,7 @@ import {
   categoryMap,
   configBatteryWeightKg,
   generatedConfigDescription,
+  productPurchaseCostExVat,
 } from './product-configs.js';
 
 
@@ -158,6 +159,17 @@ export function serializeCompositionLines(lines, opts = {}) {
       if (line.kind === 'product') return !!line.productId;
       return line.description.trim() !== '' || line.amountExVat !== 0;
     });
+}
+
+export function compositionGrossProfitExVat(config, products, btwPercent) {
+  const productsById = productLookup(products);
+  const lines = (config.compositionLines || []).filter(line => !line.automatic);
+  const items = [...(config.items || []), ...compositionProductItems(lines)];
+  const purchaseCost = items.reduce((sum, item) =>
+    sum + productPurchaseCostExVat(productsById[item.productId], item.qty), 0);
+  const baseSales = (Number(config.basePrice) || 0) / (1 + normalizeVat(btwPercent) / 100);
+  const lineSales = lines.reduce((sum, line) => sum + (Number(line.amountExVat) || 0), 0);
+  return baseSales + lineSales - purchaseCost;
 }
 
 export function resolveCompositionToCalculatorConfig(baseConfig, composition, products = [], opts = {}) {

@@ -2,7 +2,7 @@ import { fmt2, fmtEur } from '../calc-engine.js';
 import { escapeHtml } from '../shared-helpers.js';
 
 /** Build HTML for a single calculation scenario. */
-export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColorOverride, scenAvg, v2 = false) {
+export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColorOverride, scenAvg, v2 = false, customerView = false) {
   const fkw  = n => fmt2(n) + ' kWh';
   const feur = n => fmtEur(n) + ' / jaar';
 
@@ -40,6 +40,9 @@ export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColor
   const paybackRow = `<div class="stat-row roi-payback"><span class="stat-label">Terugverdientijd</span><span class="stat-value big" style="display:flex;flex-direction:column;align-items:flex-end;">${paybackText}${avgPaybackLine}</span></div>`;
   const installationPrice = (() => {
   const installPrice = cfg.price;
+  if (customerView) {
+    return `<div class="stat-row"><span class="stat-label">Installatieprijs</span><span class="stat-value">${fmtEur(installPrice)}</span></div>`;
+  }
   const lines = Array.isArray(cfg.compositionLines) && cfg.compositionLines.length
     ? cfg.compositionLines
     : (Array.isArray(cfg.meerkostLines) ? cfg.meerkostLines : []);

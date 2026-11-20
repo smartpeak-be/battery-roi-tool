@@ -7,7 +7,7 @@ function normalizeQty(value) {
 export function calculatorConfigSpecItems(cfg) {
   const compositionLines = Array.isArray(cfg?.compositionLines) ? cfg.compositionLines : [];
   const directProductLines = compositionLines.filter(line => line?.kind === 'product' && line?.productId);
-  const source = directProductLines.length ? directProductLines : (Array.isArray(cfg?.items) ? cfg.items : []);
+  const source = [...(Array.isArray(cfg?.items) ? cfg.items : []), ...directProductLines];
   const quantities = new Map();
 
   source.forEach(item => {

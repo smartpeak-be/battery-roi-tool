@@ -1,3 +1,4 @@
+import { staticProductDatasheets, staticProductPhotos } from '../product-static-media.js';
 import { sellPrice, unitPrice } from '../product-pricing.js';
 import { specsForCategory } from '../product-specs.js';
 import {
@@ -325,89 +326,6 @@ const BRAND_OPTIONS = {
   'Installatie': ['Huawei', 'BYD', 'Dyness', 'Sigenergy', 'Enphase', 'Tesla', 'Sonnen', 'LG', 'Solarwatt', 'Pylontech', 'Alpha ESS', 'SAJ', 'Sungrow', 'Sessy'],
 };
 const ALL_BRANDS = Object.values(BRAND_OPTIONS).flat();
-const STATIC_PRODUCT_MEDIA = {
-  acplus: {
-    photos: [
-      'assets/products/zendure-ac-plus/zendure-acplus-1.png',
-      'assets/products/zendure-ac-plus/zendure-acplus-2.jpg',
-      'assets/products/zendure-ac-plus/zendure-acplus-3.jpg',
-      'assets/products/zendure-ac-plus/zendure-acplus-4.jpg',
-      'assets/products/zendure-ac-plus/zendure-acplus-5.jpg',
-      'assets/products/zendure-ac-plus/zendure-acplus-6.jpg',
-    ],
-    datasheets: [{
-      name: 'SolarFlow 2400 AC+ — Handleiding (EN/NL)',
-      url:  'https://cdn.shopify.com/s/files/1/0722/0956/3903/files/SolarFlow_2400_AC__User_Manual_EN_NL.pdf?v=1770794779',
-    }],
-  },
-  ab3000l: {
-    photos: [
-      'assets/products/zendure-ac-plus/zendure-acplus-ab3000l.jpg',
-    ],
-    datasheets: [
-      {
-        name: 'AB3000L — Handleiding',
-        url:  'https://cdn.shopify.com/s/files/1/0722/0956/3903/files/ZDB2503_AB3000L_6_20260104_removed_removed.pdf?v=1770795311',
-      },
-      {
-        name: 'AB3000L — Handleiding EN/FR',
-        url:  'https://cdn.shopify.com/s/files/1/0720/4379/0616/files/AB3000L_User_Manual_20260422_EN_FR.pdf?v=1779959908',
-      },
-    ],
-  },
-  dynessDl5: {
-    photos: ['https://www.dyness.com/Public/Uploads/uploadfile/images/20250428/DL5.0cprojpg.jpg'],
-    datasheets: [{
-      name: 'Dyness DL5.0C Pro — Datasheet',
-      url:  'https://www.dyness.com/Public/Uploads/uploadfile/files/20250901/DL5.0CProDatasheetEN20250702.pdf',
-    }],
-  },
-  dynessPowerBrick: {
-    photos: ['https://www.dyness.com/Public/Uploads/uploadfile/images/20241211/powerbrickbanner.jpg'],
-    datasheets: [{
-      name: 'Dyness PowerBrick — Datasheet',
-      url:  'https://www.dyness.com/Public/Uploads/uploadfile/files/20250901/PowerBrickdatasheetEN20250701-201.pdf',
-    }],
-  },
-  dynessPowerboxG2: {
-    photos: ['https://www.dyness.com/Public/Uploads/uploadfile/images/20250605/powerboxG2hei.jpg'],
-    datasheets: [
-      {
-        name: 'Dyness Powerbox G2 — Datasheet',
-        url:  'https://www.dyness.com/Public/Uploads/uploadfile/files/20250901/PowerboxG2DatasheetEN20250627.pdf',
-      },
-      {
-        name: 'Dyness Powerbox G2 — User manual',
-        url:  'https://nastechsolar.com/content/STORAGE/DYNESS/PRODUCT%20CATALOGUE/Dyness%20Powerbox%20G2%20User%20Manual.pdf',
-      },
-    ],
-  },
-  huaweiLunaS1: {
-    datasheets: [
-      {
-        name: 'Huawei LUNA2000-S1 — Officiële specs',
-        url:  'https://solar.huawei.com/en/products/LUNA2000-7-14-21-S1/specs/',
-      },
-      {
-        name: 'Huawei LUNA2000-S1 — Datasheet PDF',
-        url:  'https://solar.huawei.com/admin/asset/v1/pro/view/36414e3c762a4e508d6fde579866c4c0.pdf',
-      },
-      {
-        name: 'Huawei LUNA2000-S1 — Technical specifications',
-        url:  'https://support.huawei.com/enterprise/en/doc/EDOC1100339927/812a69f6/technical-specifications',
-      },
-    ],
-  },
-  sigenergyStor: {
-    photos: [
-      'https://wwwstatic.sigenergy.com/upload/2026-06-03/1780466922268_f5aaf949-2f73-4d39-be6a-a5c9351173d1.webp',
-    ],
-    datasheets: [{
-      name: 'Sigenergy SigenStor — Download center',
-      url:  'https://www.sigenergy.com/en/support/download-center.html',
-    }],
-  },
-};
 
 function getCategorySlug(categoryId) {
   const cat = _categories.find(c => c.id === categoryId);
@@ -435,39 +353,6 @@ function isBrandlessCategorySlug(slug) {
   return slug === 'service' || slug === 'materiaal' || slug === 'diversen';
 }
 
-function staticProductMediaKey(product) {
-  const haystack = [product?.brand, product?.model, product?.description].filter(Boolean).join(' ').toLowerCase();
-  if (haystack.includes('ab3000l')) return 'ab3000l';
-  if (haystack.includes('ac+') || haystack.includes('ac plus') || haystack.includes('2400 ac')) return 'acplus';
-  if (haystack.includes('dl5.0c')) return 'dynessDl5';
-  if (haystack.includes('powerbrick')) return 'dynessPowerBrick';
-  if (haystack.includes('powerbox g2')) return 'dynessPowerboxG2';
-  if (haystack.includes('luna2000')) return 'huaweiLunaS1';
-  if (haystack.includes('sigen')) return 'sigenergyStor';
-  return null;
-}
-
-function staticProductPhotos(product) {
-  const media = STATIC_PRODUCT_MEDIA[staticProductMediaKey(product)];
-  return (media?.photos || []).map((url, idx) => ({
-    id:          `static-${idx}`,
-    name:        url.split('/').pop() || 'Productfoto',
-    downloadUrl: url,
-    thumbUrl:    url,
-    isStatic:    true,
-  }));
-}
-
-function staticProductDatasheets(product) {
-  const media = STATIC_PRODUCT_MEDIA[staticProductMediaKey(product)];
-  return (media?.datasheets || []).map((doc, idx) => ({
-    id:          `static-${idx}`,
-    name:        doc.name,
-    downloadUrl: doc.url,
-    sizeBytes:   null,
-    isStatic:    true,
-  }));
-}
 
 let _allProducts = [];
 let _selectedProductId = null;

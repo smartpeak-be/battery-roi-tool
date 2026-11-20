@@ -99,6 +99,38 @@ html:not(.roi-v2) .roi-v2-only,
 .roi-v2 .alert-info { background: var(--roi-info-surface); border-color: var(--border); color: var(--text); }
 .roi-v2 .result-disclaimer { border-left: 3px solid var(--success); }
 .roi-v2 .result-disclaimer p { max-width: 92ch; color: var(--muted); }
+.roi-v2 .readonly-mode #periodAlert { margin: 0; }
+.roi-v2 .readonly-mode #periodAlert .alert {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+}
+.roi-v2 .readonly-mode #periodAlert .alert-warning { color: #7a5000; }
+.roi-v2 .readonly-mode #periodAlert .alert-info > i { display: none; }
+.roi-calculation-info { border-block: 1px solid var(--border); margin-block: 1.5rem; }
+.roi-calculation-info > summary { cursor: pointer; padding: .8rem 0; font-weight: 650; color: var(--primary-dark); }
+.roi-calculation-body { margin-bottom: .8rem; }
+.roi-calculation-body #scenarioAlert .alert-info {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  max-width: 85ch;
+  color: var(--muted);
+}
+.roi-calculation-body #scenarioAlert .alert-info > i { display: none; }
+.roi-v2 .roi-calculation-body > .card {
+  padding: 1rem 0;
+  margin-bottom: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  background: none;
+}
 .roi-v2 table.data-table tr.highlight td { background: var(--roi-info-surface); }
 .roi-v2 input, .roi-v2 select, .roi-v2 textarea, .roi-v2 button { font-family: var(--roi-font); }
 .roi-v2 input[type="number"], .roi-v2 input[type="file"], .roi-v2 select { background: var(--bg); }
