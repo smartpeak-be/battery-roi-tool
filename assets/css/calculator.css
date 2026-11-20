@@ -25,7 +25,6 @@ h1 {
   color: var(--primary-dark);
   margin-bottom: 4px;
 }
-.subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 28px; }
 
 .card {
   background: var(--card);
@@ -112,13 +111,6 @@ input[type="number"]:focus, input[type="file"]:focus {
 .readonly-mode .result-disclaimer + #periodAlert { margin-top: 0; }
 #periodAlert { margin-top: 28px; }
 
-.scenarios-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
-  gap: 20px;
-  margin-top: 4px;
-}
-
 .scenario-card {
   background: var(--card);
   border: 2px solid var(--border);
@@ -131,11 +123,6 @@ input[type="number"]:focus, input[type="file"]:focus {
 .scenario-card.optimistic { border-color: var(--primary); }
 .scenario-card.optimal { border-color: var(--success); }
 
-.scenario-card h3 {
-  font-size: 1.05rem;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
 .scenario-card .scenario-sub {
   font-size: 0.82rem;
   color: var(--muted);
@@ -310,11 +297,7 @@ details.scen-details > .stat-row:first-of-type { padding-top: 10px; }
 
 @media (max-width: 600px) {
   h1 { font-size: 1.3rem; }
-  .scenarios-grid { grid-template-columns: 1fr; }
   .pv-grid { grid-template-columns: 1fr !important; }
-}
-@media (max-width: 1020px) {
-  .scenarios-grid { grid-template-columns: 1fr; }
 }
 
 /* ─── READ-ONLY MODE (for ?data=<b64> share-link viewers) ─────────────── */
@@ -584,21 +567,6 @@ select {
 }
 select:focus { outline: none; border-color: var(--primary); background: #fff; }
 
-.config-group-header {
-  font-size: 0.97rem; font-weight: 700; color: var(--primary-dark);
-  padding: 10px 0 8px; border-bottom: 2px solid var(--border);
-  margin-bottom: 14px; display: flex; align-items: center;
-  gap: 10px; flex-wrap: wrap;
-}
-.config-group-header .cfg-sub {
-  font-size: 0.82rem; font-weight: 400; color: var(--muted);
-}
-.config-specs-badge {
-  background: var(--bg); border: 1px solid var(--border);
-  border-radius: 6px; padding: 3px 10px;
-  font-size: 0.8rem; font-weight: 500; color: var(--text);
-  margin-left: auto;
-}
 .btn-spec {
   font-size: 0.82rem;
   padding: 4px 10px;

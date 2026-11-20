@@ -6,8 +6,8 @@ import {
   validateCalcInputs,
 } from '../calc-engine.js';
 import { escapeHtml, showSpinner, hideSpinner, withSpinner, showConfirm } from '../shared-helpers.js';
-import { makeScenCard } from '../index/scenario-card.js?v=5';
-import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js?v=2';
+import { makeScenCard } from '../index/scenario-card.js?v=6';
+import { renderEnergyChart, resetEnergyChartState, wireEnergyChartHandlers } from '../index/energy-chart.js?v=3';
 import { productConfigsToCalcConfigs } from '../product-config-resolver.js';
 import { gridConnectionLabel } from '../grid-compatibility.js';
 import { calculatorConfigSpecsUrl } from '../product-spec-links.js';
@@ -45,10 +45,6 @@ function getCalculationProducts(configResults) {
     listPhotos: listProductPhotos,
     listDatasheets: listProductDatasheets,
   });
-}
-
-function isRoiV2() {
-  return document.documentElement.classList.contains('roi-v2');
 }
 
 // Energy chart rendering lives in assets/js/index/energy-chart.js.
@@ -211,7 +207,7 @@ async function copyShareLink() {
     try {
       const { catalog, incomplete } = await getCalculationProducts(state.r.configResults);
       const ref = await createShare(customerShareState(state, catalog), _projectId || null);
-      const url = location.origin + location.pathname + '?s=' + ref.id + (isRoiV2() ? '&view=v2' : '');
+      const url = location.origin + location.pathname + '?s=' + ref.id;
       urlInput.value = url;
       const partialMessage = incomplete ? ' Sommige productbestanden konden niet worden opgehaald.' : '';
       if (navigator.clipboard) {
@@ -1480,20 +1476,14 @@ function renderCompositionDescriptionHtml(cfg) {
 }
 
 function renderScenarioGrid(d) {
-  const v2 = isRoiV2();
   const customerView = document.body.classList.contains('readonly-mode');
-  const specsButtonClass = v2 && customerView ? 'roi-action-button' : 'btn-spec';
+  const specsButtonClass = customerView ? 'roi-action-button' : 'btn-spec';
   let gridHTML = '';
   d.configResults.forEach((cr, idx) => {
     const { cfg, scenWC, scenOpt } = cr;
-    const cfgLabel = cfg.isManual
-      ? `${escapeHtml(cfg.omschrijving)} <span style="background:var(--primary);color:#fff;font-size:0.65rem;padding:1px 6px;border-radius:4px;vertical-align:middle;">Manueel</span>`
-      : `${escapeHtml(cfg.type)} — ${escapeHtml(cfg.omschrijving)}`;
     const specsUrl = calculatorConfigSpecsUrl(cfg);
     const specsBtn = specsUrl
-      ? (v2 || customerView
-          ? `<button type="button" class="${specsButtonClass}" aria-haspopup="dialog" data-roi-product-action="specs" data-result-index="${idx}">Productspecificaties</button>`
-          : `<a class="btn-spec" href="${escapeHtml(specsUrl)}" target="_blank" rel="noopener">📖 Productspecs ↗</a>`)
+      ? `<button type="button" class="${specsButtonClass}" aria-haspopup="dialog" data-roi-product-action="specs" data-result-index="${idx}">Productspecificaties</button>`
       : '';
     const [firstPhoto] = customerProductPhotos(customerConfigProducts(cfg, _customerProducts));
     const photoBtn = firstPhoto ? `<button type="button" class="roi-product-preview" aria-haspopup="dialog" data-roi-product-action="gallery" data-result-index="${idx}" aria-label="Productfoto’s bekijken voor ${escapeHtml(cfg.omschrijving || cfg.type)}">
@@ -1503,7 +1493,7 @@ function renderScenarioGrid(d) {
     const quoteBtn = quoteUrl
       ? `<a class="btn-spec" href="${escapeHtml(quoteUrl)}" target="_blank" rel="noopener"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i> Offerte maken ↗</a>`
       : '';
-    const heading = v2 ? `<header class="roi-config-header">
+    const heading = `<header class="roi-config-header">
       <div class="roi-config-heading">
         <h3>${escapeHtml(cfg.omschrijving || cfg.type)}</h3>
         <ul class="roi-config-specs" aria-label="Batterijspecificaties">
@@ -1513,24 +1503,14 @@ function renderScenarioGrid(d) {
         </ul>
       </div>
       ${specsBtn || quoteBtn || photoBtn ? `<div class="roi-config-links">${specsBtn}${quoteBtn}${photoBtn}</div>` : ''}
-    </header>${renderCompositionDescriptionHtml(cfg)}` : `<div style="grid-column:1/-1;">
-      <div class="config-group-header">
-        🔋 Configuratie ${idx+1}
-        <span class="cfg-sub">${cfgLabel}</span>
-        <span class="config-specs-badge">${fmt2(cfg.batCap)} kWh &nbsp;·&nbsp; ${fmt2(cfg.batInv)} kW omv. &nbsp;·&nbsp; ${Math.round(cfg.eff*100)}% eff &nbsp;·&nbsp; ${fmtEur(cfg.price)}${cfg.meerkostTotalInclBtw > 0 ? ` <span style="font-size:0.75rem;color:var(--muted);">(incl. ${fmtEur(cfg.meerkostTotalInclBtw)} meerkost)</span>` : ''}</span>
-        ${specsBtn}
-        ${quoteBtn}
-        ${photoBtn}
-      </div>
-      ${renderCompositionDescriptionHtml(cfg)}
-    </div>`;
+    </header>${renderCompositionDescriptionHtml(cfg)}`;
     const subWC = d.dataGranularity === 'quarter'
       ? `Chronologische kwartiersimulatie · conservatieve verwerking · max. ${fmt2(cfg.batInv)} kW laden/ontladen.`
       : `Chronologische dag-/nachtsimulatie · injectie conservatief geconcentreerd · max. ${fmt2(cfg.batInv)} kW laden/ontladen.`;
     let scenarios = makeScenCard(d,
       'Conservatief', 'worst-case',
       scenWC, cfg, subWC, 'orange',
-      cr.scenWCAvg, v2, customerView
+      cr.scenWCAvg, customerView
     );
     if (scenOpt) {
       const subOpt = d.dataGranularity === 'quarter'
@@ -1539,12 +1519,10 @@ function renderScenarioGrid(d) {
       scenarios += makeScenCard(d,
         'Normaal', 'optimistic',
         scenOpt, cfg, subOpt, 'blue',
-        cr.scenOptAvg, v2, customerView
+        cr.scenOptAvg, customerView
       );
     }
-    gridHTML += v2
-      ? `<article class="roi-config-result">${heading}<div class="roi-scenario-pair">${scenarios}</div></article>`
-      : heading + scenarios;
+    gridHTML += `<article class="roi-config-result">${heading}<div class="roi-scenario-pair">${scenarios}</div></article>`;
   });
   document.getElementById('scenariosGrid').innerHTML = gridHTML;
 }
@@ -1618,7 +1596,7 @@ function renderResults(d) {
   _saved = d; // persist for save/share — also read by chart event handlers
   resetEnergyChartState();
   document.getElementById('results').style.display = 'block';
-  if (!isRoiV2() || _projectId) {
+  if (_projectId) {
     document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -1902,23 +1880,14 @@ async function copyShareUrlInput() {
 }
 
 function wireIndexActions() {
-  const viewToggle = document.getElementById('roiViewToggle');
-  function arrangeResults() {
-    const section = document.getElementById('configResultsSection');
-    const disclaimer = document.getElementById('resultDisclaimer');
-    if (isRoiV2()) disclaimer.after(section);
-    else document.getElementById('capAnalysisCard').before(section);
-    if (isRoiV2() && document.body.classList.contains('readonly-mode')) {
-      disclaimer.after(document.getElementById('periodAlert'));
-      const calculationInfo = document.getElementById('roiCalculationInfo');
-      calculationInfo.hidden = false;
-      calculationInfo.querySelector('.roi-calculation-body').append(
-        ...['scenarioAlert', 'summaryCard', 'capAnalysisCard', 'monthlyCard'].map(id => document.getElementById(id))
-      );
-    }
-    if (viewToggle) viewToggle.textContent = isRoiV2() ? 'Klassieke weergave' : 'Bekijk in V2';
+  if (document.body.classList.contains('readonly-mode')) {
+    document.getElementById('configResultsSection').before(document.getElementById('periodAlert'));
+    const calculationInfo = document.getElementById('roiCalculationInfo');
+    calculationInfo.hidden = false;
+    calculationInfo.querySelector('.roi-calculation-body').append(
+      ...['scenarioAlert', 'summaryCard', 'capAnalysisCard', 'monthlyCard'].map(id => document.getElementById(id))
+    );
   }
-  arrangeResults();
   const productDialog = document.getElementById('roiProductDialog');
   const openProductDialog = configureCustomerProductDialog(productDialog);
   const grid = document.getElementById('scenariosGrid');
@@ -1931,17 +1900,6 @@ function wireIndexActions() {
   grid.addEventListener('error', event => {
     if (event.target.matches('.roi-product-preview img')) event.target.hidden = true;
   }, true);
-  viewToggle?.addEventListener('click', () => {
-    const url = new URL(window.location.href);
-    if (document.documentElement.classList.toggle('roi-v2')) url.searchParams.set('view', 'v2');
-    else url.searchParams.delete('view');
-    window.history.replaceState(null, '', url);
-    arrangeResults();
-    if (_saved) {
-      renderScenarioGrid(_saved);
-      renderEnergyChart(_saved);
-    }
-  });
   document.getElementById('loadConfigsBtn')?.addEventListener('click', () => {
     loadConfigs({ force: true }).catch(() => {});
   });
@@ -2343,13 +2301,6 @@ async function loadProjectIntoUI(id) {
         console.warn('meerkost write-migration failed (non-blocking)', e);
       }
 
-      // #results hash (set by dashboard's 💾 button) → scroll to results block.
-      if (window.location.hash === '#results' && !isRoiV2()) {
-        const firstResultCard = document.querySelector('#results .card');
-        if (firstResultCard) {
-          setTimeout(() => firstResultCard.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-        }
-      }
     } else if (proj.csvUpload && !proj.lastCalcRun) {
       // CSV present but never calculated — load the form values (if any) but don't auto-render results.
       // User clicks Bereken when ready. If the project carries a pending config seed

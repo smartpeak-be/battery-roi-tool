@@ -53,16 +53,16 @@ export function buildChartConfig(buckets, dualTariff) {
 
   const datasets = [];
   if (dualTariff) {
-    datasets.push({ type: 'bar', label: 'Afname dag',      data: buckets.map(b =>  b.afnamedag),    backgroundColor: '#e54545', stack: 'energy', order: 2 });
-    datasets.push({ type: 'bar', label: 'Afname nacht',    data: buckets.map(b =>  b.afnamenacht),  backgroundColor: '#b02a2a', stack: 'energy', order: 2 });
-    datasets.push({ type: 'bar', label: 'Injectie dag',    data: buckets.map(b => -b.injectiedag),  backgroundColor: '#00b478', stack: 'energy', order: 2 });
-    datasets.push({ type: 'bar', label: 'Injectie nacht',  data: buckets.map(b => -b.injectienacht),backgroundColor: '#007a52', stack: 'energy', order: 2 });
+    datasets.push({ type: 'bar', label: 'Afname dag',      data: buckets.map(b =>  b.afnamedag),    backgroundColor: '#1aa5b6', stack: 'energy', order: 2 });
+    datasets.push({ type: 'bar', label: 'Afname nacht',    data: buckets.map(b =>  b.afnamenacht),  backgroundColor: '#0a6a78', stack: 'energy', order: 2 });
+    datasets.push({ type: 'bar', label: 'Injectie dag',    data: buckets.map(b => -b.injectiedag),  backgroundColor: '#17c15c', stack: 'energy', order: 2 });
+    datasets.push({ type: 'bar', label: 'Injectie nacht',  data: buckets.map(b => -b.injectienacht),backgroundColor: '#0b7a42', stack: 'energy', order: 2 });
   } else {
-    datasets.push({ type: 'bar', label: 'Afname',   data: buckets.map(b =>  b.afname),   backgroundColor: '#e54545', stack: 'energy', order: 2 });
-    datasets.push({ type: 'bar', label: 'Injectie', data: buckets.map(b => -b.injectie), backgroundColor: '#00b478', stack: 'energy', order: 2 });
+    datasets.push({ type: 'bar', label: 'Afname',   data: buckets.map(b =>  b.afname),   backgroundColor: '#0a6a78', stack: 'energy', order: 2 });
+    datasets.push({ type: 'bar', label: 'Injectie', data: buckets.map(b => -b.injectie), backgroundColor: '#17c15c', stack: 'energy', order: 2 });
   }
-  datasets.push({ type: 'line', label: 'Gem. afname',   data: Array(labels.length).fill(avgAfname),    borderColor: '#7a1010', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, fill: false, order: 1 });
-  datasets.push({ type: 'line', label: 'Gem. injectie', data: Array(labels.length).fill(-avgInjectie), borderColor: '#004d33', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, fill: false, order: 1 });
+  datasets.push({ type: 'line', label: 'Gem. afname',   data: Array(labels.length).fill(avgAfname),    borderColor: '#143e49', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, fill: false, order: 1 });
+  datasets.push({ type: 'line', label: 'Gem. injectie', data: Array(labels.length).fill(-avgInjectie), borderColor: '#075331', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, fill: false, order: 1 });
 
   return {
     type: 'bar',
@@ -70,6 +70,8 @@ export function buildChartConfig(buckets, dualTariff) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      color: '#4b5661',
+      font: { family: 'Instrument Sans, system-ui, sans-serif' },
       scales: {
         x: { stacked: true },
         y: {
@@ -180,17 +182,6 @@ export async function renderEnergyChart(d) {
   }
 
   const cfg = buildChartConfig(buckets, d.dualTariff);
-  if (document.documentElement.classList.contains('roi-v2')) {
-    const barColors = d.dualTariff
-      ? ['#1aa5b6', '#0a6a78', '#17c15c', '#0b7a42']
-      : ['#0a6a78', '#17c15c'];
-    cfg.data.datasets.forEach((dataset, index) => {
-      if (dataset.type === 'bar') dataset.backgroundColor = barColors[index];
-      else dataset.borderColor = index === barColors.length ? '#143e49' : '#075331';
-    });
-    cfg.options.color = '#4b5661';
-    cfg.options.font = { family: 'Instrument Sans, system-ui, sans-serif' };
-  }
   _energyChartInstance = new window.Chart(canvas.getContext('2d'), cfg);
   card.style.display = '';
 }

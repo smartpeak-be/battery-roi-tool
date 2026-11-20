@@ -6,9 +6,6 @@
   font-display: swap;
 }
 
-html:not(.roi-v2) .roi-v2-only,
-.roi-v2 .roi-classic-only { display: none; }
-
 .roi-v2 {
   --text: #1f272e;
   --muted: #4b5661;
@@ -147,7 +144,7 @@ html:not(.roi-v2) .roi-v2-only,
 
 .roi-v2 #configResultsSection { margin-block: 1.75rem 2rem; }
 .roi-result-title { font-size: clamp(1.8rem, 3.5vw, 2.65rem); margin-bottom: 1rem; }
-.roi-v2 .scenarios-grid { display: flex; flex-direction: column; gap: 1.25rem; }
+.roi-v2 .scenarios-grid { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 4px; }
 .roi-config-result {
   min-width: 0;
   padding: clamp(.9rem, 3vw, 1.65rem);
