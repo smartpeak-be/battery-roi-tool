@@ -106,6 +106,11 @@ input[type="number"]:focus, input[type="file"]:focus {
 .alert-warning { background: #fff8ec; border: 1px solid #f6a623; color: #7a5000; }
 .alert-info    { background: #eef4ff; border: 1px solid #2c7be5; color: #1a3a6e; }
 .alert-success { background: #eafaf4; border: 1px solid #00b478; color: #005c3c; }
+.result-disclaimer[hidden] { display: none; }
+.result-disclaimer { margin-top: 28px; line-height: 1.45; }
+.result-disclaimer p { margin-top: 6px; }
+.readonly-mode .result-disclaimer + #periodAlert { margin-top: 0; }
+#periodAlert { margin-top: 28px; }
 
 .scenarios-grid {
   display: grid;
@@ -136,6 +141,14 @@ input[type="number"]:focus, input[type="file"]:focus {
   color: var(--muted);
   margin-bottom: 16px;
 }
+.scenario-price-disclaimer,
+.scenario-detail-note {
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+.scenario-price-disclaimer { font-size: 0.7rem; }
+.scenario-detail-note { font-size: 0.82rem; }
 
 .stat-row {
   display: flex;
@@ -310,6 +323,7 @@ body.readonly-mode .btn-calculate,
 body.readonly-mode .btn-loadsave,
 body.readonly-mode .btn-load-configs,
 body.readonly-mode .btn-copyshare,
+body.readonly-mode .scenario-price-disclaimer,
 body.readonly-mode #shareUrlRow {
   display: none !important;
 }
@@ -401,6 +415,24 @@ table.cap-table tr.cap-max td .badge-max {
   font-size: 0.92rem;
 }
 .btn-secondary:hover { background: #eef4ff; transform: translateY(-1px); }
+.composition-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.composition-move {
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 1.1rem;
+}
+.composition-move:disabled {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+  background: #fff;
+}
 .save-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .share-url-row { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
 .share-url-row input {

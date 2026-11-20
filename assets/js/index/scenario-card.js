@@ -1,8 +1,8 @@
 import { fmt2, fmtEur } from '../calc-engine.js';
 import { escapeHtml } from '../shared-helpers.js';
 
-/** Build HTML for a single scenario card (Worst Case or Realistisch). */
-export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, extraInfo, mainColorOverride, scenAvg) {
+/** Build HTML for a single calculation scenario. */
+export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColorOverride, scenAvg) {
   const fkw  = n => fmt2(n) + ' kWh';
   const feur = n => fmtEur(n) + ' / jaar';
 
@@ -34,9 +34,8 @@ export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, e
   const avgChargedLine = showAvg
     ? `<div class="muted-inline" style="display:block;margin-left:0;margin-top:2px;">gem. ${N} j: ${fkw(avgTotalCharged)}</div>`
     : '';
-  const priceDisclaimer = '<div style="font-size:0.7rem;line-height:1.35;color:var(--muted);margin-top:4px;">Prijzen zijn indicatief en kunnen wijzigen door prijsaanpassingen van leveranciers. De definitieve prijs wordt vastgelegd in de offerte.</div>';
+  const priceDisclaimer = '<p class="scenario-price-disclaimer">Prijzen zijn indicatief en kunnen wijzigen door prijsaanpassingen van leveranciers. De definitieve prijs wordt vastgelegd in de offerte.</p>';
   return `<div class="scenario-card ${cssClass}">
-    <span class="badge ${badgeClass}">${badge}</span>
     <h3>${title}</h3>
     <div class="scenario-sub">${extraInfo}${priceLine}</div>
     <div class="stat-row"><span class="stat-label">Totale opgeslagen energie</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${fkw(totalCharged)}${avgChargedLine}</span></div>
@@ -73,7 +72,8 @@ export function makeScenCard(d, title, badge, badgeClass, cssClass, scen, cfg, e
       <div class="stat-row"><span class="stat-label">Resterende netinjectie</span><span class="stat-value">${fkw(scen.remainingInjectie || 0)}</span></div>
       <div class="stat-row"><span class="stat-label">Waarde vermeden afname</span><span class="stat-value green">${fmtEur(scen.avoidedImportValue || 0)} / jaar</span></div>
       <div class="stat-row"><span class="stat-label">Misgelopen injectievergoeding</span><span class="stat-value" style="color:var(--warning)">− ${fmtEur(scen.lostInjectionValue || 0)} / jaar</span></div>
-      <div class="stat-row"><span class="stat-label">Equivalent aantal cycli</span><span class="stat-value">${fmt2(scen.cycles || 0)}</span></div>
+      <div class="stat-row"><span class="stat-label">Equivalent aantal cycli</span><span class="stat-value">${Number.isFinite(scen.cycles) ? fmt2(scen.cycles) : '—'}</span></div>
+      <p class="scenario-detail-note">Eén cyclus komt overeen met één volledige ontlading van de bruikbare batterijcapaciteit. Gedeeltelijke ontladingen tellen samen. Twee ontladingen van 50% vormen samen één cyclus.</p>
     </details>
     ${scen.capacityTariff && scen.capacityTariff.available ? `
     <details class="scen-details">
