@@ -2,7 +2,7 @@ import { fmt2, fmtEur } from '../calc-engine.js';
 import { escapeHtml } from '../shared-helpers.js';
 
 /** Build HTML for a single calculation scenario. */
-export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColorOverride, scenAvg) {
+export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColorOverride, scenAvg, v2 = false) {
   const fkw  = n => fmt2(n) + ' kWh';
   const feur = n => fmtEur(n) + ' / jaar';
 
@@ -35,12 +35,10 @@ export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColor
     ? `<div class="muted-inline" style="display:block;margin-left:0;margin-top:2px;">gem. ${N} j: ${fkw(avgTotalCharged)}</div>`
     : '';
   const priceDisclaimer = '<p class="scenario-price-disclaimer">Prijzen zijn indicatief en kunnen wijzigen door prijsaanpassingen van leveranciers. De definitieve prijs wordt vastgelegd in de offerte.</p>';
-  return `<div class="scenario-card ${cssClass}">
-    <h3>${title}</h3>
-    <div class="scenario-sub">${extraInfo}${priceLine}</div>
-    <div class="stat-row"><span class="stat-label">Totale opgeslagen energie</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${fkw(totalCharged)}${avgChargedLine}</span></div>
-    <div class="stat-row"><span class="stat-label">Totale jaarlijkse besparing</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${feur(scen.annualSaving)}${avgSavingLine}</span></div>
-    ${(() => {
+  const chargedRow = `<div class="stat-row"><span class="stat-label">Totale opgeslagen energie</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${fkw(totalCharged)}${avgChargedLine}</span></div>`;
+  const savingRow = `<div class="stat-row roi-saving"><span class="stat-label">${v2 ? 'Jaarlijkse besparing' : 'Totale jaarlijkse besparing'}</span><span class="stat-value green big" style="display:flex;flex-direction:column;align-items:flex-end;">${feur(scen.annualSaving)}${avgSavingLine}</span></div>`;
+  const paybackRow = `<div class="stat-row roi-payback"><span class="stat-label">Terugverdientijd</span><span class="stat-value big" style="display:flex;flex-direction:column;align-items:flex-end;">${paybackText}${avgPaybackLine}</span></div>`;
+  const installationPrice = (() => {
   const installPrice = cfg.price;
   const lines = Array.isArray(cfg.compositionLines) && cfg.compositionLines.length
     ? cfg.compositionLines
@@ -62,10 +60,15 @@ export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColor
     </details>
     ${priceDisclaimer}
   `;
-})()}
-    <div class="stat-row"><span class="stat-label">Terugverdientijd</span><span class="stat-value big" style="color:var(--warning);display:flex;flex-direction:column;align-items:flex-end;">${paybackText}${avgPaybackLine}</span></div>
+})();
+  return `<div class="scenario-card ${cssClass}">
+    ${v2 ? `<h4>${title}</h4>` : `<h3>${title}</h3>`}
+    ${v2
+    ? `<div class="roi-key-metrics">${paybackRow}${savingRow}</div>${installationPrice}${chargedRow}`
+    : `<div class="scenario-sub">${extraInfo}${priceLine}</div>${chargedRow}${savingRow}${installationPrice}${paybackRow}`}
     <details class="scen-details">
       <summary>Details <span class="chev">▾</span></summary>
+      ${v2 ? `<div class="scenario-sub">${extraInfo}${priceLine}</div>` : ''}
       <div class="stat-row"><span class="stat-label">Uit injectie opgenomen</span><span class="stat-value">${fkw(scen.chargedInput || 0)}</span></div>
       <div class="stat-row"><span class="stat-label">Door batterij aan woning geleverd</span><span class="stat-value green">${fkw(scen.delivered || 0)}</span></div>
       <div class="stat-row"><span class="stat-label">Resterende netafname</span><span class="stat-value">${fkw(scen.remainingAfname || 0)}</span></div>
@@ -83,6 +86,7 @@ export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColor
       <div class="stat-row"><span class="stat-label">Mogelijke extra besparing</span><span class="stat-value green">${fmtEur(scen.capacityTariff.annualSaving)} / jaar</span></div>
       <div style="font-size:.75rem;color:var(--muted);margin-top:6px;">Indicatief, minimum 2,5 kW per maand toegepast. Niet opgenomen in de terugverdientijd hierboven.</div>
     </details>` : ''}
+    ${v2 ? '<details class="scen-details"><summary>Dekking van afname en injectie <span class="chev">▾</span></summary>' : ''}
     ${(() => {
       const avgRecPct = showAvg ? Math.min(100, scenAvg.recoveryPctFull + scenAvg.recoveryPctPartial) : null;
       const avgInjPct = showAvg ? Math.min(100, scenAvg.injPctFull      + scenAvg.injPctPartial)      : null;
@@ -126,6 +130,7 @@ export function makeScenCard(d, title, cssClass, scen, cfg, extraInfo, mainColor
       </div>
     </div>`;
     })()}
+    ${v2 ? '</details>' : ''}
   </div>`;
 }
 

@@ -164,6 +164,7 @@ input[type="number"]:focus, input[type="file"]:focus {
 .stat-value.big { font-size: 1.25rem; color: var(--primary); }
 .stat-value.green { color: var(--success); }
 .stat-value.orange { color: var(--warning); }
+.roi-payback > .stat-value { color: var(--warning); }
 
 .badge {
   display: inline-block;
