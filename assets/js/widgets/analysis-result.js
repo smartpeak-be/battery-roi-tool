@@ -40,7 +40,7 @@ export function renderAnalysisResult(ind, totals, { priceGiven = false, headingL
   <li class="spa-metric">
     <span class="spa-metric-label">Zinvolle opslagcapaciteit</span>
     <span class="spa-metric-value">tot ± ${nl(ind.capacityKwh)} kWh</span>
-    <span class="spa-metric-detail">Je zonne-overschot vult die op minstens 100 dagen per jaar volledig. Groter levert in jouw situatie weinig extra op.</span>
+    <span class="spa-metric-detail">Je zonne-overschot vult die op minstens 100 dagen per jaar volledig, en je verbruikt die energie ook weer helemaal. Groter levert in jouw situatie weinig extra op.</span>
   </li>
   <li class="spa-metric">
     <span class="spa-metric-label">Zelf gebruikt per jaar</span>

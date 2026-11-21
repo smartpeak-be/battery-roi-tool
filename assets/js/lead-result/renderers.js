@@ -92,7 +92,7 @@ function savingCard(ind, lead) {
     <div class="sp-result-card">
       <h5 class="text-center mb-3">Hoe we die besparing berekenen</h5>
       <ul class="mb-3">
-        <li>We gaan uit van een batterij van ongeveer ${fmtNl(ind.capacityKwh, 1)} kWh: de grootte die je met je zonne-overschot op minstens 100 dagen per jaar volledig kan laden.</li>
+        <li>We gaan uit van een batterij van ongeveer ${fmtNl(ind.capacityKwh, 1)} kWh: de grootte die je met je zonne-overschot op minstens 100 dagen per jaar volledig kan laden én weer helemaal opgebruikt.</li>
         <li>Elke kWh die de batterij 's avonds of 's nachts levert, hoef je niet van het net te halen. Die kWh rekenen we aan ${own ? `jouw prijs van ${priceTxt}` : `${priceTxt}, een gangbare prijs met alles inbegrepen`}.</li>
       </ul>
       <p class="mb-0">Het gaat hier enkel om <strong>zelfverbruik</strong>. Met een dynamisch energiecontract kan een batterij ook laden wanneer stroom goedkoop is en ontladen wanneer ze duur is. Dan is mogelijk een grotere besparing haalbaar, net als wanneer de batterij je piek voor het capaciteitstarief beperkt. Dat bekijken we graag samen met je.</p>
@@ -119,7 +119,7 @@ function dataCard(y, capacity, fromData = false) {
         <div class="sp-metric-tile">
           <div class="sp-result-metric-value">${fmtRange(capacity, 1, ' kWh')}</div>
           <div class="sp-result-metric-label">Indicatieve batterijgrootte</div>
-          <div class="sp-metric-detail">${fromData ? 'Wat je overschot op minstens 100 dagen per jaar volledig vult. ' : ''}Een vertrekpunt. De juiste grootte hangt ook af van je wensen en plannen.</div>
+          <div class="sp-metric-detail">${fromData ? 'Wat je overschot op minstens 100 dagen per jaar volledig vult en je daarna ook helemaal opgebruikt. ' : ''}Een vertrekpunt. De juiste grootte hangt ook af van je wensen en plannen.</div>
         </div>
       </div>
     </div>

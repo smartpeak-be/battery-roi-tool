@@ -22,8 +22,8 @@ export const PUBLIC_INDICATION = {
 
 /**
  * What a battery would do with this customer's surplus, for the public result page.
- * Size: the largest capacity that the daily solar surplus fills completely on at least
- * 100 days a year (the capacity analysis of the calculator). Saving: the energy the
+ * Size: the largest capacity that the solar surplus fills completely and the consumption
+ * empties again on at least 100 days a year (the capacity analysis of the calculator). Saving: the energy the
  * battery delivers per year (self-consumption only), valued at the full price per kWh
  * and rounded up to 50 euro, so it is shown as "up to". Dynamic tariffs, the capacity
  * tariff and the injection fee are deliberately left out.

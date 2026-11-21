@@ -6,7 +6,7 @@ import {
   parseCSV, parseDate, parsVolume, localDateKey, rowsToTimeBlocks,
   buildTimeBlocksFromQuarterCompact,
 } from './csv.js';
-import { buildAggregateBlocks, simulateVirtualBattery } from './battery-simulator.js';
+import { buildAggregateBlocks, countFullCycleDays, simulateVirtualBattery } from './battery-simulator.js';
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────────────────
 
@@ -659,7 +659,7 @@ export function processDataPure(input, pvInv, selectedConfigs, priceDay, priceNi
   const avgTotals = numYears >= 2 ? averageStats(py.perYear, selectedConfigs) : null;
 
   // Pre-filter allDays into per-year blocks once, so the loops below don't
-  // re-scan the full allDays array per cap-step / per month.
+  // re-scan the full allDays array per month.
   const yearDays = py.perYear.map(yr =>
     allDays.filter(d => d.date >= yr.windowStart && d.date <= yr.windowEnd)
   );
@@ -680,18 +680,18 @@ export function processDataPure(input, pvInv, selectedConfigs, priceDay, priceNi
   }
 
   // ── Capacity analysis — qualDays per capacity step (current year + multi-year avg) ──
+  // qualDays = days on which an ideal battery of this capacity completes a full
+  // cycle: completely charged and afterwards completely discharged (chronological
+  // over timeBlocks, so quarter-hour data is used when available).
   const capRows = [];
   let capMaxDays = null;
   for (let cap = CALC_CONSTANTS.CAP_SWEEP_STEP; cap <= CALC_CONSTANTS.CAP_SWEEP_MAX; cap = Math.round((cap + CALC_CONSTANTS.CAP_SWEEP_STEP) * 10) / 10) {
-    let qualDays = 0;
-    for (const day of windowDays) { if (day.injectie >= cap) qualDays++; }
+    const qualDays = countFullCycleDays(timeBlocks, cap, { metricStart: windowStart, metricEnd: lastDate });
     let avgQualDays = null;
     if (numYears >= 2) {
       let totalQual = 0;
-      for (const days of yearDays) {
-        let yrQual = 0;
-        for (const day of days) { if (day.injectie >= cap) yrQual++; }
-        totalQual += yrQual;
+      for (const yr of py.perYear) {
+        totalQual += countFullCycleDays(timeBlocks, cap, { metricStart: yr.windowStart, metricEnd: yr.windowEnd });
       }
       avgQualDays = totalQual / numYears;
     }
