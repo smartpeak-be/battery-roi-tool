@@ -708,7 +708,7 @@ function sectionBlokA() {
 
           <div class="col-12">
             <label class="form-label">CSV Fluvius</label>
-            <input type="file" id="fCsv" class="form-control" accept=".csv" />
+            <input type="file" id="fCsv" class="form-control" accept=".csv,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain,application/octet-stream" />
             <div class="form-text" id="fCsvStatus">${_csvStatusLine()}</div>
           </div>
 

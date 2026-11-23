@@ -130,7 +130,7 @@ function template(cfg, uid) {
     ${ICON_UPLOAD}
     <span><strong>Kies je CSV-bestand</strong> of sleep het hierheen</span>
     <span class="spa-drop-sub" data-file-name>Bestand van Mijn Fluvius (.csv)</span>
-    <input type="file" accept=".csv,text/csv" data-file aria-describedby="${id('csvmsg')}">
+    <input type="file" accept=".csv,text/csv,text/comma-separated-values,application/vnd.ms-excel,text/plain,application/octet-stream" data-file aria-describedby="${id('csvmsg')}">
   </label>
   <p class="spa-msg" id="${id('csvmsg')}" data-csv-msg role="status" hidden></p>
   <div class="spa-field">
