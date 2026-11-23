@@ -716,7 +716,9 @@ async function getProductsConfig() {
 // ─── SHARES (customer-facing read-only snapshots) ────────────────────────────
 // Each share doc holds a full v:5 state payload (inputs + results + dailyCompact).
 // Firestore rules: bearer-link read until expiresAt, write = isWhitelisted().
-const SHARE_LINK_TTL_DAYS = 180;
+// One day below the 180-day cap in firestore.rules: the rule compares with server time,
+// so a device clock running slightly ahead (phones, tablets) would otherwise be refused.
+const SHARE_LINK_TTL_DAYS = 179;
 const LEAD_RESULT_TTL_DAYS = 30;
 
 function futureTimestamp(days) {
