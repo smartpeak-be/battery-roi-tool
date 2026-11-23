@@ -330,9 +330,16 @@ describe('buildPublicIndication', () => {
     expect(ind.pricePerKwh).toBe(0.39);
   });
 
-  it('never stores more than the consumption of that day', () => {
-    const ind = buildPublicIndication(year(2, 8), 0.39);
-    expect(ind.storedKwhPerYear).toBe(730);
+  it('only counts a size that is also emptied again by the consumption', () => {
+    // 8 kWh surplus fills 7,5 kWh, but 4 kWh consumption only empties 2,5 kWh.
+    const ind = buildPublicIndication(year(4, 8), 0.39);
+    expect(ind.capacityKwh).toBe(2.5);
+    expect(ind.fullDays).toBe(365);
+    expect(ind.storedKwhPerYear).toBeLessThanOrEqual(4 * 365);
+  });
+
+  it('gives no indication when the consumption never empties even the smallest battery', () => {
+    expect(buildPublicIndication(year(2, 8), 0.39)).toBeNull();
   });
 
   it('gives no indication without enough surplus', () => {

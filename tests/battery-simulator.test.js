@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCapacityTariffResult,
+  countFullCycleDays,
   simulateVirtualBattery,
 } from '../assets/js/battery-simulator.js';
 
@@ -70,5 +71,55 @@ describe('buildCapacityTariffResult', () => {
     expect(result.originalAverageKw).toBeCloseTo(2.75, 6);
     expect(result.simulatedAverageKw).toBeCloseTo(2.5, 6);
     expect(result.annualSaving).toBeCloseTo(12.5, 6);
+  });
+});
+
+describe('countFullCycleDays', () => {
+  it('counts a day only when the battery is full and afterwards empty', () => {
+    const blocks = [
+      block('2026-06-01T12:00:00', { injectie: 10 }),
+      block('2026-06-01T20:00:00', { afname: 10 }),
+    ];
+    expect(countFullCycleDays(blocks, 10)).toBe(1);
+  });
+
+  it('does not count a full charge that is not consumed', () => {
+    // Plenty of injection, but only 4 kWh consumption before the next sunny day.
+    const blocks = [
+      block('2026-06-01T12:00:00', { injectie: 15 }),
+      block('2026-06-01T22:00:00', { afname: 4 }),
+      block('2026-06-02T12:00:00', { injectie: 15 }),
+      block('2026-06-02T22:00:00', { afname: 4 }),
+    ];
+    expect(countFullCycleDays(blocks, 10)).toBe(0);
+    expect(countFullCycleDays(blocks, 4)).toBe(2);
+  });
+
+  it('does not count a battery that is emptied without ever being full', () => {
+    const blocks = [
+      block('2026-06-01T12:00:00', { injectie: 6 }),
+      block('2026-06-01T20:00:00', { afname: 8 }),
+    ];
+    expect(countFullCycleDays(blocks, 10)).toBe(0);
+  });
+
+  it('carries the charge across days and counts the cycle on the day it ends', () => {
+    const blocks = [
+      block('2026-06-01T12:00:00', { injectie: 10 }),
+      block('2026-06-01T22:00:00', { afname: 6 }),
+      block('2026-06-02T06:00:00', { afname: 4 }),
+    ];
+    expect(countFullCycleDays(blocks, 10, {
+      metricStart: new Date('2026-06-02T00:00:00'),
+      metricEnd: new Date('2026-06-02T00:00:00'),
+    })).toBe(1);
+    expect(countFullCycleDays(blocks, 10, {
+      metricStart: new Date('2026-06-01T00:00:00'),
+      metricEnd: new Date('2026-06-01T00:00:00'),
+    })).toBe(0);
+  });
+
+  it('returns 0 for an invalid capacity', () => {
+    expect(countFullCycleDays([block('2026-06-01T12:00:00', { injectie: 5 })], 0)).toBe(0);
   });
 });

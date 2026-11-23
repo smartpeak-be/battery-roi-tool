@@ -1823,7 +1823,7 @@ function renderCapAnalysis(capAnalysis, isFullYear, daysInWindow, numYears) {
   const showAvg = numYears >= 2;
 
   if (!rows.length || (maxCap === null && rows[0] && rows[0].qualDays < 100)) {
-    content.innerHTML = `<div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i> <div>Zelfs de kleinste capaciteit (2,5 kWh) heeft geen 100 dagen met volledige lading. Controleer uw data.</div></div>`;
+    content.innerHTML = `<div class="alert alert-warning"><i class="fa-solid fa-triangle-exclamation icon-warn" aria-hidden="true"></i> <div>Zelfs de kleinste capaciteit (2,5 kWh) haalt geen 100 dagen waarop de batterij volledig geladen én daarna volledig ontladen wordt. Controleer uw data.</div></div>`;
     return;
   }
 
@@ -1832,12 +1832,12 @@ function renderCapAnalysis(capAnalysis, isFullYear, daysInWindow, numYears) {
     html += `<div class="alert alert-info" style="margin-bottom:12px;"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <div>Gebaseerd op ${daysInWindow} beschikbare dagen (geen volledig jaar).</div></div>`;
   }
   html += `<div class="alert alert-info" style="margin-bottom:12px;">
-    <i class="fa-solid fa-circle-info" aria-hidden="true"></i> <div>Analyse bij <strong>gelijke omvormers</strong> (drempel = capaciteit, geen laadbeperking). Gebruik dit als referentie voor de maximaal zinvolle capaciteit.
-    <br><strong style="color:var(--success)">Groen</strong> = ≥ 100 volle laaddagen &nbsp;|&nbsp; <span style="color:var(--warning);font-weight:600">Oranje</span> = &lt; 100 dagen &nbsp;|&nbsp; <span style="background:var(--success);color:#fff;border-radius:4px;padding:1px 6px;font-size:0.78rem;font-weight:700;">MAX</span> = grootste capaciteit met ≥ 100 dagen${showAvg ? ' (gebaseerd op afgelopen jaar)' : ''}</div>
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i> <div>Analyse bij <strong>gelijke omvormers</strong> (geen laadbeperking, geen verliezen). Een volle cyclus telt pas als de batterij volledig geladen én daarna volledig ontladen wordt. Gebruik dit als referentie voor de maximaal zinvolle capaciteit.
+    <br><strong style="color:var(--success)">Groen</strong> = ≥ 100 volle cycli &nbsp;|&nbsp; <span style="color:var(--warning);font-weight:600">Oranje</span> = &lt; 100 dagen &nbsp;|&nbsp; <span style="background:var(--success);color:#fff;border-radius:4px;padding:1px 6px;font-size:0.78rem;font-weight:700;">MAX</span> = grootste capaciteit met ≥ 100 dagen${showAvg ? ' (gebaseerd op afgelopen jaar)' : ''}</div>
   </div>`;
 
   html += `<div class="cap-table-wrap"><table class="cap-table">
-    <thead><tr><th>Capaciteit (kWh)</th><th style="text-align:center">Volle laaddagen (afgelopen jaar)</th>${showAvg ? `<th style="text-align:center">Gem. ${numYears} j</th>` : ''}</tr></thead><tbody>`;
+    <thead><tr><th>Capaciteit (kWh)</th><th style="text-align:center">Volle cycli (afgelopen jaar)</th>${showAvg ? `<th style="text-align:center">Gem. ${numYears} j</th>` : ''}</tr></thead><tbody>`;
 
   for (const r of rows) {
     const isMax    = r.cap === maxCap;
@@ -1857,7 +1857,7 @@ function renderCapAnalysis(capAnalysis, isFullYear, daysInWindow, numYears) {
     const maxRow = rows.find(r => r.cap === maxCap);
     html += `<div class="alert alert-success" style="margin-top:14px;">
       <i class="fa-solid fa-circle-check icon-ok" aria-hidden="true"></i> <div><strong>Aanbevolen maximale capaciteit: ${fmt2(maxCap)} kWh</strong><br>
-      ${maxRow.qualDays} volle laaddagen per (berekenings)jaar.</div></div>`;
+      ${maxRow.qualDays} volle cycli per (berekenings)jaar.</div></div>`;
   }
   content.innerHTML = html;
 }

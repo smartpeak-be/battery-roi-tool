@@ -265,3 +265,47 @@ export function buildAggregateBlocks(allDays) {
   }
   return blocks;
 }
+
+/**
+ * Count full cycles (battery completely charged AND afterwards completely
+ * discharged) for an ideal battery of the given capacity.
+ *
+ * SmartPeak sizing rule: a battery should be able to fully charge and fully
+ * discharge on at least 100 days a year. Counting only the days on which the
+ * injection reaches the capacity overestimates the sensible size, because the
+ * stored energy also has to be consumed before the next sunny period.
+ *
+ * Ideal reference model, matching the "gelijke omvormers" analysis: no power
+ * limit and no conversion losses. The state of charge carries across blocks and
+ * days. Within one block the injection is stored first and the consumption is
+ * served afterwards. A cycle counts on the day the battery runs empty, after
+ * having been full since the previous empty moment. Only cycles that end inside
+ * metricStart..metricEnd are counted.
+ *
+ * @param {Array<{start: Date, afname: number, injectie: number}>} blocks
+ * @param {number} capacity usable capacity in kWh
+ * @param {{metricStart?: Date|null, metricEnd?: Date|null}} [options]
+ * @returns {number} number of days with a completed full cycle
+ */
+export function countFullCycleDays(blocks, capacity, options = {}) {
+  const cap = clampNumber(capacity);
+  if (!(cap > 0)) return 0;
+  const metricStart = options.metricStart || null;
+  const metricEnd = options.metricEnd || null;
+  const eps = 1e-9;
+
+  let soc = 0;
+  let wasFull = false;
+  const cycleDays = new Set();
+  const sorted = [...(blocks || [])].sort((a, b) => a.start - b.start);
+  for (const block of sorted) {
+    soc = Math.min(cap, soc + clampNumber(block.injectie));
+    if (soc >= cap - eps) wasFull = true;
+    soc = Math.max(0, soc - clampNumber(block.afname));
+    if (wasFull && soc <= eps) {
+      wasFull = false;
+      if (isWithin(block.start, metricStart, metricEnd)) cycleDays.add(dateKey(block.start));
+    }
+  }
+  return cycleDays.size;
+}
