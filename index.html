@@ -6,7 +6,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <title>SmartPeak - Batterij ROI Calculator</title>
   <link rel="stylesheet" href="assets/css/calculator.css?v=4" />
-  <link rel="stylesheet" href="assets/css/calculator-v2.css?v=4" />
+  <link rel="stylesheet" href="assets/css/calculator-v2.css?v=5" />
   <link rel="stylesheet" href="assets/css/customer-products.css" />
   <!-- Chart.js loaded lazily on first use — see assets/js/chart-loader.js -->
   <script type="module" src="assets/js/csv.js"></script>
@@ -38,6 +38,7 @@
       SmartPeak
     </a>
     <a class="roi-action-button" href="https://smartpeak.be/contact/">Contacteer ons</a>
+    <p class="roi-print-contact">smartpeak.be · info@smartpeak.be · 0469 76 23 60</p>
   </div>
 </header>
 
@@ -45,6 +46,8 @@
 <div class="roi-heading">
   <h1>Je batterijberekening</h1>
   <p>Vergelijk de installatieprijs, de geschatte besparing en de terugverdientijd per samenstelling.</p>
+  <p class="roi-print-date" id="printDate"></p>
+  <button type="button" class="roi-print-button" id="printBtn"><i class="fa-solid fa-print" aria-hidden="true"></i> Afdrukken of opslaan als PDF</button>
 </div>
 
 <div id="projectBanner" class="project-banner" style="display:none;">
@@ -241,6 +244,6 @@
 <!-- TOAST -->
 <div id="toast"></div>
 
-<script type="module" src="assets/js/pages/index-app.js?v=7"></script>
+<script type="module" src="assets/js/pages/index-app.js?v=8"></script>
 </body>
 </html>
