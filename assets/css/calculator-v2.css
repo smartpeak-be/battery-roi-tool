@@ -197,3 +197,104 @@
   .roi-v2 .card { padding: 1rem; }
   .roi-key-metrics .stat-row { padding-inline: .55rem; }
 }
+
+/* Print: customer (read-only) view only */
+.roi-print-contact,
+.roi-print-date,
+.roi-print-button { display: none; }
+.roi-v2 .readonly-mode .roi-print-button {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 2.75rem;
+  margin-top: 1.1rem;
+  padding: .45rem 1.15rem;
+  border: 1px solid var(--text);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text);
+  font: 600 .95rem/1.2 var(--roi-font);
+  cursor: pointer;
+}
+.roi-v2 .readonly-mode .roi-print-button:hover { border-color: var(--success); color: var(--success); }
+
+@media print {
+  @page { size: A4; margin: 12mm 12mm 14mm; }
+
+  .roi-v2:has(body.readonly-mode) { font-size: 13px; }
+  .roi-v2 body.readonly-mode {
+    padding: 0;
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .roi-v2 .readonly-mode { --roi-wrap: 100%; }
+
+  /* Interactive parts that mean nothing on paper */
+  .readonly-mode .roi-action-button,
+  .readonly-mode .roi-print-button,
+  .readonly-mode .roi-config-links,
+  .readonly-mode .chart-level-toggle,
+  .readonly-mode .chart-day-nav,
+  .readonly-mode details > summary .chev,
+  .readonly-mode #loadedBanner,
+  .readonly-mode #projectBanner,
+  .readonly-mode #saveCard,
+  .readonly-mode #toast,
+  .readonly-mode #roiProductDialog,
+  .readonly-mode .sp-spinner-overlay { display: none !important; }
+
+  /* Header: logo plus contact details instead of the contact button */
+  .roi-v2 .readonly-mode .roi-site-header { border-bottom: 2px solid var(--text); }
+  .readonly-mode .roi-header-inner { min-height: 0; padding-bottom: 3mm; }
+  .readonly-mode .roi-print-contact { display: block; color: var(--muted); font-size: .9rem; }
+  .readonly-mode .roi-brand { font-size: 1.25rem; }
+  .readonly-mode .roi-brand img { width: 34px; }
+
+  .roi-v2 .readonly-mode .roi-heading { padding-block: 6mm 4mm; }
+  .roi-v2 .readonly-mode .roi-heading h1 { font-size: 2rem; margin-bottom: .3rem; }
+  .readonly-mode .roi-heading p { font-size: 1rem; }
+  .readonly-mode .roi-print-date:not(:empty) { display: block; margin-top: .3rem; font-size: .9rem; }
+
+  /* Flat cards: no shadows, keep the borders */
+  .roi-v2 .readonly-mode .card,
+  .roi-v2 .readonly-mode .roi-config-result,
+  .roi-v2 .readonly-mode .scenario-card { box-shadow: none; }
+  .roi-v2 .readonly-mode .card { padding: 4mm; margin-bottom: 4mm; }
+  .readonly-mode .roi-config-result { padding: 4mm; border-radius: 12px; }
+  .roi-v2 .readonly-mode #configResultsSection { margin-block: 4mm; }
+  .readonly-mode .roi-result-title { font-size: 1.5rem; margin-bottom: 3mm; }
+  .readonly-mode .roi-config-heading h3 { font-size: 1.25rem; margin-bottom: .4rem; }
+
+  /* Both scenarios side by side on A4 */
+  .readonly-mode .roi-scenario-pair { grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .roi-v2 .readonly-mode .roi-scenario-pair .scenario-card { padding: 3mm; }
+  .readonly-mode .roi-key-metrics .stat-value { font-size: 1.3rem; }
+
+  /* Opened disclosures read as plain sections */
+  .readonly-mode details > summary { pointer-events: none; }
+  .readonly-mode details.scen-details summary { min-height: 0; padding-block: 2mm 1mm; font-weight: 650; }
+
+  /* Calculation method and meter data as an appendix on a new page */
+  .readonly-mode .roi-calculation-info { break-before: page; border-top: 0; margin-top: 0; }
+  .readonly-mode .roi-calculation-info > summary { padding-top: 0; font-size: 1.3rem; color: var(--text); }
+
+  /* Fixed-height wrapper (maintainAspectRatio: false); the canvas scales even before Chart.js resizes */
+  .readonly-mode .chart-canvas-wrap { height: 75mm; }
+  .readonly-mode #energyChartCanvas { width: 100% !important; height: 100% !important; }
+
+  /* Page breaks */
+  .readonly-mode h2,
+  .readonly-mode h3,
+  .readonly-mode h4,
+  .readonly-mode summary { break-after: avoid; }
+  .readonly-mode .roi-config-header,
+  .readonly-mode .scenario-card,
+  .readonly-mode #energyChartCard,
+  .readonly-mode .result-disclaimer,
+  .readonly-mode .stat-row,
+  .readonly-mode table.data-table tr { break-inside: avoid; }
+  .readonly-mode table.data-table thead { display: table-header-group; }
+
+  .readonly-mode a { color: inherit; text-decoration: none; }
+}

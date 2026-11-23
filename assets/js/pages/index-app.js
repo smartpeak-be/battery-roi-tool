@@ -14,6 +14,7 @@ import { calculatorConfigSpecsUrl } from '../product-spec-links.js';
 import { customerConfigProducts, loadCustomerProducts } from '../index/customer-products.js';
 import { configureCustomerProductDialog, customerProductPhotos } from '../index/customer-product-dialog.js';
 import { customerShareState } from '../index/customer-share.js';
+import { wirePrintView } from '../index/print-view.js';
 import {
   compositionGrossProfitExVat,
   resolveCompositionToCalculatorConfig,
@@ -49,6 +50,7 @@ function getCalculationProducts(configResults) {
 
 // Energy chart rendering lives in assets/js/index/energy-chart.js.
 wireEnergyChartHandlers();
+wirePrintView();
 
 function _genMeerkostId() {
   return 'mk_' + Math.random().toString(36).slice(2, 10);

@@ -160,6 +160,7 @@ export default [
       'assets/js/serial-extract.js',
       'assets/js/index/scenario-card.js',
       'assets/js/index/energy-chart.js',
+      'assets/js/index/print-view.js',
       'assets/js/producten-beheer/renderers.js',
     ],
     languageOptions: {
